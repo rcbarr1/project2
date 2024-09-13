@@ -12,12 +12,12 @@ https://tdevries.eri.ucsb.edu/models-and-data-products/
 """
 
 import numpy as np
-import example as p2
+import devries_example as dv_p2
 import matplotlib.pyplot as plt
 import cmocean.cm as cmo
 
 #%% load in control OCIM1 file (downloaded from website above, 8-8-2024)
-CTL = p2.loadmat('./CTL.mat')
+CTL = dv_p2.loadmat('./CTL.mat')
 
 #%% extract data from mat file to more usable variables
 output = CTL['output']
@@ -47,7 +47,7 @@ REG = 0 * M3d
 REG[grid['YT3d'] <=-65] = 1
 
 # "solve for ventilation fractions" -> not entirely sure what this does? I think TR is the transport matrix, and we are moving one time step using it?
-F = p2.eq_wmfrac(TR, REG, M3d, grid)
+F = dv_p2.eq_wmfrac(TR, REG, M3d, grid)
 
 # "zonally average for Atlantic and Pacific basins"
 vol = grid['DXT3d'] * grid['DYT3d'] * grid['DZT3d'] * M3d # not sure what DXT, etc. is, but i think vol is "volume"
@@ -68,7 +68,7 @@ plt.colorbar()
 ax.invert_yaxis()
 
 #%% calculate water age
-age, _, _, _ = p2.eqage(TR, grid, M3d) # age in years
+age, _, _, _ = dv_p2.eqage(TR, grid, M3d) # age in years
 age = np.real(age)
 
 # zonally average for Atlantic and Pacific basins
