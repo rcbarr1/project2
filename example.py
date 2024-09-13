@@ -12,8 +12,11 @@ https://tdevries.eri.ucsb.edu/models-and-data-products/
 """
 
 import scipy.io as spio
-import scipy as sp
 import numpy as np
+from scipy.sparse.linalg import spsolve
+from scipy.sparse import csc_array
+from scipy.sparse import csc_matrix
+from scipy.sparse import identity
 
 
 def loadmat(filename):
@@ -88,8 +91,7 @@ def eq_wmfrac(TR, REG, M3d, grid):
     '''
 
     # partition the transport operator
-    n = np.size(TR,0)
-    ny, nx, nz = np.shape(M3d)
+    ny, nx, nz = np.shape(M3d) # number of x, y, z points
     
     iocn = np.argwhere(M3d.flatten(order='F')) # 1-d indexes of whole ocean (cells = 1), need to do row-major order for this to work for some reason? otherwise 3rd dimension gets messed up when calculating iint
     isurf = np.argwhere(M3d[:, :, 0].flatten(order='F')) # 1-d indexes of surface ocean (cells = 1)
@@ -101,7 +103,7 @@ def eq_wmfrac(TR, REG, M3d, grid):
     
     # solve for the interior distribution given surface boundary conditions
     REG_flat = REG.flatten(order='F')
-    f = sp.sparse.linalg.spsolve(-Aii, (Ais * REG_flat[isurf]))
+    f = spsolve(-Aii, (Ais * REG_flat[isurf]))
     
     # make 3d array assigning results of time step
     F = np.empty(np.shape(M3d))
@@ -113,16 +115,100 @@ def eq_wmfrac(TR, REG, M3d, grid):
     
     return F
     
+def d0(r):
+    '''
+    downloaded scripts do not include documentation for this function but it
+    turns an array (r) into a sparse matrix (A) that has the values of r along
+    its diagonal
+    '''
+    m = len(r)
+    K = identity(m) # create sparse identity matrix
+    idx = np.argwhere(K)
+    A = csc_array((r,(idx[:,0], idx[:,1])),shape=(m,m))
     
+    return A
     
+def eqage(TR, grid, M3d):
+    '''
+    compute the first and centered second moments of the last passage time
+    distribution (LP1 & LP2) and of the first passage time distribution (FP1 &
+    FP2)
     
+    d(age)/dt - TR * age = 1
+    age = 0 at sea surface
+    
+    d  [age(isurf)]       [TR(isurf, isurf)  TR(isurf, iint)][age(isurf)]       [1(isurf)]
+    -  [          ]   -   [                                 ][          ]   =   [        ]
+    dt [age(iint) ]       [TR(iint, isurf)   TR(iint, iint) ][age(iint) ]       [1(iint) ]
+    
+    subject to age(isurf) = 0
+    
+    at steady state, d/dt --> 0
+    
+    TR(iint, iint) * age(iint) = 1(iint) --> age(iint) = TR(iint, iint) \ 1(iint)
+    
+    note: transport operator (TR) has units [yr^-1]
+    
+    '''
+    
+    ny, nx, nz = np.shape(M3d) # number of x, y, z points
+    
+    # land & sea masks
+    iocn = np.squeeze(np.argwhere(M3d.flatten(order='F')))
+    iland = np.setdiff1d(range(0,len(M3d.flatten(order='F'))), iocn)
+    
+    # find the surface points
+    Q = 0*M3d
+    Q[:,:,0] = 1
+    Q = Q.flatten(order='F') # interior points
+    iint = np.squeeze(np.argwhere(Q[iocn]==0))
+    
+    # get relevant components of transport operator
+    A = TR[iint,:]
+    A = A[:,iint]
+    
+    # calculate volume of each grid cell
+    vol = grid['DXT3d'] * grid['DYT3d'] * grid['DZT3d']
+    w = d0(vol.flatten(order='f')[iocn[iint]])
+    
+    # solve for mean last passage time (ideal age, aka time water parcel last had contact with atmosphere)
+    lp1 = np.zeros((ny, nx, nz), dtype=np.cfloat) # "last passage 1"
+    lp1_flat = lp1.flatten(order='f')
+    
+    rhs = np.ones(len(iint))
+    
+    lp1_flat[iocn[iint]] = -1 * spsolve(A, rhs, use_umfpack=True)
+    lp1_flat[iland] = np.NaN + np.NaN*1j
+    lp1 = np.reshape(lp1_flat,np.shape(lp1),order='F')
+    
+    # centered second moment of the last passage time distribution
+    lp2 = np.zeros((ny, nx, nz), dtype=np.cfloat) # "last passage 2"
+    lp2_flat = lp2.flatten(order='f')
+    lp2_flat[iocn[iint]] = -2 * spsolve(A, lp1_flat[iocn[iint]], use_umfpack=True) # use results from previous time step here
+    lp2_flat[iland] = np.NaN + np.NaN*1j
+    lp2 = np.reshape(lp2_flat,np.shape(lp2),order='F')
+    
+    lp2 = np.sqrt(lp2 - lp1**2) # you compare the second moment to the sqare of the first moment? https://en.wikipedia.org/wiki/Second_moment_method
 
+    # mean first passage time (average time it will take for a water parcel starting in this state to return to surface I think?)
+    fp1 = np.zeros((ny, nx, nz), dtype=np.cfloat) # "first passage 1"
+    fp1_flat = fp1.flatten(order='f')
+    rhs = w @ np.ones((len(iint),1)) # need @ to do dot product instead of element-wise
+    rhs = csc_array(rhs).astype(np.cfloat)
+    fp1_flat[iocn[iint]] = spsolve(-1*csc_matrix(w).astype(np.cfloat), spsolve(A.transpose(), rhs, use_umfpack=True), use_umfpack=True)
+    fp1_flat[iland] = np.NaN + np.NaN*1j
+    fp1 = np.reshape(fp1_flat,np.shape(fp1),order='F')
+    
+    # centered second mument of the first passage time distribution
+    fp2 = np.zeros((ny, nx, nz), dtype=np.cfloat)
+    fp2_flat = fp2.flatten(order='f')
+    fp2_flat[iocn[iint]] = -2 * spsolve(A, fp1_flat[iocn[iint]], use_umfpack=True) # use results from previous time step here
+    fp2_flat[iland] = np.NaN + np.NaN*1j
+    fp2 = np.reshape(fp2_flat,np.shape(fp2),order='F')
+    
+    fp2 = np.sqrt(fp2 - fp1**2) # you compare the second moment to the sqare of the first moment? https://en.wikipedia.org/wiki/Second_moment_method
 
-
-
-
-
-
+    return lp1, fp1, lp2, fp2
 
 
 

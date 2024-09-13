@@ -16,7 +16,6 @@ import example as p2
 import matplotlib.pyplot as plt
 import cmocean.cm as cmo
 
-
 #%% load in control OCIM1 file (downloaded from website above, 8-8-2024)
 CTL = p2.loadmat('./CTL.mat')
 
@@ -39,7 +38,7 @@ m = len(M3d[M3d==1])
 
 # transport operator [yr^-1], not sure what this means yet either
 TR = output['TR'] # this is a weird datatype, scipy compressed sparse column matrix
-
+TR = TR.astype(np.cfloat)
 #%% example 1: set surface boundary condition to track waters ventilated in S. Ocean (S of -65º)
 # REG = 1 everywhere S of -65º, REG = 0 elsewhere
 
@@ -63,12 +62,32 @@ ax = fig.gca()
 cmap = cmo.dense
 plt.contourf(grid['yt'], grid['zt'], Fpac.T, levels=np.arange(0.0, 1.05, 0.05),cmap=cmap)
 ax.set_title('Fraction of AABW in Pacific Ocean')
-ax.set_xlabel('Latitude')
+ax.set_xlabel('Latitude (ºN)')
 ax.set_ylabel('Depth (m)')
 plt.colorbar()
 ax.invert_yaxis()
 
 #%% calculate water age
+age, _, _, _ = p2.eqage(TR, grid, M3d) # age in years
+age = np.real(age)
+
+# zonally average for Atlantic and Pacific basins
+ageatl = age * MSKS['ATL'] * vol
+ageatl = np.nansum(ageatl, axis=1) / np.nansum(MSKS['ATL'] * vol, axis = 1)
+agepac = age * MSKS['PAC'] * vol
+agepac = np.nansum(agepac, axis=1) / np.nansum(MSKS['PAC'] * vol, axis = 1)
+
+#%% plot
+fig = plt.figure(figsize=(8,8))
+ax = fig.gca()
+ax.invert_yaxis()
+cmap = cmo.tempo
+plt.contourf(grid['yt'], grid['zt'], agepac.T, levels=np.arange(0, 1500, 100),cmap=cmap)
+ax.set_title('Zonally Averaged Age of Waters in Pacific Ocean')
+ax.set_xlabel('Latitude (ºN)')
+ax.set_ylabel('Depth (m)')
+plt.colorbar(label='Age (Years)')
+
 
 
 
