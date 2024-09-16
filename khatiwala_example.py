@@ -63,3 +63,71 @@ def loadmat(filename):
         return elem_list
     data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
     return _check_keys(data)
+
+def gcm2matrix(TR, Ibox, ixb, iyb, izb, **kwargs):
+    '''
+    average GCM (general circulation model, aka transport matrix?) onto box grid
+    
+    TR(x, y, z) or TR(x, y)
+    '''
+    
+    # get optional keyword arguments
+    alpha = kwargs.get('alpha', None)
+    kd = kwargs.get('kd', None)
+    
+    nb = len(Ibox)
+    C = np.zeros(nb)
+    
+    if kd != None:
+        TR[kd] = 0 # not sure this is translated correctly because I don't have an example here to test with, just a heads up to future Reese
+
+    if TR.ndim == 2: # TR(x, y)
+        for j in range(nb):
+            i = Ibox[j]
+            C[j] = TR[ixb[i], iyb[i]];
+        
+    else: # TR(x, y, z)
+        for j in range(nb):
+            i = Ibox[j]
+            C[j] = TR[ixb[i], iyb[i], izb[i]];
+            
+    return C
+
+def calc_reversible_scavenging(C, Cbulk, K, ws, dz):
+    '''
+    flux is positive downward
+    discretize using upward scheme
+    C = Cp + Cd     total tracer concentration
+    Cp              tracer concentration in particulate phase
+    Cd              tracer concentration in dissolved phase
+    Cp = (K * Cbulk/(K * Cbulk + 1)) * C
+    
+    q = d(ws Cp)/dz, ws > 0 downward
+    '''
+    
+    nz = len(C)
+    Cp = (K * Cbulk/(K * Cbulk + 1)) * C
+
+    F = np.zeros(nz+1)
+
+    F[1:nz+1] = ws * Cp
+    q = (F[0:nz] - F[1:nz+1]) / dz
+    
+    return q
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
