@@ -15,6 +15,8 @@ import numpy as np
 import itertools
 from scipy.sparse import csc_array
 from scipy.sparse import lil_matrix
+from scipy.sparse import identity
+from scipy.sparse.linalg import spsolve
 
 base_path = '/Users/Reese_1/Documents/Research Projects/project2/khatiwala/MIT_Matrix_Global_2.8deg/'
 
@@ -132,7 +134,7 @@ if rearrangeProfiles:
         Ip[i] = Ip[i][izp].reshape(len(Ip[i][izp])) # add sorted indicies of depth levels to list of lists
     Ir = np.array(list(itertools.chain.from_iterable(Ip))) # flatten into one list
 
-#%% particle fields
+# particle fields
 
 # Uncomment one of these blocks:
     
@@ -191,7 +193,6 @@ for i in range(nbb):
     D = Dt[i] / (w * rho) # concentration normalized to water density
     Duz[Iploc] = D * np.ones(nzloc) # no decay with respect to depth for now
     
-#%%
 # calculate bulk concentration of particles (unitless, Cbulk = Pz + Cz + Duz + Oz)
 KxCbulkTh = (K_Th_pom * Pz) + (K_Th_car * Cz) + (K_Th_dust * Duz) + (K_Th_opal * Oz)
 KxCbulkPa = (K_Pa_pom * Pz) + (K_Pa_car * Cz) + (K_Pa_dust * Duz) + (K_Pa_opal * Oz)
@@ -220,13 +221,55 @@ for i in range(nbb): # loop over all surface boxes
     Q_Th = Q_Th.tocsc()
     
 # Pa-231
+KxCbulk = KxCbulkPa
+Q_Pa = lil_matrix(np.zeros((nb, nb)))
+for i in range(nbb): # loop over all surface boxes
+    Iploc = Ip[i] # global indices of local profile
+    nzloc = len(Iploc) # number of grid points in local profile
+    
+    # construct Qloc a column at a time by probing using unit vectors
+    Qloc = np.zeros((nzloc, nzloc)) # local block
+    e = np.zeros(nzloc)
+    for iz in range(nzloc):
+        e[:] = 0
+        e[iz] = 1
+        Qloc[:,iz] = kw_p2.calc_reversible_scavenging(e, KxCbulk[Iploc], 1, ws, dzb[Iploc]);
+    
+    Q_Pa[Ip[i][0]:(Ip[i][-1] + 1), Ip[i][0]:(Ip[i][-1] + 1)] = Qloc # insert into global Q (this is the stupidest indexing ever wtf python)
+    Q_Pa = Q_Pa.tocsc()
 
+# make discrete
+Q_Th = dt * Q_Th # discrete in time
+Q_Pa = dt * Q_Pa # discrete in time
 
+I = identity(nb)
+Aexpms = dt * Aexpms
+Aexpms = I + Aexpms
 
+DdecayTh = lambdaDecayTh * I * dt
+DdecayPa = lambdaDecayPa * I * dt
 
+# create matrix of length nb that is = Beta * time step
+BetaTh = BetaTh * dt * np.ones(nb)
+BetaPa = BetaPa * dt * np.ones(nb)
 
+# construct right-hand side and steady state operator
+# steady state equation is:
+# c = Ai * [Ae * c - Dd * c + Beta + Q * c], or
+# [Ai * (Ae - Dd + Q) - I] * c = -Ai * Beta
 
+b = -Aimpms * BetaPa
+M = Aimpms * (Aexpms - DdecayPa + Q_Pa) - I
+Pa = spsolve(M, b) # solve for steady state
 
+b = -Aimpms * BetaTh
+M = Aimpms * (Aexpms - DdecayTh + Q_Th) - I
+Th = spsolve(M, b)
+
+# convert total to dissolved concentration
+Thd = (1 / (1 + KxCbulkTh)) * Th
+Thp = Th - Thd
+#Thdg = grid_boxes3d(Thd[Irr], np.array(range(nb)), base_path + 'Matrix5/Data/boxes.mat', base_path + 'grid.mat')
 
 
 
