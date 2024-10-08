@@ -79,17 +79,6 @@ ptemp = ptemp[ocnmask == 1].flatten(order='F') # flatten only ocean boxes in col
 # in top model layer, you have exchange with atmosphere. In other model layers,
 # there is no source/sink. This is explained more fully in DeVries, 2014
 
-# HOWEVER, I DON'T THINK WE NEED A SOURCE/SINK TERM FOR TEMPERATURE UNLESS WE
-# ARE MODIFYING IT (I.E. IN "WARMING-LED" EXPERIMENTS) BECAUSE THE ANNUAL
-# TEMPERATURES SHOULD BE THE SAME
-# I think if we used the exact same dataset and gridding method for atmospheric
-# temp data as they did when formulating the model, we would get no net affect
-# (i.e. the model should be optimized so the annual average sea surface
-# temperature is ~almost~ the same as the annual average bottom layer of
-# atmosphere temperature)
-
-# so, the only "s" term we need is if we are perturbing the temperature from steady state!
-
 # convert ptemp calculated at previous time step to 3D grid, pull surface ptemps
 ptemp_3D = np.full(ocnmask.shape, np.nan)
 ptemp_3D[ocnmask == 1] = np.reshape(ptemp, (-1,), order='F')
@@ -121,5 +110,5 @@ b_ptemp = b_ptemp[ocnmask == 1].flatten(order='F') # reshape b vector
 del_ptemp = -1 * TR * ptemp + b_ptemp
 new_ptemp = ptemp + del_ptemp
 
-
 # CHECK IF THIS IS LOGICAL ONCE I HAVE BETTER SURFACE TEMP DATA IN
+# del_ptemp should be essentially zero --> this should be running at steady state
