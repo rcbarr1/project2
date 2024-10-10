@@ -49,29 +49,78 @@ Created on Mon Oct  7 13:55:39 2024
 import project2 as p2
 import xarray as xr
 import numpy as np
+from scipy.interpolate import RegularGridInterpolator
+#from scipy.interpolate import griddata
 
-datapath = '/Users/Reese_1/Documents/Research Projects/project2/OCIM2_48L_base/'
+model_path = '/Users/Reese_1/Documents/Research Projects/project2/OCIM2_48L_base/'
+glodap_path = '/Users/Reese_1/Documents/Research Projects/project2/GLODAPv2.2016b.MappedProduct/'
 
-#%% load transport matrix (OCIM-48L, from Holzer et al., 2021
-# transport matirx is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
-TR = p2.loadmat(datapath + 'OCIM2_48L_base_transport.mat')
+#%% load transport matrix (OCIM-48L, from Holzer et al., 2021)
+# transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
+TR = p2.loadmat(model_path + 'OCIM2_48L_base_transport.mat')
 TR = TR['TR']
 
 # open up rest of data associated with transport matrix
-data = xr.open_dataset(datapath + 'OCIM2_48L_base_data.nc')
-ocnmask = data['ocnmask'].to_numpy()
+model_data = xr.open_dataset(model_path + 'OCIM2_48L_base_data.nc')
+ocnmask = model_data['ocnmask'].to_numpy()
+
+model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
+model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
+model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
+
+#%% load and regrid GLODAP data (https://glodap.info/index.php/mapped-data-product/)
+DIC_data = xr.open_dataset(glodap_path + 'GLODAPv2.2016b.TCO2.nc')
+TA_data = xr.open_dataset(glodap_path + 'GLODAPv2.2016b.TAlk.nc')
+
+# pull out arrays of depth, latitude, and longitude from GLODAP
+glodap_depth = DIC_data['Depth'].to_numpy() # m below sea surface
+glodap_lon = DIC_data['lon'].to_numpy()     # ºE
+glodap_lat = DIC_data['lat'].to_numpy()     # ºN
+
+# pull out values of DIC and TA from GLODAP
+DIC = DIC_data['TCO2'].values
+TA = TA_data['TAlk'].values
+
+# switch order of GLODAP dimensions to match OCIM dimensions
+DIC = np.transpose(DIC, (0, 2, 1))
+TA = np.transpose(TA, (0, 2, 1))
+
+# create interpolator
+interpDIC = RegularGridInterpolator((glodap_depth, glodap_lon, glodap_lat), DIC, bounds_error=False, fill_value=None)
+interpTA = RegularGridInterpolator((glodap_depth, glodap_lon, glodap_lat), TA, bounds_error=False, fill_value=None)
+
+# transform model_lon for anything < 20 (because GLODAP goes from 20ºE - 380ºE)
+model_lon[model_lon < 20] += 360
+
+# create meshgrid for OCIM grid
+depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
+
+# reshape meshgrid points into a list of coordinates to interpolate to
+query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
+
+# perform interpolation (regrid GLODAP data to match OCIM grid)
+DIC = interpDIC(query_points)
+TA = interpTA(query_points)
+
+# transform results back to model grid shape
+DIC = DIC.reshape(depth.shape)
+TA = TA.reshape(depth.shape)
+
+# transform model_lon and meshgrid back for anything > 360
+model_lon[model_lon > 360] -= 360
+depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
 
 #%% get tracer distributions (called "e" vectors in John et al., 2020)
 # POTENTIAL TEMPERATURE (θ)
 # open up .nc dataset included with this model to pull out potential temperature
-ptemp = data['ptemp'].to_numpy() # potential temperature [ºC]
+ptemp = model_data['ptemp'].to_numpy() # potential temperature [ºC]
 ptemp = ptemp[ocnmask == 1].flatten(order='F') # flatten only ocean boxes in column-major form ("E" vector format)
 
 # DIC
-
+DIC = DIC[ocnmask == 1].flatten(order='F') # flatten only ocean boxes in column-major form ("E" vector format)
 
 # ALKALINITY
-
+TA = TA[ocnmask == 1].flatten(order='F') # flatten only ocean boxes in column-major form ("E" vector format)
 
 #%% create "b" vector for each tracer (source/sink vector) --> will need to repeat at each time step because dependent on previous time step
 

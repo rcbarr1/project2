@@ -61,3 +61,4 @@ def loadmat(filename):
         return elem_list
     data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
     return _check_keys(data)
+
