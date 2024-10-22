@@ -11,7 +11,7 @@ Created on Tue Oct  8 11:15:51 2024
 import scipy.io as spio
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
-
+import matplotlib.pyplot as plt
 
 def loadmat(filename):
     '''
@@ -128,8 +128,25 @@ def inpaint_nans(array_3d, mask=None, iterations=100):
     return interpolatedData
 
 def regrid_glodap(glodap_var, glodap_depth, glodap_lat, glodap_lon, model_depth, model_lat, model_lon, ocnmask):
-    # switch order of GLODAP dimensions to match OCIM dimensions
-    glodap_var = np.transpose(glodap_var, (0, 2, 1))
+    '''
+    regrid glodap data to model grid, inpaint nans
+
+    Parameters
+    ----------
+    glodap_var : variable to regrid (dimensions: depth, longitude, latitude)
+    glodap_depth : array of glodap depth levels
+    glodap_lat : array of glodap latitudes
+    glodap_lon : array of glodap longitudes
+    model_depth : array of model depth levels
+    model_lat : array pf model latitudes
+    model_lon : array of model longitudes
+    ocnmask : mask same shape as glodap_var when 1 marks an ocean cell and 0 marks land
+
+    Returns
+    -------
+    glodap_var : regridded to model grid
+
+    '''
     # create interpolator
     interp = RegularGridInterpolator((glodap_depth, glodap_lon, glodap_lat), glodap_var, bounds_error=False, fill_value=None)
 
@@ -150,8 +167,29 @@ def regrid_glodap(glodap_var, glodap_depth, glodap_lat, glodap_lon, model_depth,
 
     # inpaint nans
     glodap_var = inpaint_nans(glodap_var, mask=ocnmask.astype(bool))
+    
+    # transform model_lon and meshgrid back for anything > 360
+    model_lon[model_lon > 360] -= 360
 
     return glodap_var
     
-    
-    
+def plot_surface(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
+    fig = plt.figure(figsize=(10,7))
+    ax = fig.gca()
+    cntr = plt.contourf(lons, lats, variable[depth_level, :, :].T, levels=20, cmap=cmap, vmin=vmin, vmax=vmax)
+    c = plt.colorbar(cntr, ax=ax)
+    plt.xlabel('longitude (ºE)')
+    plt.ylabel('latitude (ºN)')
+    plt.title(title)
+    plt.xlim([0, 380]), plt.ylim([-90,90])
+
+def plot_longitude(lats, depths, variable, longitude, vmin, vmax, cmap, title):
+    fig = plt.figure(figsize=(10,7))
+    ax = fig.gca()
+    cntr = plt.contourf(lats, depths, variable[:, longitude, :], levels=20, cmap=cmap, vmin=vmin, vmax=vmax)
+    c = plt.colorbar(cntr, ax=ax)
+    ax.invert_yaxis()
+    plt.xlabel('longitude (ºE)')
+    plt.ylabel('depth (m)')
+    plt.title(title)
+    plt.xlim([-90, 90]), plt.ylim([5500, 0])

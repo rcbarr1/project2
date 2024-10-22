@@ -49,10 +49,7 @@ Created on Mon Oct  7 13:55:39 2024
 import project2 as p2
 import xarray as xr
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator
 import matplotlib.pyplot as plt
-
-#from scipy.interpolate import griddata
 
 model_path = '/Users/Reese_1/Documents/Research Projects/project2/OCIM2_48L_base/'
 glodap_path = '/Users/Reese_1/Documents/Research Projects/project2/GLODAPv2.2016b.MappedProduct/'
@@ -71,130 +68,45 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 
 #%% load and regrid GLODAP data (https://glodap.info/index.php/mapped-data-product/)
-DIC_data = xr.open_dataset(glodap_path + 'GLODAPv2.2016b.TCO2.nc')
-TA_data = xr.open_dataset(glodap_path + 'GLODAPv2.2016b.TAlk.nc')
+#DIC_data = xr.open_dataset(glodap_path + 'GLODAPv2.2016b.TCO2.nc')
+#TA_data = xr.open_dataset(glodap_path + 'GLODAPv2.2016b.TAlk.nc')
 
 # pull out arrays of depth, latitude, and longitude from GLODAP
-glodap_depth = DIC_data['Depth'].to_numpy() # m below sea surface
-glodap_lon = DIC_data['lon'].to_numpy()     # ºE
-glodap_lat = DIC_data['lat'].to_numpy()     # ºN
+#glodap_depth = DIC_data['Depth'].to_numpy() # m below sea surface
+#glodap_lon = DIC_data['lon'].to_numpy()     # ºE
+#glodap_lat = DIC_data['lat'].to_numpy()     # ºN
 
 # pull out values of DIC and TA from GLODAP
-DIC = DIC_data['TCO2'].values
-TA = TA_data['TAlk'].values
+#DIC = DIC_data['TCO2'].values
+#TA = TA_data['TAlk'].values
 
-#%% plot surface distribution
-fig = plt.figure(figsize=(10,7))
-ax = fig.gca()
-cntr = plt.contourf(glodap_lon, glodap_lat, DIC[0, :, :], levels=20, cmap='plasma', vmin=960, vmax=2400)
-c = plt.colorbar(cntr, ax=ax)
-plt.xlabel('longitude (ºE)')
-plt.ylabel('latitude (ºN)')
-plt.title('glodap DIC surface distribution')
-plt.xlim([20, 380]), plt.ylim([-90,90])
+# switch order of GLODAP dimensions to match OCIM dimensions
+#DIC = np.transpose(DIC, (0, 2, 1))
+#TA = np.transpose(TA, (0, 2, 1))
 
-fig = plt.figure(figsize=(10,7))
-ax = fig.gca()
-cntr = plt.contourf(glodap_lon, glodap_lat, TA[0, :, :], levels=20, cmap='viridis', vmin=1040, vmax=2640)
-c = plt.colorbar(cntr, ax=ax)
-plt.xlabel('longitude (ºE)')
-plt.ylabel('latitude (ºN)')
-plt.title('glodap TA surface distribution')
-plt.xlim([20, 380]), plt.ylim([-90,90])
+# plot surface & longitude transect straight from glodap
+#p2.plot_surface(glodap_lon, glodap_lat, DIC, 0, 960, 2400, 'plasma', 'glodap DIC surface distribution')
+#p2.plot_surface(glodap_lon, glodap_lat, TA, 0, 1040, 2640, 'viridis', 'glodap DIC surface distribution')
+#p2.plot_longitude(glodap_lat, glodap_depth, DIC, 320, 1920, 2280, 'plasma', 'glodap DIC distribution along 340.5ºE longitude')
+#p2.plot_longitude(glodap_lat, glodap_depth, TA, 320, 2080, 2460, 'viridis', 'glodap TA distribution along 340.5ºE longitude')
 
-# plot distribution along 340.5ºE longitude
-fig = plt.figure(figsize=(10,7))
-ax = fig.gca()
-cntr = plt.contourf(glodap_lat, glodap_depth, DIC[:, :, 320], levels=20, cmap='plasma', vmin=1920, vmax=2280)
-c = plt.colorbar(cntr, ax=ax)
-ax.invert_yaxis()
-plt.xlabel('longitude (ºE)')
-plt.ylabel('depth (m)')
-plt.title('glodap DIC distribution along 340.5ºE longitude')
-plt.xlim([-90, 90]), plt.ylim([5500, 0])
+#DIC = p2.regrid_glodap(DIC, glodap_depth, glodap_lat, glodap_lon, model_depth, model_lat, model_lon, ocnmask)
+#TA = p2.regrid_glodap(TA, glodap_depth, glodap_lat, glodap_lon, model_depth, model_lat, model_lon, ocnmask)
 
-fig = plt.figure(figsize=(10,7))
-ax = fig.gca()
-cntr = plt.contourf(glodap_lat, glodap_depth, TA[:, :, 320], levels=20, cmap='viridis', vmin=2080, vmax=2460)
-c = plt.colorbar(cntr, ax=ax)
-ax.invert_yaxis()
-plt.xlabel('longitude (ºE)')
-plt.ylabel('depth (m)')
-plt.title('glodap TA distribution along 340.5ºE longitude')
-plt.xlim([-90, 90]), plt.ylim([5500, 0])
+# save regridded data
+#np.save(glodap_path + 'DIC_AO.npy', DIC)
+#np.save(glodap_path + 'TA_AO.npy', TA)
 
-#%% switch order of GLODAP dimensions to match OCIM dimensions
-DIC = np.transpose(DIC, (0, 2, 1))
-TA = np.transpose(TA, (0, 2, 1))
+# upload regridded data
+DIC = np.load(glodap_path + 'DIC_AO.npy')
+TA = np.load(glodap_path + 'TA_AO.npy')
 
-# create interpolator
-interpDIC = RegularGridInterpolator((glodap_depth, glodap_lon, glodap_lat), DIC, bounds_error=False, fill_value=None)
-interpTA = RegularGridInterpolator((glodap_depth, glodap_lon, glodap_lat), TA, bounds_error=False, fill_value=None)
+# visualize regridded data
+#p2.plot_surface(model_lon, model_lat, DIC, 0, 960, 2400, 'plasma', 'regridded glodap DIC surface distribution')
+#p2.plot_surface(model_lon, model_lat, TA, 0, 1040, 2640, 'viridis', 'regridded glodap TA surface distribution')
+#p2.plot_longitude(model_lat, model_depth, DIC, 170, 1920, 2280, 'plasma', 'regridded glodap DIC distribution along 341ºE longitude')
+#p2.plot_longitude(model_lat, model_depth, TA, 170, 2080, 2460, 'viridis', 'regridded glodap TA distribution along 341ºE longitude')
 
-# transform model_lon for anything < 20 (because GLODAP goes from 20ºE - 380ºE)
-model_lon[model_lon < 20] += 360
-
-# create meshgrid for OCIM grid
-depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
-
-# reshape meshgrid points into a list of coordinates to interpolate to
-query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
-
-# perform interpolation (regrid GLODAP data to match OCIM grid)
-DIC = interpDIC(query_points)
-TA = interpTA(query_points)
-
-# transform results back to model grid shape
-DIC = DIC.reshape(depth.shape)
-TA = TA.reshape(depth.shape)
-
-# inpaint nans
-TA = p2.inpaint_nans(TA, mask=ocnmask.astype(bool))
-DIC = p2.inpaint_nans(DIC, mask=ocnmask.astype(bool))
-
-# transform model_lon and meshgrid back for anything > 360
-model_lon[model_lon > 360] -= 360
-depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
-
-#%% visualize regridded glodap distributions
-fig = plt.figure(figsize=(10,7))
-ax = fig.gca()
-cntr = plt.contourf(model_lon, model_lat, DIC[0, :, :].T, levels=20, cmap='plasma', vmin=960, vmax=2400)
-c = plt.colorbar(cntr, ax=ax)
-plt.xlabel('longitude (ºE)')
-plt.ylabel('latitude (ºN)')
-plt.title('regridded glodap DIC surface distribution')
-plt.xlim([0, 360]), plt.ylim([-90,90])
-
-fig = plt.figure(figsize=(10,7))
-ax = fig.gca()
-cntr = plt.contourf(model_lon, model_lat, TA[0, :, :].T, levels=20, cmap='viridis', vmin=1040, vmax=2640)
-c = plt.colorbar(cntr, ax=ax)
-plt.xlabel('longitude (ºE)')
-plt.ylabel('latitude (ºN)')
-plt.title('regridded glodap TA surface distribution')
-plt.xlim([0, 360]), plt.ylim([-90,90])
-
-# plot distribution along 340.5ºE longitude
-fig = plt.figure(figsize=(10,7))
-ax = fig.gca()
-cntr = plt.contourf(model_lat, model_depth, DIC[:, 170, :], levels=20, cmap='plasma', vmin=1920, vmax=2280)
-c = plt.colorbar(cntr, ax=ax)
-ax.invert_yaxis()
-plt.xlabel('longitude (ºE)')
-plt.ylabel('depth (m)')
-plt.title('regridded glodap DIC distribution along 341ºE longitude')
-plt.xlim([-90, 90]), plt.ylim([5500, 0])
-
-fig = plt.figure(figsize=(10,7))
-ax = fig.gca()
-cntr = plt.contourf(model_lat, model_depth, TA[:, 170, :], levels=20, cmap='viridis', vmin=2080, vmax=2460)
-c = plt.colorbar(cntr, ax=ax)
-ax.invert_yaxis()
-plt.xlabel('longitude (ºE)')
-plt.ylabel('depth (m)')
-plt.title('regridded glodap TA distribution along 341ºE longitude')
-plt.xlim([-90, 90]), plt.ylim([5500, 0])
 #%% get tracer distributions (called "e" vectors in John et al., 2020)
 # POTENTIAL TEMPERATURE (θ)
 # open up .nc dataset included with this model to pull out potential temperature
