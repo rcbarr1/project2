@@ -10,6 +10,8 @@ Created on Tue Oct  8 11:15:51 2024
 
 import scipy.io as spio
 import numpy as np
+from scipy.interpolate import RegularGridInterpolator
+
 
 def loadmat(filename):
     '''
@@ -61,4 +63,95 @@ def loadmat(filename):
         return elem_list
     data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
     return _check_keys(data)
+    
+def inpaint_nans(array_3d, mask=None, iterations=100):
+    '''
+    adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
+    to incorporate nan mask so inpainting doesn't happen over land 
+    '''
+    # dimensions of input
+    size = array_3d.shape
 
+    # get index of nan in corrupted data
+    nan_mask = np.isnan(array_3d)
+    
+    # If a mask is provided, combine it with the NaN mask
+    if mask is not None:
+        nan_mask = nan_mask & mask
+        
+    nanIndex = nan_mask.nonzero()
+
+    interpolatedData = array_3d.copy()
+
+    # make an initial guess for the interpolated data using the mean of the non NaN values
+    interpolatedData[nanIndex] = np.nanmean(array_3d)
+
+    def sign(index, max_index):
+        # pass additional max_index to this func as this is now a variable
+        if index == 0:
+            return [1, 0]
+        elif index == max_index - 1:
+            return [-1, 0]
+        else:
+            return [-1, 1]
+
+    # calculate the sign for each dimension separately
+    nanIndexX, nanIndexY, nanIndexZ = nanIndex[0], nanIndex[1], nanIndex[2]
+    signsX = np.array([sign(x, size[0]) for x in nanIndexX])
+    signsY = np.array([sign(y, size[1]) for y in nanIndexY])
+    signsZ = np.array([sign(z, size[2]) for z in nanIndexZ])
+            
+    for _ in range(iterations):
+        for i in range(len(nanIndexX)):
+            x, y, z = nanIndexX[i], nanIndexY[i], nanIndexZ[i]
+            dx, dy, dz = signsX[i], signsY[i], signsZ[i]
+
+            neighbors = []
+            if dx[0] != 0:  # can average with the previous x neighbor
+                neighbors.append(interpolatedData[np.clip(x + dx[0], 0, size[0] - 1), y, z])
+            if dx[1] != 0:  # can average with the next x neighbor
+                neighbors.append(interpolatedData[np.clip(x + dx[1], 0, size[0] - 1), y, z])
+
+            if dy[0] != 0:
+                neighbors.append(interpolatedData[x, np.clip(y + dy[0], 0, size[1] - 1), z])
+            if dy[1] != 0:
+                neighbors.append(interpolatedData[x, np.clip(y + dy[1], 0, size[1] - 1), z])
+
+            if dz[0] != 0:
+                neighbors.append(interpolatedData[x, y, np.clip(z + dz[0], 0, size[2] - 1)])
+            if dz[1] != 0:
+                neighbors.append(interpolatedData[x, y, np.clip(z + dz[1], 0, size[2] - 1)])
+
+            # average the neighbors to interpolate the NaN value
+            interpolatedData[x, y, z] = np.nanmean(neighbors)
+    
+    return interpolatedData
+
+def regrid_glodap(glodap_var, glodap_depth, glodap_lat, glodap_lon, model_depth, model_lat, model_lon, ocnmask):
+    # switch order of GLODAP dimensions to match OCIM dimensions
+    glodap_var = np.transpose(glodap_var, (0, 2, 1))
+    # create interpolator
+    interp = RegularGridInterpolator((glodap_depth, glodap_lon, glodap_lat), glodap_var, bounds_error=False, fill_value=None)
+
+    # transform model_lon for anything < 20 (because GLODAP goes from 20ºE - 380ºE)
+    model_lon[model_lon < 20] += 360
+
+    # create meshgrid for OCIM grid
+    depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
+
+    # reshape meshgrid points into a list of coordinates to interpolate to
+    query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
+
+    # perform interpolation (regrid GLODAP data to match OCIM grid)
+    glodap_var = interp(query_points)
+
+    # transform results back to model grid shape
+    glodap_var = glodap_var.reshape(depth.shape)
+
+    # inpaint nans
+    glodap_var = inpaint_nans(glodap_var, mask=ocnmask.astype(bool))
+
+    return glodap_var
+    
+    
+    

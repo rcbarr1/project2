@@ -50,6 +50,8 @@ import project2 as p2
 import xarray as xr
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
+import matplotlib.pyplot as plt
+
 #from scipy.interpolate import griddata
 
 model_path = '/Users/Reese_1/Documents/Research Projects/project2/OCIM2_48L_base/'
@@ -81,7 +83,47 @@ glodap_lat = DIC_data['lat'].to_numpy()     # ºN
 DIC = DIC_data['TCO2'].values
 TA = TA_data['TAlk'].values
 
-# switch order of GLODAP dimensions to match OCIM dimensions
+#%% plot surface distribution
+fig = plt.figure(figsize=(10,7))
+ax = fig.gca()
+cntr = plt.contourf(glodap_lon, glodap_lat, DIC[0, :, :], levels=20, cmap='plasma', vmin=960, vmax=2400)
+c = plt.colorbar(cntr, ax=ax)
+plt.xlabel('longitude (ºE)')
+plt.ylabel('latitude (ºN)')
+plt.title('glodap DIC surface distribution')
+plt.xlim([20, 380]), plt.ylim([-90,90])
+
+fig = plt.figure(figsize=(10,7))
+ax = fig.gca()
+cntr = plt.contourf(glodap_lon, glodap_lat, TA[0, :, :], levels=20, cmap='viridis', vmin=1040, vmax=2640)
+c = plt.colorbar(cntr, ax=ax)
+plt.xlabel('longitude (ºE)')
+plt.ylabel('latitude (ºN)')
+plt.title('glodap TA surface distribution')
+plt.xlim([20, 380]), plt.ylim([-90,90])
+
+# plot distribution along 340.5ºE longitude
+fig = plt.figure(figsize=(10,7))
+ax = fig.gca()
+cntr = plt.contourf(glodap_lat, glodap_depth, DIC[:, :, 320], levels=20, cmap='plasma', vmin=1920, vmax=2280)
+c = plt.colorbar(cntr, ax=ax)
+ax.invert_yaxis()
+plt.xlabel('longitude (ºE)')
+plt.ylabel('depth (m)')
+plt.title('glodap DIC distribution along 340.5ºE longitude')
+plt.xlim([-90, 90]), plt.ylim([5500, 0])
+
+fig = plt.figure(figsize=(10,7))
+ax = fig.gca()
+cntr = plt.contourf(glodap_lat, glodap_depth, TA[:, :, 320], levels=20, cmap='viridis', vmin=2080, vmax=2460)
+c = plt.colorbar(cntr, ax=ax)
+ax.invert_yaxis()
+plt.xlabel('longitude (ºE)')
+plt.ylabel('depth (m)')
+plt.title('glodap TA distribution along 340.5ºE longitude')
+plt.xlim([-90, 90]), plt.ylim([5500, 0])
+
+#%% switch order of GLODAP dimensions to match OCIM dimensions
 DIC = np.transpose(DIC, (0, 2, 1))
 TA = np.transpose(TA, (0, 2, 1))
 
@@ -106,10 +148,53 @@ TA = interpTA(query_points)
 DIC = DIC.reshape(depth.shape)
 TA = TA.reshape(depth.shape)
 
+# inpaint nans
+TA = p2.inpaint_nans(TA, mask=ocnmask.astype(bool))
+DIC = p2.inpaint_nans(DIC, mask=ocnmask.astype(bool))
+
 # transform model_lon and meshgrid back for anything > 360
 model_lon[model_lon > 360] -= 360
 depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
 
+#%% visualize regridded glodap distributions
+fig = plt.figure(figsize=(10,7))
+ax = fig.gca()
+cntr = plt.contourf(model_lon, model_lat, DIC[0, :, :].T, levels=20, cmap='plasma', vmin=960, vmax=2400)
+c = plt.colorbar(cntr, ax=ax)
+plt.xlabel('longitude (ºE)')
+plt.ylabel('latitude (ºN)')
+plt.title('regridded glodap DIC surface distribution')
+plt.xlim([0, 360]), plt.ylim([-90,90])
+
+fig = plt.figure(figsize=(10,7))
+ax = fig.gca()
+cntr = plt.contourf(model_lon, model_lat, TA[0, :, :].T, levels=20, cmap='viridis', vmin=1040, vmax=2640)
+c = plt.colorbar(cntr, ax=ax)
+plt.xlabel('longitude (ºE)')
+plt.ylabel('latitude (ºN)')
+plt.title('regridded glodap TA surface distribution')
+plt.xlim([0, 360]), plt.ylim([-90,90])
+
+# plot distribution along 340.5ºE longitude
+fig = plt.figure(figsize=(10,7))
+ax = fig.gca()
+cntr = plt.contourf(model_lat, model_depth, DIC[:, 170, :], levels=20, cmap='plasma', vmin=1920, vmax=2280)
+c = plt.colorbar(cntr, ax=ax)
+ax.invert_yaxis()
+plt.xlabel('longitude (ºE)')
+plt.ylabel('depth (m)')
+plt.title('regridded glodap DIC distribution along 341ºE longitude')
+plt.xlim([-90, 90]), plt.ylim([5500, 0])
+
+fig = plt.figure(figsize=(10,7))
+ax = fig.gca()
+cntr = plt.contourf(model_lat, model_depth, TA[:, 170, :], levels=20, cmap='viridis', vmin=2080, vmax=2460)
+c = plt.colorbar(cntr, ax=ax)
+ax.invert_yaxis()
+plt.xlabel('longitude (ºE)')
+plt.ylabel('depth (m)')
+plt.title('regridded glodap TA distribution along 341ºE longitude')
+plt.xlim([-90, 90]), plt.ylim([5500, 0])
 #%% get tracer distributions (called "e" vectors in John et al., 2020)
 # POTENTIAL TEMPERATURE (θ)
 # open up .nc dataset included with this model to pull out potential temperature
@@ -161,3 +246,4 @@ new_ptemp = ptemp + del_ptemp
 
 # CHECK IF THIS IS LOGICAL ONCE I HAVE BETTER SURFACE TEMP DATA IN
 # del_ptemp should be essentially zero --> this should be running at steady state
+
