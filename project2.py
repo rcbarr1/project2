@@ -64,7 +64,7 @@ def loadmat(filename):
     data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
     return _check_keys(data)
     
-def inpaint_nans(array_3d, mask=None, iterations=100):
+def inpaint_nans3d(array_3d, mask=None, iterations=100):
     '''
     adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
     to incorporate nan mask so inpainting doesn't happen over land 
@@ -127,6 +127,63 @@ def inpaint_nans(array_3d, mask=None, iterations=100):
     
     return interpolatedData
 
+def inpaint_nans2d(array_2d, mask=None, iterations=100):
+    '''
+    adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
+    to incorporate nan mask so inpainting doesn't happen over land 
+    '''
+    # dimensions of input
+    size = array_2d.shape
+
+    # get index of nan in corrupted data
+    nan_mask = np.isnan(array_2d)
+    
+    # If a mask is provided, combine it with the NaN mask
+    if mask is not None:
+        nan_mask = nan_mask & mask
+        
+    nanIndex = nan_mask.nonzero()
+
+    interpolatedData = array_2d.copy()
+
+    # make an initial guess for the interpolated data using the mean of the non NaN values
+    interpolatedData[nanIndex] = np.nanmean(array_2d)
+
+    def sign(index, max_index):
+        # pass additional max_index to this func as this is now a variable
+        if index == 0:
+            return [1, 0]
+        elif index == max_index - 1:
+            return [-1, 0]
+        else:
+            return [-1, 1]
+
+    # calculate the sign for each dimension separately
+    nanIndexX, nanIndexY = nanIndex[0], nanIndex[1]
+    signsX = np.array([sign(x, size[0]) for x in nanIndexX])
+    signsY = np.array([sign(y, size[1]) for y in nanIndexY])
+            
+    for _ in range(iterations):
+        for i in range(len(nanIndexX)):
+            x, y = nanIndexX[i], nanIndexY[i]
+            dx, dy = signsX[i], signsY[i]
+
+            neighbors = []
+            if dx[0] != 0:  # can average with the previous x neighbor
+                neighbors.append(interpolatedData[np.clip(x + dx[0], 0, size[0] - 1), y])
+            if dx[1] != 0:  # can average with the next x neighbor
+                neighbors.append(interpolatedData[np.clip(x + dx[1], 0, size[0] - 1), y])
+
+            if dy[0] != 0:
+                neighbors.append(interpolatedData[x, np.clip(y + dy[0], 0, size[1] - 1)])
+            if dy[1] != 0:
+                neighbors.append(interpolatedData[x, np.clip(y + dy[1], 0, size[1] - 1)])
+
+            # average the neighbors to interpolate the NaN value
+            interpolatedData[x, y] = np.nanmean(neighbors)
+    
+    return interpolatedData
+
 def regrid_glodap(glodap_var, glodap_depth, glodap_lat, glodap_lon, model_depth, model_lat, model_lon, ocnmask):
     '''
     regrid glodap data to model grid, inpaint nans
@@ -166,14 +223,63 @@ def regrid_glodap(glodap_var, glodap_depth, glodap_lat, glodap_lon, model_depth,
     glodap_var = glodap_var.reshape(depth.shape)
 
     # inpaint nans
-    glodap_var = inpaint_nans(glodap_var, mask=ocnmask.astype(bool))
+    glodap_var = inpaint_nans3d(glodap_var, mask=ocnmask.astype(bool))
     
     # transform model_lon and meshgrid back for anything > 360
     model_lon[model_lon > 360] -= 360
 
     return glodap_var
+
+def regrid_woa(woa_var, woa_lat, woa_lon, model_lat, model_lon, ocnmask):
+    '''
+    regrid woa data to model grid, inpaint nans
+
+    Parameters
+    ----------
+    woa_var : variable to regrid (dimensions: depth, longitude, latitude)
+    woa_lat : array of glodap latitudes
+    woa_lon : array of glodap longitudes
+    model_lat : array pf model latitudes
+    model_lon : array of model longitudes
+    ocnmask : mask same shape as woa_var when 1 marks an ocean cell and 0 marks land
+
+    Returns
+    -------
+    woa_var : regridded to model grid
+
+    '''
+    # create interpolator
+    interp = RegularGridInterpolator((woa_lon, woa_lat), woa_var, bounds_error=False, fill_value=None)
+
+    # create meshgrid for OCIM grid
+    lon, lat = np.meshgrid(model_lon, model_lat, indexing='ij')
+
+    # reshape meshgrid points into a list of coordinates to interpolate to
+    query_points = np.array([lon.ravel(), lat.ravel()]).T
+
+    # perform interpolation (regrid GLODAP data to match OCIM grid)
+    woa_var = interp(query_points)
+
+    # transform results back to model grid shape
+    woa_var = woa_var.reshape(lon.shape)
+
+    # inpaint nans
+    woa_var = inpaint_nans2d(woa_var, mask=ocnmask.astype(bool))
+
+    return woa_var
     
-def plot_surface(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
+def plot_surface2d(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
+    fig = plt.figure(figsize=(10,7))
+    ax = fig.gca()
+    cntr = plt.contourf(lons, lats, variable, levels=20, cmap=cmap, vmin=vmin, vmax=vmax)
+    c = plt.colorbar(cntr, ax=ax)
+    cntr.set_clim(vmin, vmax)
+    plt.xlabel('longitude (ºE)')
+    plt.ylabel('latitude (ºN)')
+    plt.title(title)
+    plt.xlim([0, 380]), plt.ylim([-90,90])
+
+def plot_surface3d(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
     fig = plt.figure(figsize=(10,7))
     ax = fig.gca()
     cntr = plt.contourf(lons, lats, variable[depth_level, :, :].T, levels=20, cmap=cmap, vmin=vmin, vmax=vmax)
@@ -183,7 +289,7 @@ def plot_surface(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
     plt.title(title)
     plt.xlim([0, 380]), plt.ylim([-90,90])
 
-def plot_longitude(lats, depths, variable, longitude, vmin, vmax, cmap, title):
+def plot_longitude3d(lats, depths, variable, longitude, vmin, vmax, cmap, title):
     fig = plt.figure(figsize=(10,7))
     ax = fig.gca()
     cntr = plt.contourf(lats, depths, variable[:, longitude, :], levels=20, cmap=cmap, vmin=vmin, vmax=vmax)

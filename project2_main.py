@@ -49,11 +49,10 @@ Created on Mon Oct  7 13:55:39 2024
 import project2 as p2
 import xarray as xr
 import numpy as np
-import matplotlib.pyplot as plt
 
 model_path = '/Users/Reese_1/Documents/Research Projects/project2/OCIM2_48L_base/'
 glodap_path = '/Users/Reese_1/Documents/Research Projects/project2/GLODAPv2.2016b.MappedProduct/'
-
+woa_path = '/Users/Reese_1/Documents/Research Projects/project2/woa18/'
 #%% load transport matrix (OCIM-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
 TR = p2.loadmat(model_path + 'OCIM2_48L_base_transport.mat')
@@ -85,10 +84,10 @@ model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 #TA = np.transpose(TA, (0, 2, 1))
 
 # plot surface & longitude transect straight from glodap
-#p2.plot_surface(glodap_lon, glodap_lat, DIC, 0, 960, 2400, 'plasma', 'glodap DIC surface distribution')
-#p2.plot_surface(glodap_lon, glodap_lat, TA, 0, 1040, 2640, 'viridis', 'glodap DIC surface distribution')
-#p2.plot_longitude(glodap_lat, glodap_depth, DIC, 320, 1920, 2280, 'plasma', 'glodap DIC distribution along 340.5ºE longitude')
-#p2.plot_longitude(glodap_lat, glodap_depth, TA, 320, 2080, 2460, 'viridis', 'glodap TA distribution along 340.5ºE longitude')
+#p2.plot_surface3d(glodap_lon, glodap_lat, DIC, 0, 960, 2400, 'plasma', 'glodap DIC surface distribution')
+#p2.plot_surface3d(glodap_lon, glodap_lat, TA, 0, 1040, 2640, 'viridis', 'glodap DIC surface distribution')
+#p2.plot_longitude3d(glodap_lat, glodap_depth, DIC, 320, 1920, 2280, 'plasma', 'glodap DIC distribution along 340.5ºE longitude')
+#p2.plot_longitude3d(glodap_lat, glodap_depth, TA, 320, 2080, 2460, 'viridis', 'glodap TA distribution along 340.5ºE longitude')
 
 #DIC = p2.regrid_glodap(DIC, glodap_depth, glodap_lat, glodap_lon, model_depth, model_lat, model_lon, ocnmask)
 #TA = p2.regrid_glodap(TA, glodap_depth, glodap_lat, glodap_lon, model_depth, model_lat, model_lon, ocnmask)
@@ -102,10 +101,10 @@ DIC = np.load(glodap_path + 'DIC_AO.npy')
 TA = np.load(glodap_path + 'TA_AO.npy')
 
 # visualize regridded data
-#p2.plot_surface(model_lon, model_lat, DIC, 0, 960, 2400, 'plasma', 'regridded glodap DIC surface distribution')
-#p2.plot_surface(model_lon, model_lat, TA, 0, 1040, 2640, 'viridis', 'regridded glodap TA surface distribution')
-#p2.plot_longitude(model_lat, model_depth, DIC, 170, 1920, 2280, 'plasma', 'regridded glodap DIC distribution along 341ºE longitude')
-#p2.plot_longitude(model_lat, model_depth, TA, 170, 2080, 2460, 'viridis', 'regridded glodap TA distribution along 341ºE longitude')
+#p2.plot_surface3d(model_lon, model_lat, DIC, 0, 960, 2400, 'plasma', 'regridded glodap DIC surface distribution')
+#p2.plot_surface3d(model_lon, model_lat, TA, 0, 1040, 2640, 'viridis', 'regridded glodap TA surface distribution')
+#p2.plot_longitude3d(model_lat, model_depth, DIC, 170, 1920, 2280, 'plasma', 'regridded glodap DIC distribution along 341ºE longitude')
+#p2.plot_longitude3d(model_lat, model_depth, TA, 170, 2080, 2460, 'viridis', 'regridded glodap TA distribution along 341ºE longitude')
 
 #%% get tracer distributions (called "e" vectors in John et al., 2020)
 # POTENTIAL TEMPERATURE (θ)
@@ -119,43 +118,94 @@ DIC = DIC[ocnmask == 1].flatten(order='F') # flatten only ocean boxes in column-
 # ALKALINITY
 TA = TA[ocnmask == 1].flatten(order='F') # flatten only ocean boxes in column-major form ("E" vector format)
 
-#%% create "b" vector for each tracer (source/sink vector) --> will need to repeat at each time step because dependent on previous time step
+#%% load in data to make "b" vector for each tracer (source/sink vector) --> will need to create vectors fully at each time step because dependent on previous time step
 
-# POTENTIAL TEMPERATURE (θ)
+# DATA FOR POTENTIAL TEMPERATURE (θ)
 # in top model layer, you have exchange with atmosphere. In other model layers,
 # there is no source/sink. This is explained more fully in DeVries, 2014
 
-# convert ptemp calculated at previous time step to 3D grid, pull surface ptemps
+# atmospheric "restoring" potential temperature comes from World Ocean Atlas 13 temperature data
+# don't need to convert potential temperature to temperature because reference point is sea level, so they're equivalent at the surface
+# I could only download WOA 18 data, from https://www.ncei.noaa.gov/access/world-ocean-atlas-2018/bin/woa18.pl
+woa_data = xr.open_dataset(woa_path + '1_woa18_decav_t00_01.nc', decode_times=False)
+woa_data = woa_data.isel(time=0).isel(depth=0)
+
+# transform WOA longitude to be 0 to 360, reorder to increase from 0 to 360
+woa_data = woa_data.assign(**{'lon': np.mod(woa_data['lon'], 360)})
+woa_data = woa_data.reindex({ 'lon' : np.sort(woa_data['lon'])})
+
+# export to numpy
+ptemp_atm = woa_data['t_an'].to_numpy()
+woa_lat = woa_data['lat'].to_numpy()
+woa_lon = woa_data['lon'].to_numpy()
+
+# regrid surface woa data to be same shape as ptemp_surf
+#p2.plot_surface2d(woa_lon, woa_lat, ptemp_atm, 0, -30, 40, 'magma', 'WOA temp surface distribution')
+ptemp_atm = p2.regrid_woa(ptemp_atm.T, woa_lat, woa_lon, model_lat, model_lon, ocnmask[0, :, :])
+p2.plot_surface2d(model_lon, model_lat, ptemp_atm.T, 0, -5, 32, 'magma', 'WOA temp surface distribution')
+ 
+   
+# DATA FOR DIC
+
+# DATA FOR ALKALINITY
+
+#%% new attempt:
+# okay so what if I make ptemp_atm what it has to be to do restoring? should be able to back-calculate out of system of equations
 ptemp_3D = np.full(ocnmask.shape, np.nan)
 ptemp_3D[ocnmask == 1] = np.reshape(ptemp, (-1,), order='F')
 ptemp_surf = ptemp_3D[0, :, :]
 
-# atmospheric "restoring" potential temperature comes from World Ocean Atlas 13 temperature data
-# don't need to convert potential temperature to temperature because reference point is sea level, so they're equivalent at the surface
-# this is currently down due to hurricane helene :(( when it comes back up do this
-    # going to want to grid potential temperature at surface onto 180 x 91 grid (get ptemp_atm)
-#ptemp_atm = np.full(ptemp_surf.shape, np.nan)
-ptemp_atm = np.zeros(ptemp_surf.shape)
-    
-# all should be zero, except surface ocean boxes should equal 30^-1 * (θ_atm - θ)
-b_ptemp = np.zeros(ocnmask.shape) # make an array of zeros the size of the grid
-b_ptemp[0, :, :] = 1/30 * (ptemp_atm - ptemp_surf) # create boundary condition/forcing for top model layer
-b_ptemp = b_ptemp[ocnmask == 1].flatten(order='F') # reshape b vector
+# assuming steady state, de/dt = 0, so A*θ = b = 1/(30/365.25) * (θ_atm - θ)
+# each time step is one year? how were they doing one month in DeVries, 2022?
+# taking out the 365.25 factor makes the backed out temperature make NO sense
+TR_ptemp = TR*ptemp
+TR_ptemp_3d = np.full(ocnmask.shape, np.nan)
+TR_ptemp_3d[ocnmask == 1] = np.reshape(TR_ptemp, (-1,), order='F')
+ptemp_atm = TR_ptemp_3d[0, :, :] / (1/(30/365.25)) + ptemp_surf
 
-# DIC
+p2.plot_surface2d(model_lon, model_lat, ptemp_atm.T, 0, -5, 32, 'magma', 'back-calculated temp surface distribution')
 
-# ALKALINITY
+# THIS WORKS!! except numerical errors really start to compound after even one time step --> how to account for this?
 
-#%% move one time step
+
+#%% move time steps
 # format of equation is de/dt + A*e = b (or dc/dt + TR*c = s, see DeVries, 2014)
 # c = concentration of tracer, s = source/sink term
 # therefore, to solve for next time step (t2) from current time step (t1), need to do
 #   de/dt = -A*e1 + b
 #   e2 = e1 + de/dt
-
-del_ptemp = -1 * TR * ptemp + b_ptemp
-new_ptemp = ptemp + del_ptemp
+# DeVries 2022 has it backwards for OCIM2-48L 
+#   de/dt = A * e - b
 
 # CHECK IF THIS IS LOGICAL ONCE I HAVE BETTER SURFACE TEMP DATA IN
 # del_ptemp should be essentially zero --> this should be running at steady state
 
+ptemp_3D = np.full(ocnmask.shape, np.nan)
+ptemp_3D[ocnmask == 1] = np.reshape(ptemp, (-1,), order='F')
+p2.plot_surface3d(model_lon, model_lat, ptemp_3D, 0, -4, 32, 'plasma', 'surface potential temperature at t=0')
+p2.plot_longitude3d(model_lat, model_depth, ptemp_3D, 170, -4, 32, 'plasma', 'potential temperature at t=0 along 341ºE longitude')
+
+for t in range(1, 2):
+    print(t)
+    # POTENTIAL TEMPERATURE:
+    # calculate b (source/sink vector)
+    # all of b should be zero, except surface ocean boxes should equal s = k / ∆z1 * (alpha * θ_atm - θ) (see DeVries, 2014)
+    # alpha = 1
+    # k = ∆z1 * (30 days)^-1 --> I think this means k / ∆z1 = 1/(30 days) = 1/(30/365.25 years)
+    
+    ptemp_3D = np.full(ocnmask.shape, np.nan)
+    ptemp_3D[ocnmask == 1] = np.reshape(ptemp, (-1,), order='F')
+    ptemp_surf = ptemp_3D[0, :, :]
+    
+    b_ptemp = np.zeros(ocnmask.shape) # make an array of zeros the size of the grid
+    b_ptemp[0, :, :] = 1/(30/365.25) * (ptemp_atm - ptemp_surf) # create boundary condition/forcing for top model layer
+    b_ptemp = b_ptemp[ocnmask == 1].flatten(order='F') # reshape b vector
+    
+    del_ptemp = TR * ptemp - b_ptemp
+    ptemp += del_ptemp
+    
+    new_ptemp_3D = np.full(ocnmask.shape, np.nan)
+    new_ptemp_3D[ocnmask == 1] = np.reshape(ptemp, (-1,), order='F')
+
+    p2.plot_surface3d(model_lon, model_lat, new_ptemp_3D, 0, -4, 32, 'plasma', 'surface potential temperature at t=' + str(t))
+    p2.plot_longitude3d(model_lat, model_depth, new_ptemp_3D, 170, -4, 32, 'plasma', 'potential temperature at t=' +str(t) + ' along 341ºE longitude')
