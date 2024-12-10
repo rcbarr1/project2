@@ -246,7 +246,7 @@ for t in range(1, num_years):
         b_c[0, :, :] = 1/(30/365.25) * (c_anomaly_atm - c_anomaly_surf) # create boundary condition/forcing for top model layer
     b_c = b_c[ocnmask == 1].flatten(order='F') # reshape b vector
     
-    c_anomaly = spsolve(eye(len(b_c)) - TR, c_anomaly + b_c)
+    c_anomaly = spsolve(eye(len(b_c)) - TR, c_anomaly + b_c) 
     
     new_c_anomaly_3D = np.full(ocnmask.shape, np.nan)
     new_c_anomaly_3D[ocnmask == 1] = np.reshape(c_anomaly, (-1,), order='F')
