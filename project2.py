@@ -12,6 +12,7 @@ import scipy.io as spio
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
 
 def loadmat(filename):
     '''
@@ -271,9 +272,10 @@ def regrid_woa(woa_var, woa_lat, woa_lon, model_lat, model_lon, ocnmask):
 def plot_surface2d(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
     fig = plt.figure(figsize=(10,7))
     ax = fig.gca()
-    cntr = plt.contourf(lons, lats, variable, levels=20, cmap=cmap, vmin=vmin, vmax=vmax)
+    levels = np.linspace(vmin-0.1, vmax, 100)
+    cntr = plt.contourf(lons, lats, variable, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
     c = plt.colorbar(cntr, ax=ax)
-    cntr.set_clim(vmin, vmax)
+    c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
     plt.xlabel('longitude (ºE)')
     plt.ylabel('latitude (ºN)')
     plt.title(title)
@@ -282,20 +284,24 @@ def plot_surface2d(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
 def plot_surface3d(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
     fig = plt.figure(figsize=(10,7))
     ax = fig.gca()
-    cntr = plt.contourf(lons, lats, variable[depth_level, :, :].T, levels=20, cmap=cmap, vmin=vmin, vmax=vmax)
+    levels = np.linspace(vmin-0.1, vmax, 100)
+    cntr = plt.contourf(lons, lats, variable[depth_level, :, :].T, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
     c = plt.colorbar(cntr, ax=ax)
+    c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
     plt.xlabel('longitude (ºE)')
     plt.ylabel('latitude (ºN)')
     plt.title(title)
-    plt.xlim([0, 380]), plt.ylim([-90,90])
+    plt.xlim([0, 360]), plt.ylim([-90,90])
 
 def plot_longitude3d(lats, depths, variable, longitude, vmin, vmax, cmap, title):
     fig = plt.figure(figsize=(10,7))
     ax = fig.gca()
-    cntr = plt.contourf(lats, depths, variable[:, longitude, :], levels=20, cmap=cmap, vmin=vmin, vmax=vmax)
+    levels = np.linspace(vmin-0.1, vmax, 100)
+    cntr = plt.contourf(lats, depths, variable[:, longitude, :], levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
     c = plt.colorbar(cntr, ax=ax)
+    c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
     ax.invert_yaxis()
-    plt.xlabel('longitude (ºE)')
+    plt.xlabel('latitude (ºN)')
     plt.ylabel('depth (m)')
     plt.title(title)
     plt.xlim([-90, 90]), plt.ylim([5500, 0])
