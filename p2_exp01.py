@@ -58,61 +58,29 @@ from scipy.sparse.linalg import spsolve
 import h5netcdf
 import datetime as dt
 
-model_path = '/Users/Reese_1/Documents/Research Projects/project2/OCIM2_48L_base/'
-glodap_path = '/Users/Reese_1/Documents/Research Projects/project2/GLODAPv2.2016b.MappedProduct/'
-woa_path = '/Users/Reese_1/Documents/Research Projects/project2/woa18/'
+data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
+
 #%% load transport matrix (OCIM-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
-TR = p2.loadmat(model_path + 'OCIM2_48L_base_transport.mat')
+TR = p2.loadmat(data_path + 'OCIM2_48L_base/OCIM2_48L_base_transport.mat')
 TR = TR['TR']
 
 # open up rest of data associated with transport matrix
-model_data = xr.open_dataset(model_path + 'OCIM2_48L_base_data.nc')
+model_data = xr.open_dataset(data_path + 'OCIM2_48L_base/OCIM2_48L_base_data.nc')
 ocnmask = model_data['ocnmask'].to_numpy()
 
 model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
 model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 
-#%% load and regrid GLODAP data (https://glodap.info/index.php/mapped-data-product/)
-#DIC_data = xr.open_dataset(glodap_path + 'GLODAPv2.2016b.TCO2.nc')
-#TA_data = xr.open_dataset(glodap_path + 'GLODAPv2.2016b.TAlk.nc')
+# regrid GLODAP data
+#p2.regrid_glodap(data_path, 'TCO2', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
 
-# pull out arrays of depth, latitude, and longitude from GLODAP
-#glodap_depth = DIC_data['Depth'].to_numpy() # m below sea surface
-#glodap_lon = DIC_data['lon'].to_numpy()     # ºE
-#glodap_lat = DIC_data['lat'].to_numpy()     # ºN
+# upload regridded GLODAP data
+DIC = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy')
+TA = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')
 
-# pull out values of DIC and TA from GLODAP
-#DIC = DIC_data['TCO2'].values
-#TA = TA_data['TAlk'].values
-
-# switch order of GLODAP dimensions to match OCIM dimensions
-#DIC = np.transpose(DIC, (0, 2, 1))
-#TA = np.transpose(TA, (0, 2, 1))
-
-# plot surface & longitude transect straight from glodap
-#p2.plot_surface3d(glodap_lon, glodap_lat, DIC, 0, 960, 2400, 'plasma', 'glodap DIC surface distribution')
-#p2.plot_surface3d(glodap_lon, glodap_lat, TA, 0, 1040, 2640, 'viridis', 'glodap DIC surface distribution')
-#p2.plot_longitude3d(glodap_lat, glodap_depth, DIC, 320, 1920, 2280, 'plasma', 'glodap DIC distribution along 340.5ºE longitude')
-#p2.plot_longitude3d(glodap_lat, glodap_depth, TA, 320, 2080, 2460, 'viridis', 'glodap TA distribution along 340.5ºE longitude')
-
-#DIC = p2.regrid_glodap(DIC, glodap_depth, glodap_lat, glodap_lon, model_depth, model_lat, model_lon, ocnmask)
-#TA = p2.regrid_glodap(TA, glodap_depth, glodap_lat, glodap_lon, model_depth, model_lat, model_lon, ocnmask)
-
-# save regridded data
-#np.save(glodap_path + 'DIC_AO.npy', DIC)
-#np.save(glodap_path + 'TA_AO.npy', TA)
-
-# upload regridded data
-DIC = np.load(glodap_path + 'DIC_AO.npy')
-TA = np.load(glodap_path + 'TA_AO.npy')
-
-# visualize regridded data
-#p2.plot_surface3d(model_lon, model_lat, DIC, 0, 960, 2400, 'plasma', 'regridded glodap DIC surface distribution')
-#p2.plot_surface3d(model_lon, model_lat, TA, 0, 1040, 2640, 'viridis', 'regridded glodap TA surface distribution')
-#p2.plot_longitude3d(model_lat, model_depth, DIC, 170, 1920, 2280, 'plasma', 'regridded glodap DIC distribution along 341ºE longitude')
-#p2.plot_longitude3d(model_lat, model_depth, TA, 170, 2080, 2460, 'viridis', 'regridded glodap TA distribution along 341ºE longitude')
 
 #%% get tracer distributions (called "e" vectors in John et al., 2020)
 # POTENTIAL TEMPERATURE (θ)
@@ -135,7 +103,7 @@ TA = TA[ocnmask == 1].flatten(order='F') # flatten only ocean boxes in column-ma
 # atmospheric "restoring" potential temperature comes from World Ocean Atlas 13 temperature data
 # don't need to convert potential temperature to temperature because reference point is sea level, so they're equivalent at the surface
 # I could only download WOA 18 data, from https://www.ncei.noaa.gov/access/world-ocean-atlas-2018/bin/woa18.pl
-woa_data = xr.open_dataset(woa_path + '1_woa18_decav_t00_01.nc', decode_times=False)
+woa_data = xr.open_dataset(data_path + 'woa18/1_woa18_decav_t00_01.nc', decode_times=False)
 woa_data = woa_data.isel(time=0).isel(depth=0)
 
 # transform WOA longitude to be 0 to 360, reorder to increase from 0 to 360
@@ -302,5 +270,4 @@ with h5netcdf.File(filename, 'w', invalid_netcdf=True) as ncfile:
     
 print(xr.open_dataset(filename))
 
-    
     

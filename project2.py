@@ -12,7 +12,9 @@ import scipy.io as spio
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
+import xarray as xr
+import h5netcdf
+import datetime as dt
 
 def loadmat(filename):
     '''
@@ -65,6 +67,77 @@ def loadmat(filename):
     data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
     return _check_keys(data)
     
+def save_model_output(filename, depth, lon, lat, time, tracers, tracer_names=None, tracer_units=None, global_attrs=None):
+    '''
+    Save model output to a NetCDF file.
+    
+    Parameters
+    ----------
+    filename (str): Name of the NetCDF file to create.
+    depth (list or array): Depth values.
+    lon (list or array): Longitude values.
+    lat (list or array): Latitude values.
+    time (list or array): Time values (e.g., in years).
+    tracers (list of 4D arrays): List of 4D arrays (time x depth x lon x lat) for each tracer.
+    tracer_names (list of str, optional): Names of the tracers corresponding to each tracer set in `tracers`.
+    tracer_units (list of str, optional): Units of the tracers corresponding to each tracer set in `tracers`.
+    global_attrs (dict, optional): Additional global attributes for the NetCDF file.
+    '''
+
+    if tracer_names is None:
+        tracer_names = [f"tracer_{i}" for i in range(len(tracers))]
+
+    if tracer_units is None:
+        tracer_units = ["" for _ in tracers]
+
+    # Validate input lengths
+    if len(tracers) != len(tracer_names):
+        raise ValueError("The number of tracers must match the number of tracer names.")
+    if len(tracers) != len(tracer_units):
+        raise ValueError("The number of tracers must match the number of tracer units.")
+
+    with h5netcdf.File(filename, 'w', invalid_netcdf=True) as ncfile:
+        # Create dimensions
+        ncfile.dimensions['time'] = len(time)
+        ncfile.dimensions['depth'] = len(depth)
+        ncfile.dimensions['lon'] = len(lon)
+        ncfile.dimensions['lat'] = len(lat)
+
+        # Create coordinate variables
+        nc_time = ncfile.create_variable('time', ('time',), dtype='f8')
+        nc_depth = ncfile.create_variable('depth', ('depth',), dtype='f8')
+        nc_lon = ncfile.create_variable('lon', ('lon',), dtype='f8')
+        nc_lat = ncfile.create_variable('lat', ('lat',), dtype='f8')
+
+        # Set units and descriptions for coordinate variables
+        nc_time.attrs['units'] = 'years'
+        nc_depth.attrs['units'] = 'meters'
+        nc_lon.attrs['units'] = 'degrees_east'
+        nc_lat.attrs['units'] = 'degrees_north'
+
+        # Write coordinate data
+        nc_time[:] = time
+        nc_depth[:] = depth
+        nc_lon[:] = lon
+        nc_lat[:] = lat
+
+        # Create and write tracer variables
+        for tracer_name, tracer_data, tracer_unit in zip(tracer_names, tracers, tracer_units):
+            tracer_var = ncfile.create_variable(tracer_name, ('time', 'depth', 'lon', 'lat'), dtype='f8')
+            tracer_var.attrs['description'] = f"{tracer_name} data"
+            tracer_var.attrs['units'] = tracer_unit
+
+            # Write 4D tracer data
+            tracer_var[:, :, :, :] = tracer_data
+
+        # Add global attributes
+        ncfile.attrs['description'] = 'Model output with dynamic tracers'
+        ncfile.attrs['history'] = 'Created ' + dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        ncfile.attrs['source'] = 'Python script'
+        if global_attrs:
+            for key, value in global_attrs.items():
+                ncfile.attrs[key] = value
+
 def inpaint_nans3d(array_3d, mask=None, iterations=100):
     '''
     adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
@@ -185,28 +258,37 @@ def inpaint_nans2d(array_2d, mask=None, iterations=100):
     
     return interpolatedData
 
-def regrid_glodap(glodap_var, glodap_depth, glodap_lat, glodap_lon, model_depth, model_lat, model_lon, ocnmask):
+def regrid_glodap(data_path, glodap_var, model_depth, model_lat, model_lon, ocnmask):
     '''
-    regrid glodap data to model grid, inpaint nans
+    regrid glodap data to model grid, inpaint nans, save as .npy file
 
     Parameters
     ----------
-    glodap_var : variable to regrid (dimensions: depth, longitude, latitude)
-    glodap_depth : array of glodap depth levels
-    glodap_lat : array of glodap latitudes
-    glodap_lon : array of glodap longitudes
+    data_path : path to folder which contains GLODAPv2.2016b.MappedProduct folder from https://glodap.info/index.php/mapped-data-product/
+    glodap_var : variable to regrid as named in GLODAP (dimensions: depth, longitude, latitude)
     model_depth : array of model depth levels
     model_lat : array pf model latitudes
     model_lon : array of model longitudes
     ocnmask : mask same shape as glodap_var when 1 marks an ocean cell and 0 marks land
 
-    Returns
-    -------
-    glodap_var : regridded to model grid
-
     '''
+    
+    # load GLODAP data (https://glodap.info/index.php/mapped-data-product/)
+    glodap_data = xr.open_dataset(data_path + 'GLODAPv2.2016b.MappedProduct/GLODAPv2.2016b.' + glodap_var + '.nc')
+
+    # pull out arrays of depth, latitude, and longitude from GLODAP
+    glodap_depth = glodap_data['Depth'].to_numpy() # m below sea surface
+    glodap_lon = glodap_data['lon'].to_numpy()     # ºE
+    glodap_lat = glodap_data['lat'].to_numpy()     # ºN
+
+    # pull out values of DIC and TA from GLODAP
+    var = glodap_data[glodap_var].values
+
+    # switch order of GLODAP dimensions to match OCIM dimensions
+    var = np.transpose(var, (0, 2, 1))
+    
     # create interpolator
-    interp = RegularGridInterpolator((glodap_depth, glodap_lon, glodap_lat), glodap_var, bounds_error=False, fill_value=None)
+    interp = RegularGridInterpolator((glodap_depth, glodap_lon, glodap_lat), var, bounds_error=False, fill_value=None)
 
     # transform model_lon for anything < 20 (because GLODAP goes from 20ºE - 380ºE)
     model_lon[model_lon < 20] += 360
@@ -229,7 +311,14 @@ def regrid_glodap(glodap_var, glodap_depth, glodap_lat, glodap_lon, model_depth,
     # transform model_lon and meshgrid back for anything > 360
     model_lon[model_lon > 360] -= 360
 
-    return glodap_var
+    # save regridded data
+    if glodap_var == 'TCO2':
+        np.save(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy', var)
+    elif glodap_var == 'TAlk':
+        np.save(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy', var)
+    else:
+        np.save(data_path + 'GLODAPv2.2016b.MappedProduct/' + glodap_var + '_AO.npy', var)
+
 
 def regrid_woa(woa_var, woa_lat, woa_lon, model_lat, model_lon, ocnmask):
     '''
