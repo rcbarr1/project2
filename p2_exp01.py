@@ -74,7 +74,7 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 
 # regrid GLODAP data
-#p2.regrid_glodap(data_path, 'TCO2', model_depth, model_lat, model_lon, ocnmask)
+p2.regrid_glodap(data_path, 'TCO2', model_depth, model_lat, model_lon, ocnmask)
 #p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded GLODAP data

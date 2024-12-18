@@ -35,6 +35,7 @@ from scipy.sparse import eye
 from scipy.sparse.linalg import spsolve
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
+output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
 
 #%% load transport matrix (OCIM-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
@@ -67,19 +68,18 @@ c_anomaly_atm = c_anomaly_atm[0, :, :]
 c_anomaly_3D = np.full(ocnmask.shape, np.nan)
 c_anomaly_3D[ocnmask == 1] = np.reshape(c_anomaly, (-1,), order='F')
 
-c_anomalies = np.zeros([num_years, model_depth, model_lon, model_lat])
+c_anomalies = np.zeros([num_years, len(model_depth), len(model_lon), len(model_lat)])
 c_anomalies [0, :, :, :] = c_anomaly_3D
 
 for t in range(1, num_years):
     print(t)
     # assuming constant b here, don't need to recalculate in this loop
-    
     c_anomaly_surf = c_anomaly_3D[0, :, :]
     
     # turn off surface forcing after 5 years
     b_c = np.zeros(ocnmask.shape) # make an array of zeros the size of the grid
     if t <= 5:
-        b_c[0, :, :] = 1/(30/365.25) * (c_anomaly_atm - c_anomaly_surf) # create boundary condition/forcing for top model layer
+        b_c[0, :, :] = 1/(30/365.25) * (c_anomaly_atm - c_anomaly_surf) # create source/sink vector that captures forcing for patch of top model layer
     b_c = b_c[ocnmask == 1].flatten(order='F') # reshape b vector
     
     c_anomaly = spsolve(eye(len(b_c)) - TR, c_anomaly + b_c) 
@@ -89,17 +89,16 @@ for t in range(1, num_years):
     c_anomalies[t, :, :, :] = new_c_anomaly_3D
     
 #%% save model output   
-filename = '/Users/Reese_1/Documents/Research Projects/project2/outputs/exp00_2024-12-12-a.nc'
 global_attrs = {'description':'exp00: conservative test tracer (could be conservative temperature) moving from patch in ocean. Patch is forced from t = 1 through t = 5, after that, boundary condition is zero. Forcing applied is c_anomaly_atm[0, 90:100, 30:40] = 1; b_c[0, :, :] = 1/(30/365.25) * (c_anomaly_atm - c_anomaly_surf)'}
 
-p2.save_model_output(filename, model_depth, model_lon, model_lat, np.array(range(0, num_years)), c_anomalies, tracer_names='tracer_concentration', tracer_units=None, global_attrs=global_attrs)
+p2.save_model_output(output_path + 'exp00_2024-12-12-a.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c_anomalies], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
 
 #%% open and plot model output
-print(xr.open_dataset(filename))
+c_anomalies = xr.open_dataset(output_path + 'exp00_2024-12-12-a.nc')
 
 for t in range(0, num_years):
-    p2.plot_surface3d(model_lon, model_lat, c_anomalies[t, :, :, :], 0, 0, 1.5, 'plasma', 'surface potential temperature anomaly at t=' + str(t))
+    p2.plot_surface3d(model_lon, model_lat, c_anomalies['tracer_concentration'].isel(time=t), 0, 0, 1.5, 'plasma', 'surface tracer concentration anomaly at t=' + str(t))
     
 for t in range(0, num_years):
-    p2.plot_longitude3d(model_lat, model_depth, c_anomalies[t, :, :, :], 100, 0, 1.5, 'plasma', 'potential temperature anomaly at t=' +str(t) + ' along 201ºE longitude')
+    p2.plot_longitude3d(model_lat, model_depth, c_anomalies['tracer_concentration'].isel(time=t), 100, 0, 1.5, 'plasma', 'tracer concentration anomaly at t=' +str(t) + ' along 201ºE longitude')
     

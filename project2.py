@@ -131,7 +131,6 @@ def save_model_output(filename, depth, lon, lat, time, tracers, tracer_names=Non
             tracer_var[:, :, :, :] = tracer_data
 
         # Add global attributes
-        ncfile.attrs['description'] = 'Model output with dynamic tracers'
         ncfile.attrs['history'] = 'Created ' + dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         ncfile.attrs['source'] = 'Python script'
         if global_attrs:
@@ -300,16 +299,17 @@ def regrid_glodap(data_path, glodap_var, model_depth, model_lat, model_lon, ocnm
     query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
 
     # perform interpolation (regrid GLODAP data to match OCIM grid)
-    glodap_var = interp(query_points)
+    var = interp(query_points)
 
     # transform results back to model grid shape
-    glodap_var = glodap_var.reshape(depth.shape)
+    var = var.reshape(depth.shape)
 
     # inpaint nans
-    glodap_var = inpaint_nans3d(glodap_var, mask=ocnmask.astype(bool))
+    var = inpaint_nans3d(var, mask=ocnmask.astype(bool))
     
     # transform model_lon and meshgrid back for anything > 360
     model_lon[model_lon > 360] -= 360
+    
 
     # save regridded data
     if glodap_var == 'TCO2':
