@@ -37,7 +37,7 @@ from scipy.sparse.linalg import spsolve
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
 
-#%% load transport matrix (OCIM-48L, from Holzer et al., 2021)
+#%% load transport matrix (OCIM2-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
 TR = p2.loadmat(data_path + 'OCIM2_48L_base/OCIM2_48L_base_transport.mat')
 TR = TR['TR']
@@ -52,49 +52,55 @@ model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 
 #%% apply a tracer of concentration c µmol kg-1 per year, start with matrix
 # of zeros, plot change in temperature anomaly with time
-num_years = 15
+# using notation in OCIM user manual from Kana
+num_years = 3
+delt = 1 # time step of simulation [years]
 
-c_anomaly = np.zeros(ocnmask.shape) # potential temperature [ºC]
-c_anomaly = c_anomaly[ocnmask == 1].flatten(order='F') # reshape b vector
+# c = tracer concentration
+c = np.zeros(ocnmask.shape) # start with concentration = 0 everywhere
+c = c[ocnmask == 1].flatten(order='F') # reshape c vector to be flat, only include ocean boxes
+c[0] = 100
 
-c_anomaly_3D = np.full(ocnmask.shape, np.nan)
-c_anomaly_3D[ocnmask == 1] = np.reshape(c_anomaly, (-1,), order='F') # reshape e vector
+c_3D = np.full(ocnmask.shape, np.nan) # make 3D vector full of nans
+c_3D[ocnmask == 1] = np.reshape(c, (-1,), order='F') # reshape flat c vector into 3D vector with nans in land boxes
 
-c_anomaly_atm = np.zeros(ocnmask.shape)
-c_anomaly_atm[0, 90:100, 30:40] = 1 # create boundary condition of 0.001 (change in surface forcing of 0.001 kg-1 yr-1)
-p2.plot_surface3d(model_lon, model_lat, c_anomaly_atm, 0, 0, 1.5, 'plasma', 'surface forcing')
-c_anomaly_atm = c_anomaly_atm[0, :, :]
+# c_sat = saturation (atmospheric) concentration of c --> we are going to simulate air-sea gas exchange
+# c_sat = 1 # create boundary condition of 1 (change in surface forcing of 1 yr-1). this is assuming a well-mixed atmosphere with tracer concentration = 1 throughout
+#p2.plot_surface3d(model_lon, model_lat, c_sat, 0, 0, 1.5, 'plasma', 'surface forcing')
 
-c_anomaly_3D = np.full(ocnmask.shape, np.nan)
-c_anomaly_3D[ocnmask == 1] = np.reshape(c_anomaly, (-1,), order='F')
-
-c_anomalies = np.zeros([num_years, len(model_depth), len(model_lon), len(model_lat)])
-c_anomalies [0, :, :, :] = c_anomaly_3D
+# save c at each time step in this array
+c_out = np.zeros([num_years, len(model_depth), len(model_lon), len(model_lat)])
+c_out[0, :, :, :] = c_3D
 
 for t in range(1, num_years):
     print(t)
     # assuming constant b here, don't need to recalculate in this loop
-    c_anomaly_surf = c_anomaly_3D[0, :, :]
+    #c_surf = c_out[t - 1, 0 , :, :]
     
-    # turn off surface forcing after 5 years
-    b_c = np.zeros(ocnmask.shape) # make an array of zeros the size of the grid
-    if t <= 5:
-        b_c[0, :, :] = 1/(30/365.25) * (c_anomaly_atm - c_anomaly_surf) # create source/sink vector that captures forcing for patch of top model layer
-    b_c = b_c[ocnmask == 1].flatten(order='F') # reshape b vector
+    # q = source/sink vector (using air-sea gas sexchange parameterization)
+    q = np.zeros(ocnmask.shape) # make an array of zeros the size of the grid
+    #if t <= 1:
+    #    q[0, 90:100, 30:40] = 1 # simple source/sink = 1 in this box
+    q = q[ocnmask == 1].flatten(order='F') # reshape b vector
     
-    c_anomaly = spsolve(eye(len(b_c)) - TR, c_anomaly + b_c) 
+    c = spsolve((eye(len(q)) - TR), (c + q)) 
     
-    new_c_anomaly_3D = np.full(ocnmask.shape, np.nan)
-    new_c_anomaly_3D[ocnmask == 1] = np.reshape(c_anomaly, (-1,), order='F')
-    c_anomalies[t, :, :, :] = new_c_anomaly_3D
+    c_3D = np.full(ocnmask.shape, np.nan)
+    c_3D[ocnmask == 1] = np.reshape(c, (-1,), order='F')
+    c_out[t, :, :, :] = c_3D
+
+# test: sum tracer concentration at each time step (starting at t = 6 when addition is over) to see if conserved
+# currently it is not conserved!! why!
+for i in range(0, num_years):
+    print('t = ' + str(i) + '\t c = ' + str(np.nansum(c_out[i,:,:,:])))    
     
 #%% save model output   
-global_attrs = {'description':'exp00: conservative test tracer (could be conservative temperature) moving from patch in ocean. Patch is forced from t = 1 through t = 5, after that, boundary condition is zero. Forcing applied is c_anomaly_atm[0, 90:100, 30:40] = 1; b_c[0, :, :] = 1/(30/365.25) * (c_anomaly_atm - c_anomaly_surf)'}
+global_attrs = {'description':'exp00: conservative test tracer (could be conservative temperature) moving from point-source in ocean. Except it should be conserved at each time step and is not.'}
 
-p2.save_model_output(output_path + 'exp00_2024-12-12-a.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c_anomalies], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
+p2.save_model_output(output_path + 'exp00_2025-1-6-c.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c_out], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
 
 #%% open and plot model output
-c_anomalies = xr.open_dataset(output_path + 'exp00_2024-12-12-a.nc')
+c_anomalies = xr.open_dataset(output_path + 'exp00_2025-1-6-b.nc')
 
 for t in range(0, num_years):
     p2.plot_surface3d(model_lon, model_lat, c_anomalies['tracer_concentration'].isel(time=t), 0, 0, 1.5, 'plasma', 'surface tracer concentration anomaly at t=' + str(t))
