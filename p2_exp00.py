@@ -77,13 +77,13 @@ for t in range(1, num_years):
     # assuming constant b here, don't need to recalculate in this loop
     #c_surf = c_out[t - 1, 0 , :, :]
     
-    # q = source/sink vector (using air-sea gas sexchange parameterization)
+    # q = source/sink vector (using air-sea gas exchange parameterization)
     q = np.zeros(ocnmask.shape) # make an array of zeros the size of the grid
     #if t <= 1:
     #    q[0, 90:100, 30:40] = 1 # simple source/sink = 1 in this box
     q = q[ocnmask == 1].flatten(order='F') # reshape b vector
     
-    c = spsolve((eye(len(q)) - TR), (c + q)) 
+    c = spsolve((eye(len(q)) - delt * TR), (c + delt * q)) 
     
     c_3D = np.full(ocnmask.shape, np.nan)
     c_3D[ocnmask == 1] = np.reshape(c, (-1,), order='F')
@@ -97,14 +97,19 @@ for i in range(0, num_years):
 #%% save model output   
 global_attrs = {'description':'exp00: conservative test tracer (could be conservative temperature) moving from point-source in ocean. Except it should be conserved at each time step and is not.'}
 
-p2.save_model_output(output_path + 'exp00_2025-1-6-c.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c_out], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
+p2.save_model_output(output_path + 'exp00_2025-1-9-a.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c_out], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
 
 #%% open and plot model output
-c_anomalies = xr.open_dataset(output_path + 'exp00_2025-1-6-b.nc')
+c_anomalies = xr.open_dataset(output_path + 'exp00_2025-1-9-a.nc')
 
 for t in range(0, num_years):
-    p2.plot_surface3d(model_lon, model_lat, c_anomalies['tracer_concentration'].isel(time=t), 0, 0, 1.5, 'plasma', 'surface tracer concentration anomaly at t=' + str(t))
+    p2.plot_surface3d(model_lon, model_lat, c_anomalies['tracer_concentration'].isel(time=t), 0, 0, 0.1, 'plasma', 'surface tracer concentration anomaly at t=' + str(t))
     
 for t in range(0, num_years):
-    p2.plot_longitude3d(model_lat, model_depth, c_anomalies['tracer_concentration'].isel(time=t), 100, 0, 1.5, 'plasma', 'tracer concentration anomaly at t=' +str(t) + ' along 201ºE longitude')
+    p2.plot_longitude3d(model_lat, model_depth, c_anomalies['tracer_concentration'].isel(time=t), 100, 0, 0.1, 'plasma', 'tracer concentration anomaly at t=' +str(t) + ' along 201ºE longitude')
+    
+# test: sum tracer concentration at each time step (starting at t = 6 when addition is over) to see if conserved
+# currently it is not conserved!! why!
+for i in range(0, num_years):
+    print('t = ' + str(i) + '\t c = ' + str(np.nansum(c_anomalies['tracer_concentration'].isel(time=i))))    
     
