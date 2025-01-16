@@ -2,30 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 TESTING PARTITIONING BETWEEN INTERIOR AND SURFACE POINTS (FOLLOWING srun_dac_sim.m AND MANUAL CODE)
-Big question: can biological carbonate compensation act as both a positive and 
-negative feedback on climate change (atmospheric pCO2 and/or temperature)?
-
-Hypothesis:
-    (+) warming-led/dominated events cause TA increase (omega increase) in
-        surface ocean, increased TA export, and decreased CO2 stored in the
-        ocean (AMPLIFY atmospheric pCO2)
-    (-) CO2-led/dominated events cause TA decrease (omega decrease) in surface
-        ocean, decreased TA export, and increased CO2 stored in the ocean 
-        (MODERATE) atmospheric CO2
-        
-To model this: distribution of TA (shown in first project that HCO3- and CO32-
-               affect CaCO3 production), CO2, and temperature
-
-- Initial conditions of TA, pCO2, and T based on GLODAP
-- Experimental forcings of pCO2 and T based on case studies of paleoclimate
-- Experimental forcing of TA based on carbon dioxide removal scenario
-- Natural forcings of T are atmospheric/sea surface conditions, natural
-  forcings of pCO2 are atmosphere input/output of pCO2 (also base on sea
-  surface?), natural forcings of TA are riverine inputs and export/burial (we
-  are missing a lot of things here, do any of them matter?)
-                                                                           
-*Between each time step (where forcings are applied), re-equilibrate carbonate
- chemistry with CO2SYS
  
  Note about transport matrix set-up
  - This was designed in matlab, which uses "fortran-style" aka column major ordering

@@ -1,30 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Big question: can biological carbonate compensation act as both a positive and 
-negative feedback on climate change (atmospheric pCO2 and/or temperature)?
-
-Hypothesis:
-    (+) warming-led/dominated events cause TA increase (omega increase) in
-        surface ocean, increased TA export, and decreased CO2 stored in the
-        ocean (AMPLIFY atmospheric pCO2)
-    (-) CO2-led/dominated events cause TA decrease (omega decrease) in surface
-        ocean, decreased TA export, and increased CO2 stored in the ocean 
-        (MODERATE) atmospheric CO2
-        
-To model this: distribution of TA (shown in first project that HCO3- and CO32-
-               affect CaCO3 production), CO2, and temperature
-
-- Initial conditions of TA, pCO2, and T based on GLODAP
-- Experimental forcings of pCO2 and T based on case studies of paleoclimate
-- Experimental forcing of TA based on carbon dioxide removal scenario
-- Natural forcings of T are atmospheric/sea surface conditions, natural
-  forcings of pCO2 are atmosphere input/output of pCO2 (also base on sea
-  surface?), natural forcings of TA are riverine inputs and export/burial (we
-  are missing a lot of things here, do any of them matter?)
-                                                                           
-*Between each time step (where forcings are applied), re-equilibrate carbonate
- chemistry with CO2SYS
+IMPLEMENTING DEVRIES EXAMPLE FROM SECTION 10 OF OCIM USER MANUAL IN PYTHON TO
+MAKE SURE MY EULER BACKWARDS IS CORRECT
  
  Note about transport matrix set-up
  - This was designed in matlab, which uses "fortran-style" aka column major ordering
@@ -73,165 +51,60 @@ model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
 model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 
-# regrid GLODAP data
-p2.regrid_glodap(data_path, 'TCO2', model_depth, model_lat, model_lon, ocnmask)
-#p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
+m = TR.shape[0]
 
-# upload regridded GLODAP data
-DIC = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy')
-TA = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')
+# load in SST anomaly data
+sstanom = np.loadtxt('/Users/Reese_1/Documents/Research Projects/project2/examples/devries/sstanom.txt', skiprows=3, delimiter=',')
+tan = sstanom[:,0]
+Tan = sstanom[:,1]
 
+#%% partition transport matrix
 
-#%% get tracer distributions (called "e" vectors in John et al., 2020)
-# POTENTIAL TEMPERATURE (θ)
-# open up .nc dataset included with this model to pull out potential temperature
-ptemp = model_data['ptemp'].to_numpy() # potential temperature [ºC]
-ptemp = ptemp[ocnmask == 1].flatten(order='F') # flatten only ocean boxes in column-major form ("E" vector format)
-
-# DIC
-DIC = DIC[ocnmask == 1].flatten(order='F') # flatten only ocean boxes in column-major form ("E" vector format)
-
-# ALKALINITY
-TA = TA[ocnmask == 1].flatten(order='F') # flatten only ocean boxes in column-major form ("E" vector format)
-
-#%% load in data to make "b" vector for each tracer (source/sink vector) --> will need to create vectors fully at each time step because dependent on previous time step
-
-# DATA FOR POTENTIAL TEMPERATURE (θ)
-# in top model layer, you have exchange with atmosphere. In other model layers,
-# there is no source/sink. This is explained more fully in DeVries, 2014
-
-# atmospheric "restoring" potential temperature comes from World Ocean Atlas 13 temperature data
-# don't need to convert potential temperature to temperature because reference point is sea level, so they're equivalent at the surface
-# I could only download WOA 18 data, from https://www.ncei.noaa.gov/access/world-ocean-atlas-2018/bin/woa18.pl
-woa_data = xr.open_dataset(data_path + 'woa18/1_woa18_decav_t00_01.nc', decode_times=False)
-woa_data = woa_data.isel(time=0).isel(depth=0)
-
-# transform WOA longitude to be 0 to 360, reorder to increase from 0 to 360
-woa_data = woa_data.assign(**{'lon': np.mod(woa_data['lon'], 360)})
-woa_data = woa_data.reindex({ 'lon' : np.sort(woa_data['lon'])})
-
-# export to numpy
-ptemp_atm = woa_data['t_an'].to_numpy()
-woa_lat = woa_data['lat'].to_numpy()
-woa_lon = woa_data['lon'].to_numpy()
-
-# regrid surface woa data to be same shape as ptemp_surf
-#p2.plot_surface2d(woa_lon, woa_lat, ptemp_atm, 0, -30, 40, 'magma', 'WOA temp surface distribution')
-#ptemp_atm = p2.regrid_woa(ptemp_atm.T, woa_lat, woa_lon, model_lat, model_lon, ocnmask[0, :, :])
-#p2.plot_surface2d(model_lon, model_lat, ptemp_atm.T, 0, -5, 32, 'magma', 'WOA temp surface distribution')
+# get land & sea masks
+iocn = np.squeeze(np.argwhere(ocnmask.flatten(order='F'))) # 2D indicies of ocean points
+iland = np.setdiff1d(range(0,len(ocnmask.flatten(order='F'))), iocn) # 2D indicies of land points
  
-   
-# DATA FOR DIC
+# get indicies of surface & interior points
+tmp = np.zeros(ocnmask.shape)
+tmp[0,:,:] = 1
+tmp = tmp.flatten(order='F') 
+iint = np.squeeze(np.argwhere(tmp[iocn]==0)) # interior points
+isurf = np.squeeze(np.argwhere(tmp[iocn]==1)) # surface points
+nint = len(iint) # number of interior points
+nsurf = len(isurf) # number of surface points
 
-# DATA FOR ALKALINITY
+# do matrix partitioning
+TRss = TR[isurf, :]
+TRss = TRss[:,isurf]
 
-#%% new attempt:
-# okay so what if I make ptemp_atm what it has to be to do restoring? should be able to back-calculate out of system of equations
-ptemp_3D = np.full(ocnmask.shape, np.nan)
-ptemp_3D[ocnmask == 1] = np.reshape(ptemp, (-1,), order='F')
-ptemp_surf = ptemp_3D[0, :, :]
+TRsi = TR[isurf, :]
+TRsi = TRsi[:,iint]
 
-# assuming steady state, de/dt = 0, so A*θ = b = 1/(30/365.25) * (θ_atm - θ)
-# each time step is one year? how were they doing one month in DeVries, 2022?
-# taking out the 365.25 factor makes the backed out temperature make NO sense
-TR_ptemp = TR*ptemp
-TR_ptemp_3d = np.full(ocnmask.shape, np.nan)
-TR_ptemp_3d[ocnmask == 1] = np.reshape(TR_ptemp, (-1,), order='F')
-ptemp_atm = TR_ptemp_3d[0, :, :] / (1/(30/365.25)) + ptemp_surf
+TRis = TR[iint, :]
+TRis = TRis[:,isurf]
 
-p2.plot_surface2d(model_lon, model_lat, ptemp_atm.T, 0, -5, 32, 'magma', 'back-calculated temp surface distribution')
+TRii = TR[iint, :]
+TRii = TRii[:,iint]
 
-# THIS SORT OF WORKS!! except numerical errors really start to compound after even one time step --> how to account for this?
+# initial steady state
+n = len(Tan) # number of years
+ci = np.zeros([len(iint), n])
 
-#%% move time steps
-# format of equation is de/dt + A*e = b (or dc/dt + TR*c = s, see DeVries, 2014)
-# c = concentration of tracer, s = source/sink term
-# therefore, to solve for next time step (t2) from current time step (t1), need to do
-#   de/dt = -A*e1 + b
-#   e2 = e1 + de/dt
-# DeVries 2022 has it backwards for OCIM2-48L 
-#   de/dt = A * e - b
+# set up matricies for Euler backwards
+dt = 1 # 1 year time step
+M = eye(nint) - dt * TRii
 
-# CHECK IF THIS IS LOGICAL ONCE I HAVE BETTER SURFACE TEMP DATA IN
-# del_ptemp should be essentially zero --> this should be running at steady state
+#%% question 1: temperature anomalies
+# time-step using equation (45)
+#for i in range (1, n):
+for i in range (1, 50):
+    print(i)
+    cs = np.zeros(len(isurf)) + Tan[i] # uniform temperature anomaly at surface
+    ci[:,i] = spsolve(M,ci[:,i - 1] + dt * TRis * cs) # time step with backwards Euler - equation (45)
 
-ptemp_3D = np.full(ocnmask.shape, np.nan)
-ptemp_3D[ocnmask == 1] = np.reshape(ptemp, (-1,), order='F')
-p2.plot_surface3d(model_lon, model_lat, ptemp_3D, 0, -4, 32, 'plasma', 'surface potential temperature at t=0')
-p2.plot_longitude3d(model_lat, model_depth, ptemp_3D, 170, -4, 32, 'plasma', 'potential temperature at t=0 along 341ºE longitude')
+# horizontal integral operator
+#VOL = 
 
-for t in range(1, 3):
-    print(t)
-    # POTENTIAL TEMPERATURE:
-    # calculate b (source/sink vector)
-    # all of b should be zero, except surface ocean boxes should equal s = k / ∆z1 * (alpha * θ_atm - θ) (see DeVries, 2014)
-    # alpha = 1
-    # k = ∆z1 * (30 days)^-1 --> I think this means k / ∆z1 = 1/(30 days) = 1/(30/365.25 years)
-    
-    ptemp_3D = np.full(ocnmask.shape, np.nan)
-    ptemp_3D[ocnmask == 1] = np.reshape(ptemp, (-1,), order='F')
-    ptemp_surf = ptemp_3D[0, :, :]
-    
-    b_ptemp = np.zeros(ocnmask.shape) # make an array of zeros the size of the grid
-    b_ptemp[0, :, :] = 1/(30/365.25) * (ptemp_atm - ptemp_surf) # create boundary condition/forcing for top model layer
-    b_ptemp = b_ptemp[ocnmask == 1].flatten(order='F') # reshape b vector
-    
-    del_ptemp = TR * ptemp - b_ptemp
-    ptemp += del_ptemp
-    
-    new_ptemp_3D = np.full(ocnmask.shape, np.nan)
-    new_ptemp_3D[ocnmask == 1] = np.reshape(ptemp, (-1,), order='F')
-
-    p2.plot_surface3d(model_lon, model_lat, new_ptemp_3D, 0, -4, 32, 'plasma', 'surface potential temperature at t=' + str(t))
-    p2.plot_longitude3d(model_lat, model_depth, new_ptemp_3D, 170, -4, 32, 'plasma', 'potential temperature at t=' +str(t) + ' along 341ºE longitude')
-
-#%% new attempt 2: apply a tracer of concentration c µmol kg-1 per year, start with matrix
-# of zeros, plot change in temperature anomaly with time
-num_years = 15
-
-c_anomaly = np.zeros(ocnmask.shape) # potential temperature [ºC]
-c_anomaly = c_anomaly[ocnmask == 1].flatten(order='F') # reshape b vector
-
-c_anomaly_3D = np.full(ocnmask.shape, np.nan)
-c_anomaly_3D[ocnmask == 1] = np.reshape(c_anomaly, (-1,), order='F') # reshape e vector
-
-p2.plot_surface3d(model_lon, model_lat, c_anomaly_3D, 0, 0, 1, 'plasma', 'surface potential temperature anomaly at t=0')
-p2.plot_longitude3d(model_lat, model_depth, c_anomaly_3D, 100, 0, 1, 'plasma', 'potential temperature anomaly at t=0 along 201ºE longitude')
-
-c_anomaly_atm = np.zeros(ocnmask.shape)
-c_anomaly_atm[0, 90:100, 30:40] = 1 # create boundary condition of 0.001 (change in surface forcing of 0.001 kg-1 yr-1)
-p2.plot_surface3d(model_lon, model_lat, c_anomaly_atm, 0, 0, 1.5, 'plasma', 'surface forcing')
-c_anomaly_atm = c_anomaly_atm[0, :, :]
-
-c_anomaly_3D = np.full(ocnmask.shape, np.nan)
-c_anomaly_3D[ocnmask == 1] = np.reshape(c_anomaly, (-1,), order='F')
-
-c_anomalies = [c_anomaly_3D]
-
-for t in range(1, num_years):
-    print(t)
-    # assuming constant b here, don't need to recalculate in this loop
-    
-    c_anomaly_surf = c_anomaly_3D[0, :, :]
-    
-    # turn off surface forcing after 5 years
-    b_c = np.zeros(ocnmask.shape) # make an array of zeros the size of the grid
-    if t <= 5:
-        b_c[0, :, :] = 1/(30/365.25) * (c_anomaly_atm - c_anomaly_surf) # create boundary condition/forcing for top model layer
-    b_c = b_c[ocnmask == 1].flatten(order='F') # reshape b vector
-    
-    c_anomaly = spsolve(eye(len(b_c)) - TR, c_anomaly + b_c) 
-    
-    new_c_anomaly_3D = np.full(ocnmask.shape, np.nan)
-    new_c_anomaly_3D[ocnmask == 1] = np.reshape(c_anomaly, (-1,), order='F')
-    c_anomalies.append(new_c_anomaly_3D)
-
-for t in range(0, num_years):
-    p2.plot_surface3d(model_lon, model_lat, c_anomalies[t], 0, 0, 1.5, 'plasma', 'surface potential temperature anomaly at t=' + str(t))
-    
-for t in range(0, num_years):
-    p2.plot_longitude3d(model_lat, model_depth, c_anomalies[t], 100, 0, 1.5, 'plasma', 'potential temperature anomaly at t=' +str(t) + ' along 201ºE longitude')
-    
 #%% save model output   
 filename = '/Users/Reese_1/Documents/Research Projects/project2/outputs/exp00_2024-12-10-a.nc'
 with h5netcdf.File(filename, 'w', invalid_netcdf=True) as ncfile:
