@@ -102,8 +102,21 @@ for i in range (1, 50):
     cs = np.zeros(len(isurf)) + Tan[i] # uniform temperature anomaly at surface
     ci[:,i] = spsolve(M,ci[:,i - 1] + dt * TRis * cs) # time step with backwards Euler - equation (45)
 
-# horizontal integral operator
-#VOL = 
+#np.save('ci.npy', ci)
+
+#%% or, load saved ci
+ci = np.load('ci.npy')
+
+#%% horizontal integral operator
+VOL = model_data.vol.data
+ZINT = np.full([vol.shape[0], len(iint)], np.nan)
+
+for i in range(vol.shape[0]):
+    tmp = 0*ocnmask
+    tmp[i, :, :] = VOL[i, :, :] * ocnmask[i, :, :]
+    ZINT[i, :] = tmp[] # HOW TO TRANSLATE THIS LINE TO PYTHON?? OR NEXT LINE?
+
+
 
 #%% save model output   
 filename = '/Users/Reese_1/Documents/Research Projects/project2/outputs/exp00_2024-12-10-a.nc'
