@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 TESTING PARTITIONING BETWEEN INTERIOR AND SURFACE POINTS (FOLLOWING srun_dac_sim.m AND MANUAL CODE)
+- THIS DOESN'T WORK!! BECAUSE PARTITIONING ACTS AS A BOUNDARY CONDITION
  
  Note about transport matrix set-up
  - This was designed in matlab, which uses "fortran-style" aka column major ordering
@@ -32,11 +33,13 @@ import xarray as xr
 import numpy as np
 from scipy.sparse import eye
 #from scipy.sparse.linalg import spsolve
-from scikits.umfpack import spsolve
-from scipy.sparse.linalg import splu
-from scipy.sparse.csgraph import reverse_cuthill_mckee
+#from scikits.umfpack import spsolve
+#from scipy.sparse.linalg import splu
+#from scipy.sparse.csgraph import reverse_cuthill_mckee
+from scipy.sparse import diags
 from scipy.sparse.linalg import gmres
 from scipy.sparse.linalg import spilu, LinearOperator
+from scipy.sparse.linalg import norm
 import time
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
@@ -54,6 +57,7 @@ ocnmask = model_data['ocnmask'].to_numpy()
 model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
 model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
+model_vols = model_data['vol'].to_numpy() # m^3
 
 #%% partition transport matrix
 
@@ -73,8 +77,8 @@ nsurf = len(isurf) # number of surface points
 # get index of interior ocean point for testing
 tmp = np.zeros(ocnmask.shape)
 tmp[24,118,38] = 1 # random interior point in middle of pacific ocean (away from possible boundary conditions)
-tmp = tmp.flatten(order='F') 
-itracer = np.squeeze(np.argwhere(tmp[iocn]==1)) # surface points
+tmp = tmp[ocnmask==1].flatten(order='F') 
+itracer = np.squeeze(np.argwhere(tmp==1))
 
 # do matrix partitioning
 TRss = TR[isurf, :]
@@ -94,7 +98,7 @@ TRii = TRii[:,iint]
 
 # set simulation time
 dt = 1 # 1 year time steps
-num_years = 10 # start with 3 year simulation
+num_years = 4 # start with 4 year simulation
 
 # create initial state
 ci = np.zeros([num_years, len(iint)])
@@ -131,8 +135,12 @@ M = LinearOperator(A.shape, ilu.solve)
 end_time = time.time()
 print(end_time - start_time) # elapsed time of preconditioning in seconds
 
+
 # perform time-stepping
 for t in range(1,num_years):
+    
+    # incomplete LU preconditioning for grmes -> doing this each step does not change performance of solver?
+    
     print(t) # see where the simulation is
 
     b = ci[t - 1,:] + dt * TRis * cs[t - 1,:]   
@@ -156,8 +164,7 @@ for t in range(1,num_years):
     #ci[t,:] = x[inv_perm] # reverse the permutation
     
     # for gmres (iterative solver)
-    x, exit_code = gmres(A, b, x0=ci[t-1,:], M=M)
-    ci[t,:] = x
+    ci[t,:], exit_code = gmres(A, b, x0=ci[t-1,:], M=M)
     
     end_time = time.time()
     
@@ -167,7 +174,10 @@ for t in range(1,num_years):
     else:
         print("gmres did not converge")
         
-    print(end_time - start_time) # elapsed time of solve in seconds
+    print(str(end_time - start_time) + ' s') # elapsed time of solve in seconds
+    
+    #cond_number = norm(A, ord=2) * norm(A.power(-1), ord=2)
+    #print(f"condition number of A: {cond_number}")
 
 #%% rebuild 3D concentrations from 1D array used for solving matrix equation
 c = np.full([num_years, ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
@@ -192,10 +202,10 @@ for t in range(0, num_years):
 #global_attrs = {'description':'exp01: conservative test tracer moving from point-source in ocean. Attempting to use partitioning to impose boundary conditions to make the tracer actually conserved. Added a test tracer(?) in the middle (mid-depth) of the pacific ocean to try to see if boundary conditions were the problem.'}
 global_attrs = {'description':'testing how to speed up spsolve (GMRES with ILU preconditioning)'}
 
-p2.save_model_output(output_path + 'exp01_2025-1-17-d.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
+p2.save_model_output(output_path + 'exp01_2025-1-24-d.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
 
 #%% open and plot model output
-c_anomalies = xr.open_dataset(output_path + 'exp01_2025-1-17-d.nc')
+c_anomalies = xr.open_dataset(output_path + 'exp01_2025-1-17-a.nc')
 
 num_years = len(c_anomalies.time)
 model_lon = c_anomalies.lon.data
@@ -211,6 +221,9 @@ for t in range(0, num_years):
 # test: sum tracer concentration at each time step (starting at t = 6 when addition is over) to see if conserved
 # currently it is not conserved!! why!
 for i in range(0, num_years):
-    print('t = ' + str(i) + '\t c = ' + str(np.nansum(c_anomalies['tracer_concentration'].isel(time=i))))  
+    # multiply mol m^-3 * m^3 to see if AMOUNT is conserved
+    c_amount = c_anomalies['tracer_concentration'].isel(time=i) * model_vols
+    
+    print('t = ' + str(i) + '\t c = ' + str(np.nansum(c_amount)))    
     
 c_anomalies.close()

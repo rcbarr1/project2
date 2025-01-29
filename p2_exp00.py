@@ -33,6 +33,9 @@ import xarray as xr
 import numpy as np
 from scipy.sparse import eye
 from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import gmres
+from scipy.sparse.linalg import spilu, LinearOperator
+import time
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -49,17 +52,18 @@ ocnmask = model_data['ocnmask'].to_numpy()
 model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
 model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
+model_vols = model_data['vol'].to_numpy() # m^3
 
 #%% apply a tracer of concentration c µmol kg-1 per year, start with matrix
 # of zeros, plot change in temperature anomaly with time
 # using notation in OCIM user manual from Kana
-num_years = 3
+num_years = 10
 delt = 1 # time step of simulation [years]
 
-# c = tracer concentration
+#%% c = tracer concentration
 c = np.zeros(ocnmask.shape) # start with concentration = 0 everywhere
 c = c[ocnmask == 1].flatten(order='F') # reshape c vector to be flat, only include ocean boxes
-c[0] = 100
+c[251195] = 100 # mol m^-3, set at random interior point in pacific ocean
 
 c_3D = np.full(ocnmask.shape, np.nan) # make 3D vector full of nans
 c_3D[ocnmask == 1] = np.reshape(c, (-1,), order='F') # reshape flat c vector into 3D vector with nans in land boxes
@@ -72,6 +76,17 @@ c_3D[ocnmask == 1] = np.reshape(c, (-1,), order='F') # reshape flat c vector int
 c_out = np.zeros([num_years, len(model_depth), len(model_lon), len(model_lat)])
 c_out[0, :, :, :] = c_3D
 
+# incomplete LU preconditioning for grmes
+A = eye(len(c), format="csc") - delt * TR
+
+print('preconditioning')
+start_time = time.time()
+ilu = spilu(A)
+M = LinearOperator(A.shape, ilu.solve)
+end_time = time.time()
+print(end_time - start_time) # elapsed time of preconditioning in seconds
+
+
 for t in range(1, num_years):
     print(t)
     # assuming constant b here, don't need to recalculate in this loop
@@ -83,24 +98,34 @@ for t in range(1, num_years):
     #    q[0, 90:100, 30:40] = 1 # simple source/sink = 1 in this box
     q = q[ocnmask == 1].flatten(order='F') # reshape b vector
     
-    c = spsolve((eye(len(q)) - delt * TR), (c + delt * q)) 
+    start_time = time.time()
+    # solve with regular spsolve
+    #c = spsolve((eye(len(q)) - delt * TR), (c + delt * q)) 
+    
+    # solve with GMRES 
+    c, exit_code = gmres(A, (c + delt * q), M=M)
+    
+    end_time = time.time()
+    
+    # also for gmres
+    if exit_code == 0:
+        print("solution converged")
+    else:
+        print("gmres did not converge")
+            
+    print(str(end_time - start_time) + ' s') # elapsed time of solve in seconds
     
     c_3D = np.full(ocnmask.shape, np.nan)
     c_3D[ocnmask == 1] = np.reshape(c, (-1,), order='F')
     c_out[t, :, :, :] = c_3D
-
-# test: sum tracer concentration at each time step (starting at t = 6 when addition is over) to see if conserved
-# currently it is not conserved!! why!
-for i in range(0, num_years):
-    print('t = ' + str(i) + '\t c = ' + str(np.nansum(c_out[i,:,:,:])))    
     
 #%% save model output   
-global_attrs = {'description':'exp00: conservative test tracer (could be conservative temperature) moving from point-source in ocean. Except it should be conserved at each time step and is not.'}
+global_attrs = {'description':'exp00: conservative test tracer (could be conservative temperature) moving from point-source in ocean.'}
 
-p2.save_model_output(output_path + 'exp00_2025-1-9-a.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c_out], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
+p2.save_model_output(output_path + 'exp00_2025-1-28-d.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c_out], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
 
 #%% open and plot model output
-c_anomalies = xr.open_dataset(output_path + 'exp00_2025-1-9-a.nc')
+c_anomalies = xr.open_dataset(output_path + 'exp00_2025-1-28-d.nc')
 
 for t in range(0, num_years):
     p2.plot_surface3d(model_lon, model_lat, c_anomalies['tracer_concentration'].isel(time=t), 0, 0, 0.1, 'plasma', 'surface tracer concentration anomaly at t=' + str(t))
@@ -111,5 +136,9 @@ for t in range(0, num_years):
 # test: sum tracer concentration at each time step (starting at t = 6 when addition is over) to see if conserved
 # currently it is not conserved!! why!
 for i in range(0, num_years):
-    print('t = ' + str(i) + '\t c = ' + str(np.nansum(c_anomalies['tracer_concentration'].isel(time=i))))    
+    # multiply mol m^-3 * m^3 to see if AMOUNT is conserved
+    c_amount = c_anomalies['tracer_concentration'].isel(time=i) * model_vols
     
+    print('t = ' + str(i) + '\t c = ' + str(np.nansum(c_amount)))    
+   
+c_anomalies.close()
