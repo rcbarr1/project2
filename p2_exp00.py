@@ -57,8 +57,8 @@ model_vols = model_data['vol'].to_numpy() # m^3
 #%% apply a tracer of concentration c µmol kg-1 per year, start with matrix
 # of zeros, plot change in temperature anomaly with time
 # using notation in OCIM user manual from Kana
-num_years = 10
-delt = 1 # time step of simulation [years]
+num_years = 11
+delt = 1000 # time step of simulation [years]
 
 #%% c = tracer concentration
 c = np.zeros(ocnmask.shape) # start with concentration = 0 everywhere
@@ -77,18 +77,18 @@ c_out = np.zeros([num_years, len(model_depth), len(model_lon), len(model_lat)])
 c_out[0, :, :, :] = c_3D
 
 # incomplete LU preconditioning for grmes
-A = eye(len(c), format="csc") - delt * TR
+#A = eye(len(c), format="csc") - delt * TR
 
-print('preconditioning')
-start_time = time.time()
-ilu = spilu(A)
-M = LinearOperator(A.shape, ilu.solve)
-end_time = time.time()
-print(end_time - start_time) # elapsed time of preconditioning in seconds
+#print('preconditioning')
+#start_time = time.time()
+#ilu = spilu(A)
+#M = LinearOperator(A.shape, ilu.solve)
+#end_time = time.time()
+#print(end_time - start_time) # elapsed time of preconditioning in seconds
 
 
 for t in range(1, num_years):
-    print(t)
+    #print(t)
     # assuming constant b here, don't need to recalculate in this loop
     #c_surf = c_out[t - 1, 0 , :, :]
     
@@ -100,38 +100,36 @@ for t in range(1, num_years):
     
     start_time = time.time()
     # solve with regular spsolve
-    #c = spsolve((eye(len(q)) - delt * TR), (c + delt * q)) 
+    c = spsolve((eye(len(q)) - delt * TR), (c + delt * q)) 
     
     # solve with GMRES 
-    c, exit_code = gmres(A, (c + delt * q), M=M)
+    #c, exit_code = gmres(A, (c + delt * q), M=M, rtol=1e-2)
     
     end_time = time.time()
     
     # also for gmres
-    if exit_code == 0:
-        print("solution converged")
-    else:
-        print("gmres did not converge")
+    #if exit_code != 0:
+    #    print("gmres did not converge")
             
-    print(str(end_time - start_time) + ' s') # elapsed time of solve in seconds
+    print(str(t) + '\t' + str(end_time - start_time)) # elapsed time of solve in seconds
     
     c_3D = np.full(ocnmask.shape, np.nan)
     c_3D[ocnmask == 1] = np.reshape(c, (-1,), order='F')
     c_out[t, :, :, :] = c_3D
     
 #%% save model output   
-global_attrs = {'description':'exp00: conservative test tracer (could be conservative temperature) moving from point-source in ocean.'}
+global_attrs = {'description':"exp00: conservative test tracer (could be conservative temperature) moving from point-source in ocean. testing different solvers' speed and stability"}
 
-p2.save_model_output(output_path + 'exp00_2025-1-28-d.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c_out], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
+p2.save_model_output(output_path + 'exp00_2025-2-13-a.nc', model_depth, model_lon, model_lat, np.array(range(0, num_years)), [c_out], tracer_names=['tracer_concentration'], tracer_units=None, global_attrs=global_attrs)
 
 #%% open and plot model output
-c_anomalies = xr.open_dataset(output_path + 'exp00_2025-1-28-d.nc')
+c_anomalies = xr.open_dataset(output_path + 'exp00_2025-2-13-a.nc')
 
 for t in range(0, num_years):
-    p2.plot_surface3d(model_lon, model_lat, c_anomalies['tracer_concentration'].isel(time=t), 0, 0, 0.1, 'plasma', 'surface tracer concentration anomaly at t=' + str(t))
+    p2.plot_surface3d(model_lon, model_lat, c_anomalies['tracer_concentration'].isel(time=t), 24, 0, 0.1, 'plasma', 'surface tracer concentration anomaly at t=' + str(t))
     
 for t in range(0, num_years):
-    p2.plot_longitude3d(model_lat, model_depth, c_anomalies['tracer_concentration'].isel(time=t), 100, 0, 0.1, 'plasma', 'tracer concentration anomaly at t=' +str(t) + ' along 201ºE longitude')
+    p2.plot_longitude3d(model_lat, model_depth, c_anomalies['tracer_concentration'].isel(time=t), 118, 0, 0.1, 'plasma', 'tracer concentration anomaly at t=' +str(t) + ' along 201ºE longitude')
     
 # test: sum tracer concentration at each time step (starting at t = 6 when addition is over) to see if conserved
 # currently it is not conserved!! why!
@@ -139,6 +137,7 @@ for i in range(0, num_years):
     # multiply mol m^-3 * m^3 to see if AMOUNT is conserved
     c_amount = c_anomalies['tracer_concentration'].isel(time=i) * model_vols
     
-    print('t = ' + str(i) + '\t c = ' + str(np.nansum(c_amount)))    
+    #print('t = ' + str(i) + '\t c = ' + str(np.nansum(c_amount)))    
+    print(str(np.nansum(c_amount)))
    
 c_anomalies.close()
