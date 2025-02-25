@@ -116,9 +116,9 @@ woa_lat = woa_data['lat'].to_numpy()
 woa_lon = woa_data['lon'].to_numpy()
 
 # regrid surface woa data to be same shape as ptemp_surf
-#p2.plot_surface2d(woa_lon, woa_lat, ptemp_atm, 0, -30, 40, 'magma', 'WOA temp surface distribution')
+#p2.plot_surface2d(woa_lon, woa_lat, ptemp_atm, -30, 40, 'magma', 'WOA temp surface distribution')
 #ptemp_atm = p2.regrid_woa(ptemp_atm.T, woa_lat, woa_lon, model_lat, model_lon, ocnmask[0, :, :])
-#p2.plot_surface2d(model_lon, model_lat, ptemp_atm.T, 0, -5, 32, 'magma', 'WOA temp surface distribution')
+#p2.plot_surface2d(model_lon, model_lat, ptemp_atm.T, -5, 32, 'magma', 'WOA temp surface distribution')
  
    
 # DATA FOR DIC
@@ -139,7 +139,7 @@ TR_ptemp_3d = np.full(ocnmask.shape, np.nan)
 TR_ptemp_3d[ocnmask == 1] = np.reshape(TR_ptemp, (-1,), order='F')
 ptemp_atm = TR_ptemp_3d[0, :, :] / (1/(30/365.25)) + ptemp_surf
 
-p2.plot_surface2d(model_lon, model_lat, ptemp_atm.T, 0, -5, 32, 'magma', 'back-calculated temp surface distribution')
+p2.plot_surface2d(model_lon, model_lat, ptemp_atm.T, -5, 32, 'magma', 'back-calculated temp surface distribution')
 
 # THIS SORT OF WORKS!! except numerical errors really start to compound after even one time step --> how to account for this?
 

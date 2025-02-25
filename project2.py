@@ -268,7 +268,7 @@ def regrid_glodap(data_path, glodap_var, model_depth, model_lat, model_lon, ocnm
     model_depth : array of model depth levels
     model_lat : array pf model latitudes
     model_lon : array of model longitudes
-    ocnmask : mask same shape as glodap_var when 1 marks an ocean cell and 0 marks land
+    ocnmask : mask same shape as glodap_var where 1 marks an ocean cell and 0 marks land
 
     '''
     
@@ -327,11 +327,11 @@ def regrid_woa(woa_var, woa_lat, woa_lon, model_lat, model_lon, ocnmask):
     Parameters
     ----------
     woa_var : variable to regrid (dimensions: depth, longitude, latitude)
-    woa_lat : array of glodap latitudes
-    woa_lon : array of glodap longitudes
+    woa_lat : array of woa latitudes
+    woa_lon : array of woa longitudes
     model_lat : array pf model latitudes
     model_lon : array of model longitudes
-    ocnmask : mask same shape as woa_var when 1 marks an ocean cell and 0 marks land
+    ocnmask : mask same shape as woa_var wbere 1 marks an ocean cell and 0 marks land
 
     Returns
     -------
@@ -357,8 +357,102 @@ def regrid_woa(woa_var, woa_lat, woa_lon, model_lat, model_lon, ocnmask):
     woa_var = inpaint_nans2d(woa_var, mask=ocnmask.astype(bool))
 
     return woa_var
+
+def regrid_ncep_noaa(data_path, ncep_var, model_lat, model_lon, ocnmask):
+    '''
+    calculate annual average, regrid data to model grid, inpaint nans
+    NCEP/DOE reanalysis II data and NOAA Extended Reconstruction SST V5
+
+    Parameters
+    ----------
+    data_path : path to folder which contains NCEP data from https://psl.noaa.gov/data/gridded/data.ncep.reanalysis2.html or NOAA data from https://psl.noaa.gov/data/gridded/data.noaa.ersst.v5.html
+    ncep_var : variable to regrid (dimensions: depth, longitude, latitude)
+    model_lat : array pf model latitudes
+    model_lon : array of model longitudes
+    ocnmask : mask same shape as ncep_var where 1 marks an ocean cell and 0 marks land
+
+    Returns
+    -------
+    ncep_var : regridded to model grid
+
+    '''
+    # load NCEP data (https://psl.noaa.gov/data/gridded/data.ncep.reanalysis2.html) or NOAA data (https://psl.noaa.gov/data/gridded/data.noaa.ersst.v5.html)
+    if ncep_var == 'icec': # ice concentration
+        data = xr.open_dataset(data_path + 'NCEP_DOE_Reanalysis_II/icec.sfc.mon.ltm.1991-2020.nc')
+        var = data.icec.mean(dim='time', skipna=True).values # average across all months, pull out values from NCEP
+    elif ncep_var == 'uwnd': # u-wind [m/s]
+        data = xr.open_dataset(data_path + 'NCEP_DOE_Reanalysis_II/uwnd.10m.mon.ltm.1991-2020.nc')
+        var = data.uwnd.mean(dim='time', skipna=True).values # average across all months, pull out values from NCEP
+    elif ncep_var == 'sst': # sea surface temperature [ºC]
+        data = xr.open_dataset(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst.mon.ltm.1991-2020.nc')
+        var = data.sst.mean(dim='time', skipna=True).values # average across all months, pull out values from NCEP
+    else:
+        print('NCEP/NOAA data not found.')
+        return
+        
+    # pull out arrays of depth, latitude, and longitude from NCEP
+    data_lon = data['lon'].to_numpy()     # ºE
+    data_lat = data['lat'].to_numpy()     # ºN
     
-def plot_surface2d(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
+    # create interpolator
+    interp = RegularGridInterpolator((data_lon, data_lat), var.T, bounds_error=False, fill_value=None)
+
+    # create meshgrid for OCIM grid
+    lon, lat = np.meshgrid(model_lon, model_lat, indexing='ij')
+
+    # reshape meshgrid points into a list of coordinates to interpolate to
+    query_points = np.array([lon.ravel(), lat.ravel()]).T
+
+    # perform interpolation (regrid GLODAP data to match OCIM grid)
+    var = interp(query_points)
+
+    # transform results back to model grid shape
+    var = var.reshape(lon.shape)
+
+    # inpaint nans
+    var = inpaint_nans2d(var, mask=ocnmask[0, :, :].astype(bool))
+
+    # save regridded data
+    if ncep_var == 'icec':
+        np.save(data_path + 'NCEP_DOE_Reanalysis_II/icec_AO.npy', var)
+    elif ncep_var == 'uwnd':
+        np.save(data_path + 'NCEP_DOE_Reanalysis_II/uwnd_AO.npy', var)
+    elif ncep_var == 'sst':
+        np.save(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_AO.npy', var)
+    
+def schmidt(gas, temperature):
+    '''
+    Calculate the Schmidt number (Sc) for a given gas in seawater based on Wanninkhof (2014).
+    
+    Parameters
+    ----------
+    gas : the gas of interest (e.g., 'O2', 'CO2', 'N2', 'Ar').
+    temperature : seawater temperature in degrees Celsius (°C).
+    
+    Returns
+    -------
+    Sc : Schmidt number (Sc)
+    '''
+    # Schmidt number coefficients from Wanninkhof (2014) for seawater from -2ºC to 40ºC
+    sc_coeffs = {
+        'O2':  [1920.4, -135.6, 5.2122, -0.10939, 0.00093777],  # oxygen
+        'CO2': [2116.8, -136.25, 4.7353, -0.092307, 0.0007555], # carbon dioxide
+        'N2':  [2403.8, -162.75, 6.2557, -0.13129, 0.0011255],  # nitrogen
+        'Ar':  [2078.1, -146.74, 5.6403, -0.11838, 0.0010148]   # argon
+    }
+
+    if gas not in sc_coeffs:
+        raise ValueError(f"Gas '{gas}' not supported. Choose from {list(sc_coeffs.keys())}")
+
+    a, b, c, d, e = sc_coeffs[gas]
+    
+    # Compute Schmidt number
+    Sc = a + (b * temperature) + (c * temperature**2) + (d * temperature**3) + (e * temperature**4)
+    
+    return Sc
+    
+   
+def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
     fig = plt.figure(figsize=(10,7))
     ax = fig.gca()
     levels = np.linspace(vmin-0.1, vmax, 100)
