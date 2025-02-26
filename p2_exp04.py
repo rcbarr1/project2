@@ -82,7 +82,6 @@ model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
 #%% upload (or regrid) glodap data for use as initial conditions for marine carbonate system 
-# from https://glodap.info/index.php/mapped-data-product/
 
 # regrid GLODAP data
 #p2.regrid_glodap(data_path, 'TCO2', model_depth, model_lat, model_lon, ocnmask)
@@ -92,9 +91,21 @@ model_vols = model_data['vol'].to_numpy() # m^3
 DIC = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy')
 TA = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')
 
-#%% upload (or regrid) temperature data (TO DO)
+#%% upload (or regrid) woa18 data for use in CO2 system calculations
 
+# regrid WOA18 data
+#p2.regrid_woa(data_path, 'S', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_woa(data_path, 'T', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_woa(data_path, 'Si', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_woa(data_path, 'P', model_depth, model_lat, model_lon, ocnmask)
 
+# upload regridded WOA18 data
+S = np.load(data_path + 'WOA18/S_AO.npy')
+T = np.load(data_path + 'WOA18/T_AO.npy')
+Si = np.load(data_path + 'WOA18/Si_AO.npy')
+P = np.load(data_path + 'WOA18/P_AO.npy')
+
+p2.plot_surface2d(model_lon, model_lat, ptemp_atm.T, -5, 32, 'magma', 'WOA temp surface distribution')
 
 #%% set up air-sea gas exchange (Wanninkhof 2014)
 
@@ -123,6 +134,14 @@ Kw = a * uwnd**2 * (Sc/660)**-0.5 * (1 - icec) # [cm/h] from Yamamoto et al., 20
 Kw *= (24*365.25/100) # [m/yr] convert units
 
 #%% set up linearized CO2 system (Nowicki et al., 2024)
+
+
+
+
+
+
+
+
 
 
 

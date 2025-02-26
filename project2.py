@@ -310,7 +310,6 @@ def regrid_glodap(data_path, glodap_var, model_depth, model_lat, model_lon, ocnm
     # transform model_lon and meshgrid back for anything > 360
     model_lon[model_lon > 360] -= 360
     
-
     # save regridded data
     if glodap_var == 'TCO2':
         np.save(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy', var)
@@ -320,15 +319,14 @@ def regrid_glodap(data_path, glodap_var, model_depth, model_lat, model_lon, ocnm
         np.save(data_path + 'GLODAPv2.2016b.MappedProduct/' + glodap_var + '_AO.npy', var)
 
 
-def regrid_woa(woa_var, woa_lat, woa_lon, model_lat, model_lon, ocnmask):
+def regrid_woa(data_path, woa_var, model_depth, model_lat, model_lon, ocnmask):
     '''
     regrid woa data to model grid, inpaint nans
 
     Parameters
     ----------
+    data_path : path to folder which contains WOA18 data from https://www.ncei.noaa.gov/access/world-ocean-atlas-2018/
     woa_var : variable to regrid (dimensions: depth, longitude, latitude)
-    woa_lat : array of woa latitudes
-    woa_lon : array of woa longitudes
     model_lat : array pf model latitudes
     model_lon : array of model longitudes
     ocnmask : mask same shape as woa_var wbere 1 marks an ocean cell and 0 marks land
@@ -338,25 +336,64 @@ def regrid_woa(woa_var, woa_lat, woa_lon, model_lat, model_lon, ocnmask):
     woa_var : regridded to model grid
 
     '''
+    
+    # load WOA18 data
+    if woa_var == 'S': # salinity [unitless]
+        data = xr.open_dataset(data_path + 'WOA18/woa18_decav81B0_s00_01.nc', decode_times=False)
+        var = data.s_an.isel(time=0).values
+        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format
+    elif woa_var == 'T': # temperature [ºC]
+        data = xr.open_dataset(data_path + 'WOA18/woa18_decav81B0_t00_01.nc', decode_times=False)
+        var = data.t_an.isel(time=0).values
+        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format
+    elif woa_var == 'Si': # silicate [µmol kg-1]
+        data = xr.open_dataset(data_path + 'WOA18/woa18_all_i00_01.nc', decode_times=False)
+        var = data.i_an.isel(time=0).values
+        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format
+    elif woa_var == 'P': # phosphate [µmol kg-1]
+        data = xr.open_dataset(data_path + 'WOA18/woa18_all_p00_01.nc', decode_times=False)
+        var = data.p_an.isel(time=0).values
+        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format
+    else:
+        print("NCEP/NOAA data not found. Choose from woa_var = 'S', 'T', 'Si', 'P'")
+        return
+    
+    # transform longitude to be 0 to 360, reorder to increase from 0 to 360
+    data = data.assign(**{'lon': np.mod(data['lon'], 360)})
+    data = data.reindex({ 'lon' : np.sort(data['lon'])})
+    
+    # pull out arrays of depth, latitude, and longitude from NCEP
+    data_lon = data['lon'].to_numpy()     # ºE
+    data_lat = data['lat'].to_numpy()     # ºN
+    data_depth = data['depth'].to_numpy()     # m
+    
     # create interpolator
-    interp = RegularGridInterpolator((woa_lon, woa_lat), woa_var, bounds_error=False, fill_value=None)
+    interp = RegularGridInterpolator((data_depth, data_lon, data_lat), var, bounds_error=False, fill_value=None)
 
     # create meshgrid for OCIM grid
-    lon, lat = np.meshgrid(model_lon, model_lat, indexing='ij')
+    depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
 
     # reshape meshgrid points into a list of coordinates to interpolate to
-    query_points = np.array([lon.ravel(), lat.ravel()]).T
+    query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
 
-    # perform interpolation (regrid GLODAP data to match OCIM grid)
-    woa_var = interp(query_points)
+    # perform interpolation (regrid WOA data to match OCIM grid)
+    var = interp(query_points)
 
     # transform results back to model grid shape
-    woa_var = woa_var.reshape(lon.shape)
+    var = var.reshape(depth.shape)
 
     # inpaint nans
-    woa_var = inpaint_nans2d(woa_var, mask=ocnmask.astype(bool))
+    #var = inpaint_nans3d(var, mask=ocnmask.astype(bool))
 
-    return woa_var
+    # save regridded data
+    if woa_var == 'S':
+        np.save(data_path + 'WOA18/S_AO.npy', var)
+    elif woa_var == 'T':
+        np.save(data_path + 'WOA18/T_AO.npy', var)
+    elif woa_var == 'Si':
+        np.save(data_path + 'WOA18/Si_AO.npy', var)
+    elif woa_var == 'P':
+        np.save(data_path + 'WOA18/P_AO.npy', var)
 
 def regrid_ncep_noaa(data_path, ncep_var, model_lat, model_lon, ocnmask):
     '''
