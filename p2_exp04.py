@@ -91,6 +91,8 @@ model_vols = model_data['vol'].to_numpy() # m^3
 DIC = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy')
 TA = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')
 
+p2.plot_surface2d(model_lon, model_lat, DIC[0, :, :].T, 1500, 2500, 'magma', 'GLODAP DIC distribution')
+
 #%% upload (or regrid) woa18 data for use in CO2 system calculations
 
 # regrid WOA18 data
@@ -105,7 +107,10 @@ T = np.load(data_path + 'WOA18/T_AO.npy')
 Si = np.load(data_path + 'WOA18/Si_AO.npy')
 P = np.load(data_path + 'WOA18/P_AO.npy')
 
-p2.plot_surface2d(model_lon, model_lat, ptemp_atm.T, -5, 32, 'magma', 'WOA temp surface distribution')
+p2.plot_surface2d(model_lon, model_lat, S[0, :, :].T, 25, 38, 'magma', 'WOA salinity surface distribution')
+p2.plot_surface2d(model_lon, model_lat, T[0, :, :].T, -10, 35, 'magma', 'WOA temp surface distribution')
+p2.plot_surface2d(model_lon, model_lat, Si[0, :, :].T, 0, 30, 'magma', 'WOA Si surface distribution')
+p2.plot_surface2d(model_lon, model_lat, P[0, :, :].T, 0, 2.5, 'magma', 'WOA P surface distribution')
 
 #%% set up air-sea gas exchange (Wanninkhof 2014)
 

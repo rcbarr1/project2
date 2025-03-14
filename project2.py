@@ -340,33 +340,39 @@ def regrid_woa(data_path, woa_var, model_depth, model_lat, model_lon, ocnmask):
     # load WOA18 data
     if woa_var == 'S': # salinity [unitless]
         data = xr.open_dataset(data_path + 'WOA18/woa18_decav81B0_s00_01.nc', decode_times=False)
-        var = data.s_an.isel(time=0).values
-        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format
     elif woa_var == 'T': # temperature [ºC]
         data = xr.open_dataset(data_path + 'WOA18/woa18_decav81B0_t00_01.nc', decode_times=False)
-        var = data.t_an.isel(time=0).values
-        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format
     elif woa_var == 'Si': # silicate [µmol kg-1]
         data = xr.open_dataset(data_path + 'WOA18/woa18_all_i00_01.nc', decode_times=False)
-        var = data.i_an.isel(time=0).values
-        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format
     elif woa_var == 'P': # phosphate [µmol kg-1]
         data = xr.open_dataset(data_path + 'WOA18/woa18_all_p00_01.nc', decode_times=False)
-        var = data.p_an.isel(time=0).values
-        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format
     else:
         print("NCEP/NOAA data not found. Choose from woa_var = 'S', 'T', 'Si', 'P'")
         return
     
-    # transform longitude to be 0 to 360, reorder to increase from 0 to 360
-    data = data.assign(**{'lon': np.mod(data['lon'], 360)})
-    data = data.reindex({ 'lon' : np.sort(data['lon'])})
+    # convert longitude to 0-360 from -180-180
+    data['lon'] = (data['lon'] + 360) % 360 # convert
+    data = data.sortby('lon') # resort
     
-    # pull out arrays of depth, latitude, and longitude from NCEP
+    # pull out arrays of depth, latitude, and longitude from WOA
     data_lon = data['lon'].to_numpy()     # ºE
     data_lat = data['lat'].to_numpy()     # ºN
     data_depth = data['depth'].to_numpy()     # m
     
+    # pull out data variable from WOA (now that coordinates are correct)
+    if woa_var == 'S': # salinity [unitless]
+        var = data.s_an.isel(time=0).values
+        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format (depth, lon, lat)
+    elif woa_var == 'T': # temperature [ºC]
+        var = data.t_an.isel(time=0).values
+        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format (depth, lon, lat)
+    elif woa_var == 'Si': # silicate [µmol kg-1]
+        var = data.i_an.isel(time=0).values
+        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format (depth, lon, lat)
+    elif woa_var == 'P': # phosphate [µmol kg-1]
+        var = data.p_an.isel(time=0).values
+        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format (depth, lon, lat)
+
     # create interpolator
     interp = RegularGridInterpolator((data_depth, data_lon, data_lat), var, bounds_error=False, fill_value=None)
 
@@ -383,7 +389,7 @@ def regrid_woa(data_path, woa_var, model_depth, model_lat, model_lon, ocnmask):
     var = var.reshape(depth.shape)
 
     # inpaint nans
-    #var = inpaint_nans3d(var, mask=ocnmask.astype(bool))
+    var = inpaint_nans3d(var, mask=ocnmask.astype(bool))
 
     # save regridded data
     if woa_var == 'S':
