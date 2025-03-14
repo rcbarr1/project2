@@ -88,8 +88,8 @@ model_vols = model_data['vol'].to_numpy() # m^3
 #p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded GLODAP data
-DIC = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy')
-TA = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')
+DIC = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy') # dissolved inorganic carbon [µmol kg-1]
+TA = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')   # total alkalinity [µmol kg-1]
 
 p2.plot_surface2d(model_lon, model_lat, DIC[0, :, :].T, 1500, 2500, 'magma', 'GLODAP DIC distribution')
 
@@ -102,15 +102,15 @@ p2.plot_surface2d(model_lon, model_lat, DIC[0, :, :].T, 1500, 2500, 'magma', 'GL
 #p2.regrid_woa(data_path, 'P', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded WOA18 data
-S = np.load(data_path + 'WOA18/S_AO.npy')
-T = np.load(data_path + 'WOA18/T_AO.npy')
-Si = np.load(data_path + 'WOA18/Si_AO.npy')
-P = np.load(data_path + 'WOA18/P_AO.npy')
+S = np.load(data_path + 'WOA18/S_AO.npy')   # salinity [unitless]
+T = np.load(data_path + 'WOA18/T_AO.npy')   # temperature [ºC]
+Si = np.load(data_path + 'WOA18/Si_AO.npy') # silicate [µmol kg-1]
+P = np.load(data_path + 'WOA18/P_AO.npy')   # phosphate [µmol kg-1]
 
 p2.plot_surface2d(model_lon, model_lat, S[0, :, :].T, 25, 38, 'magma', 'WOA salinity surface distribution')
 p2.plot_surface2d(model_lon, model_lat, T[0, :, :].T, -10, 35, 'magma', 'WOA temp surface distribution')
-p2.plot_surface2d(model_lon, model_lat, Si[0, :, :].T, 0, 30, 'magma', 'WOA Si surface distribution')
-p2.plot_surface2d(model_lon, model_lat, P[0, :, :].T, 0, 2.5, 'magma', 'WOA P surface distribution')
+p2.plot_surface2d(model_lon, model_lat, Si[0, :, :].T, 0, 30, 'magma', 'WOA silicate surface distribution')
+p2.plot_surface2d(model_lon, model_lat, P[0, :, :].T, 0, 2.5, 'magma', 'WOA phosphate surface distribution')
 
 #%% set up air-sea gas exchange (Wanninkhof 2014)
 
@@ -140,19 +140,40 @@ Kw *= (24*365.25/100) # [m/yr] convert units
 
 #%% set up linearized CO2 system (Nowicki et al., 2024)
 
+# create "pressure" array by broadcasting depth array
+pressure = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
 
+# use CO2sys with GLODAP and WOA data to solve for carbonate system at each grid cell
+# do this for only ocean grid cells
+co2sys_results = pyco2.sys(par1=TA[ocnmask == 1].flatten(order='F'),
+                    par2=DIC[ocnmask == 1].flatten(order='F'),
+                    par1_type=1, par2_type=2,
+                    salinity=S[ocnmask == 1].flatten(order='F'),
+                    temperature=T[ocnmask == 1].flatten(order='F'),
+                    pressure=pressure[ocnmask == 1].flatten(order='F'),
+                    total_silicate=Si[ocnmask == 1].flatten(order='F'),
+                    total_phosphate=P[ocnmask == 1].flatten(order='F'))
 
+# extract key results arrays, make 3D
 
+# pCO2 [µatm]
+pCO2 = np.full(ocnmask.shape, np.nan)
+pCO2[ocnmask == 1] = np.reshape(co2sys_results['pCO2'], (-1,), order='F')
 
+# aqueous CO2 [µmol kg-1]
+aqueous_CO2 = np.full(ocnmask.shape, np.nan)
+aqueous_CO2[ocnmask == 1] = np.reshape(co2sys_results['aqueous_CO2'], (-1,), order='F')
 
+# revelle factor [unitless]
+R = np.full(ocnmask.shape, np.nan)
+R[ocnmask == 1] = np.reshape(co2sys_results['revelle_factor'], (-1,), order='F')
 
+# calculate Nowicki et al. parameters
+beta = DIC/aqueous_CO2 # [unitless]
+del_z1 = model_depth[1] - model_depth[0] # depth of first layer of model [m]
+tau_CO2 = (del_z1 * beta) / (Kw * R) # timescale of CO2 equilibration [yr]
 
-
-
-
-
-
-
+#%% 
 
 
 
