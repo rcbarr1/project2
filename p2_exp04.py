@@ -55,7 +55,7 @@ Created on Mon Feb 24 12:04:44 2025
 import project2 as p2
 import xarray as xr
 import numpy as np
-from scipy.sparse import eye
+from scipy.sparse import eye, diags, csc_matrix, bmat
 from scipy.sparse.linalg import spsolve
 import PyCO2SYS as pyco2
 import time
@@ -173,18 +173,116 @@ beta = DIC/aqueous_CO2 # [unitless]
 del_z1 = model_depth[1] - model_depth[0] # depth of first layer of model [m]
 tau_CO2 = (del_z1 * beta) / (Kw * R) # timescale of CO2 equilibration [yr]
 
-#%% 
+#%% setting up full matrix A (transport matrix + fluxes between reservoirs)
+# total matrix will have size (m + 1) x (m + 1)
+
+m = np.size(ocnmask[ocnmask == 1]) # total number of ocean grid cells in model
+surfmask = ocnmask[0,:,:]
+m_surf = np.size(surfmask[surfmask == 1]) # total number of surface ocean grid cells in model
+
+# A_11: top left m x m of full matrix A, operates on ∆DIC to calculate change in ∆DIC with each time step
+# A_11 = TR - Q_gas, represents DIC change in each cell due to movement around ocean (TR) + CO2/carbonate chemistry equilibration in surface layer (Q_gas)
+# q_gas = math for carbonate chemistry equilibration in surface ocean, 1/tau_CO2 for surface ocean and zero elsewhere
+q_gas = np.zeros(ocnmask.shape)
+q_gas[0, :, :] = 1/tau_CO2[0, :, :] # [yr-1]
+Q_gas = diags(q_gas[ocnmask == 1].flatten(order='F'), format='csc') # flatten q_gas and create sparse matrix where q_gas is main diagonal
+A_11 = TR - Q_gas # [yr-1]
+
+# A_12: top right m x 1 of full matrix A, operates on ∆xCO2 to represent flux of atmospheric CO2 to ocean grid cells
+# A_12 = q_atm, surface ocean boxes only
+# A_12 = P_atm /(tau_CO2 * beta), represents air-sea gas exchange from atmosphere to ocean
+P_atm = 1 # atmospheric pressure [atm]
+A_12 = (P_atm/(tau_CO2 * beta))[ocnmask == 1].flatten(order='F') # [mol kg-1 yr-1]
+# create sparse matrix of m x 1 dimensions, store A_12 in surface boxes
+A_12 = csc_matrix((A_12[0:m_surf], (range(0,m_surf), np.zeros(m_surf))), shape=(m,1))
+
+# A_21: bottom left 1 x m of full matrix A, operates on ∆DIC to represent flux of oceanic CO2 to atmosphere at each time step
+# A_21 = rho * vol / (Ma * tau_CO2), represents air-sea gas exchange from ocean to atmosphere
+rho = 1025 # seawater density [kg m-3]
+Ma = 1.7e20 # number of moles of air in atmosphere
+A_21 = (rho * model_vols / (Ma * tau_CO2))[ocnmask == 1].flatten(order='F') # [kg mol-1 yr-1]
+# create sparse matrix of 1 x m dimensions, store A_21 in surface boxes
+A_21 = csc_matrix((A_21[0:m_surf], (np.zeros(m_surf), range(0,m_surf))), shape=(1,m))
+
+# A_22: bottom right 1 x 1 of full matrix A, operates on ∆xCO2 to represent change of ∆xCO2 with each time step
+# A_22 = -(P_atm/Ma) * sum[(rho * vol) / (tau_CO2 * beta)] in surface ocean boxes only
+A_22 = -(P_atm/Ma) * np.nansum((rho * model_vols[0, :, :]) / (tau_CO2[0, :, :] * beta)) # [yr-1]
+# create sparse matrix of 1 x 1 dimensions to store A_22
+A_22 = csc_matrix([[A_22]])
+
+# compose full A matrix by piecing together submatrices
+# A = [A_11   A_12]
+#     [A_21   A_22]
+
+A = bmat([[A_11, A_12], [A_21, A_22]], format='csc')
+
+#%% perform time-stepping
+
+# set up time domain
+dt1 = 1/360 # 1 day
+dt2 = 1/12 # 1 month
+dt3 = 1 # 1 year
+dt4 = 10 # 10 years
+dt5 = 100 # 100 years
+
+t1 = np.arange(0, 90/360, dt1) # use a 1 day time step for the first 90 days
+t2 = np.arange(90/360, 5, dt2) # use a 1 month time step until the 5th year
+t3 = np.arange(5, 100, dt3) # use a 1 year time step until the 100th year
+t4 = np.arange(100, 500, dt4) # use a 10 year time step until the 500th year
+t5 = np.arange(500, 1000, dt5) # use a 100 year time step until the 1000th year
+
+ts = np.concatenate((t1, t2, t3, t4, t5))
+
+# shorten ts for testing
+ts = ts[0:4]
+
+# preallocate arrays
+x = np.full((len(ts), m+1), np.nan) # [∆DIC, ∆xCO2] at each time step
+x[0, :] = 0 # ∆DIC, ∆xCO2 = 0 at time step 0
+b = np.zeros((m+1, 1)) # [-∆J_CDRocn, -∆J_CDRatm], currently no perturbation
+#%%
+# time step
+for idx, t in enumerate(ts[1:-1],start=1):
+    print(idx)
+    
+    if t <= 90/360: # 1 day time step
+        RHS = x[idx-1,:] + dt1*b
+   
+    elif (t > 90/360) & (t <= 5): # 1 month time step
+        RHS = x[idx-1,:] + dt2*b
+    
+    elif (t > 5) & (t <= 100): # 1 year time step
+        RHS = x[idx-1,:] + dt3*b
+   
+    elif (t > 100) & (t <= 500): # 10 year time step
+        RHS = x[idx-1,:] + dt4*b
+    
+    else: # 100 year time step
+        RHS = x[idx-1,:] + dt5*b
+    
+    start_time = time.time()
+    
+    x[idx,:] = spsolve(A,RHS) # time step with backwards Euler
+    
+    end_time = time.time()
+    print(str(end_time - start_time) + ' s') # elapsed time of solve in seconds
+
+#%% rebuild 3D concentrations from 1D array used for solving matrix equation
+x3D = np.full([len(ts), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+
+for idx in range(0, ts):
+    x_reshaped = np.full(ocnmask.shape, np.nan)
+    x_reshaped[ocnmask == 1] = np.reshape(x_reshaped, (-1,), order='F')
+    
+    x3D[idx, :, :, :] = x_reshaped
 
 
+#%% save model output in netCDR format
 
+#global_attrs = {'description':'exp01: conservative test tracer moving from point-source in ocean. Attempting to use partitioning to impose boundary conditions to make the tracer actually conserved. Added a test tracer(?) in the middle (mid-depth) of the pacific ocean to try to see if boundary conditions were the problem.'}
+global_attrs = {'description':'first run of kana model implemented in python'}
 
-
-
-
-
-
-
-
+p2.save_model_output(output_path + 'exp04_2025-3-19-a.nc', model_depth, model_lon, model_lat, np.array(range(0, t)), [x3D], tracer_names=['CO2'], tracer_units=None, global_attrs=global_attrs)
 
 
 
