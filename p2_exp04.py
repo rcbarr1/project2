@@ -231,34 +231,38 @@ t3 = np.arange(5, 100, dt3) # use a 1 year time step until the 100th year
 t4 = np.arange(100, 500, dt4) # use a 10 year time step until the 500th year
 t5 = np.arange(500, 1000, dt5) # use a 100 year time step until the 1000th year
 
-ts = np.concatenate((t1, t2, t3, t4, t5))
+t = np.concatenate((t1, t2, t3, t4, t5))
 
 # shorten ts for testing
-ts = ts[0:4]
+t = t[0:5]
 
 # preallocate arrays
-x = np.full((len(ts), m+1), np.nan) # [∆DIC, ∆xCO2] at each time step
+x = np.full((len(t), m+1), np.nan) # [∆DIC, ∆xCO2] at each time step
 x[0, :] = 0 # ∆DIC, ∆xCO2 = 0 at time step 0
 b = np.zeros((m+1, 1)) # [-∆J_CDRocn, -∆J_CDRatm], currently no perturbation
-#%%
+
 # time step
-for idx, t in enumerate(ts[1:-1],start=1):
+for idx in range(1, len(t)):
     print(idx)
+    if idx == 1:
+        b[-1] = 10 # add test perturbation to b
+    else:
+        b[-1] = 0 # no perturbation
     
-    if t <= 90/360: # 1 day time step
-        RHS = x[idx-1,:] + dt1*b
+    if t[idx] <= 90/360: # 1 day time step
+        RHS = x[idx-1,:] + np.squeeze(dt1*b)
    
-    elif (t > 90/360) & (t <= 5): # 1 month time step
-        RHS = x[idx-1,:] + dt2*b
+    elif (t[idx] > 90/360) & (t[idx] <= 5): # 1 month time step
+        RHS = x[idx-1,:] + np.squeeze(dt2*b)
     
-    elif (t > 5) & (t <= 100): # 1 year time step
-        RHS = x[idx-1,:] + dt3*b
+    elif (t[idx] > 5) & (t[idx] <= 100): # 1 year time step
+        RHS = x[idx-1,:] + np.squeeze(dt3*b)
    
-    elif (t > 100) & (t <= 500): # 10 year time step
-        RHS = x[idx-1,:] + dt4*b
+    elif (t[idx] > 100) & (t[idx] <= 500): # 10 year time step
+        RHS = x[idx-1,:] + np.squeeze(dt4*b)
     
     else: # 100 year time step
-        RHS = x[idx-1,:] + dt5*b
+        RHS = x[idx-1,:] + np.squeeze(dt5*b)
     
     start_time = time.time()
     
@@ -268,31 +272,57 @@ for idx, t in enumerate(ts[1:-1],start=1):
     print(str(end_time - start_time) + ' s') # elapsed time of solve in seconds
 
 #%% rebuild 3D concentrations from 1D array used for solving matrix equation
-x3D = np.full([len(ts), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+delDIC = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
 
-for idx in range(0, ts):
+for idx in range(0, len(t)):
     x_reshaped = np.full(ocnmask.shape, np.nan)
-    x_reshaped[ocnmask == 1] = np.reshape(x_reshaped, (-1,), order='F')
+    x_reshaped[ocnmask == 1] = np.reshape(x[idx, 0:-1], (-1,), order='F')
     
-    x3D[idx, :, :, :] = x_reshaped
+    delDIC[idx, :, :, :] = x_reshaped # save first m outputs as DIC
 
+delxCO2 = x[:, -1] # last output (m + 1) is atmospheric CO2 (xCO2)
 
-#%% save model output in netCDR format
+#%% save model output in netCDF format
 
-#global_attrs = {'description':'exp01: conservative test tracer moving from point-source in ocean. Attempting to use partitioning to impose boundary conditions to make the tracer actually conserved. Added a test tracer(?) in the middle (mid-depth) of the pacific ocean to try to see if boundary conditions were the problem.'}
 global_attrs = {'description':'first run of kana model implemented in python'}
 
-p2.save_model_output(output_path + 'exp04_2025-3-19-a.nc', model_depth, model_lon, model_lat, np.array(range(0, t)), [x3D], tracer_names=['CO2'], tracer_units=None, global_attrs=global_attrs)
+# Save model output
+p2.save_model_output(
+    'exp04_2025-3-19-b.nc', 
+    t, 
+    model_depth, 
+    model_lon, 
+    model_lat, 
+    tracers=[delDIC, delxCO2], 
+    tracer_dims=[('time', 'depth', 'lon', 'lat'), ('time')],
+    tracer_names=['delDIC', 'delxCO2'], 
+    tracer_units=['mol m-3', 'mol m-3'],
+    global_attrs=global_attrs
+)
 
+#%% open and plot model output
+data = xr.open_dataset(output_path + 'exp04_2025-3-19-b.nc')
 
+model_time = data.time
+model_lon = data.lon.data
+model_lat = data.lat.data
+model_depth = data.depth.data
 
-
-
-
-
-
-
-
+for idx in range(0, len(model_time)):
+    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx), 0, 10, 0.1, 'plasma', 'surface ∆DIC at t=' + str(t))
+    
+for idx in range(0, len(model_time)):
+    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx), 0, 10, 0.1, 'plasma', ' ∆DIC at t=' +str(t) + ' along 201ºE longitude')
+    
+# test: sum tracer concentration at each time step (starting at t = 6 when addition is over) to see if conserved
+# currently it is not conserved!! why!
+for idx in range(0, len(model_time)):
+    # multiply mol m^-3 * m^3 to see if AMOUNT is conserved
+    DIC_amount = data['delDIC'].isel(time=idx) * model_vols
+    
+    print('t = ' + str(idx) + '\t c = ' + str(np.nansum(DIC_amount)))    
+    
+data.close()
 
 
 

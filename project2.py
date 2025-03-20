@@ -67,18 +67,19 @@ def loadmat(filename):
     data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
     return _check_keys(data)
     
-def save_model_output(filename, depth, lon, lat, time, tracers, tracer_names=None, tracer_units=None, global_attrs=None):
+def save_model_output(filename, time, depth, lon, lat, tracers, tracer_dims=[('time', 'depth', 'lon', 'lat')], tracer_names=None, tracer_units=None, global_attrs=None):
     '''
     Save model output to a NetCDF file.
     
     Parameters
     ----------
     filename (str): Name of the NetCDF file to create.
+    time (list or array): Time values (e.g., in years).
     depth (list or array): Depth values.
     lon (list or array): Longitude values.
     lat (list or array): Latitude values.
-    time (list or array): Time values (e.g., in years).
-    tracers (list of 4D arrays): List of 4D arrays (time x depth x lon x lat) for each tracer.
+    tracers (list of arrays): List of arrays for each variable of interest.
+    tracer_dims (list of tuples): List of dimension tuples corresponding to each tracer (e.g., ('time', 'depth', 'lat', 'lon')).
     tracer_names (list of str, optional): Names of the tracers corresponding to each tracer set in `tracers`.
     tracer_units (list of str, optional): Units of the tracers corresponding to each tracer set in `tracers`.
     global_attrs (dict, optional): Additional global attributes for the NetCDF file.
@@ -95,8 +96,13 @@ def save_model_output(filename, depth, lon, lat, time, tracers, tracer_names=Non
         raise ValueError("The number of tracers must match the number of tracer names.")
     if len(tracers) != len(tracer_units):
         raise ValueError("The number of tracers must match the number of tracer units.")
+    if len(tracers) != len(tracer_dims):
+        raise ValueError("The number of tracers must match the number of tracer dimensions.")
 
-    with h5netcdf.File(filename, 'w', invalid_netcdf=True) as ncfile:
+    # Ensure all tracer_dims are tuples
+    tracer_dims = [(dim,) if isinstance(dim, str) else dim for dim in tracer_dims]
+    
+    with h5netcdf.File('./outputs/' + filename, 'w', invalid_netcdf=True) as ncfile:
         # Create dimensions
         ncfile.dimensions['time'] = len(time)
         ncfile.dimensions['depth'] = len(depth)
@@ -122,13 +128,13 @@ def save_model_output(filename, depth, lon, lat, time, tracers, tracer_names=Non
         nc_lat[:] = lat
 
         # Create and write tracer variables
-        for tracer_name, tracer_data, tracer_unit in zip(tracer_names, tracers, tracer_units):
-            tracer_var = ncfile.create_variable(tracer_name, ('time', 'depth', 'lon', 'lat'), dtype='f8')
+        for tracer_name, tracer_data, tracer_dim, tracer_unit in zip(tracer_names, tracers, tracer_dims, tracer_units):
+            tracer_var = ncfile.create_variable(tracer_name, tracer_dim, dtype='f8')
             tracer_var.attrs['description'] = f"{tracer_name} data"
             tracer_var.attrs['units'] = tracer_unit
 
-            # Write 4D tracer data
-            tracer_var[:, :, :, :] = tracer_data
+            # Write tracer data
+            tracer_var[...] = tracer_data
 
         # Add global attributes
         ncfile.attrs['history'] = 'Created ' + dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
