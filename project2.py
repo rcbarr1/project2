@@ -516,7 +516,7 @@ def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
 def plot_surface3d(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
     fig = plt.figure(figsize=(10,7))
     ax = fig.gca()
-    levels = np.linspace(vmin-0.1, vmax, 100)
+    levels = np.linspace(vmin-1e-7, vmax, 100)
     cntr = plt.contourf(lons, lats, variable[depth_level, :, :].T, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
     c = plt.colorbar(cntr, ax=ax)
     c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
@@ -528,7 +528,7 @@ def plot_surface3d(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
 def plot_longitude3d(lats, depths, variable, longitude, vmin, vmax, cmap, title):
     fig = plt.figure(figsize=(10,7))
     ax = fig.gca()
-    levels = np.linspace(vmin-0.1, vmax, 100)
+    levels = np.linspace(vmin-1e-7, vmax, 100)
     cntr = plt.contourf(lats, depths, variable[:, longitude, :], levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
     c = plt.colorbar(cntr, ax=ax)
     c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
