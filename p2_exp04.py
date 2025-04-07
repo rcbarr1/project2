@@ -116,12 +116,12 @@ p2.plot_surface2d(model_lon, model_lat, P[0, :, :].T, 0, 2.5, 'magma', 'WOA phos
 #p2.regrid_ncep_noaa(data_path, 'sst', model_lat, model_lon, ocnmask)
 
 # upload regridded NCEP/DOE reanalysis II data
-icec = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec_AO.npy') # annual mean ice fraction from 0 to 1 in each grid cell
+f_ice = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec_AO.npy') # annual mean ice fraction from 0 to 1 in each grid cell
 uwnd = np.load(data_path + 'NCEP_DOE_Reanalysis_II/uwnd_AO.npy') # annual mean of forecast of U-wind at 10 m [m/s]
 sst = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_AO.npy') # annual mean sea surface temperature [ºC]
 
 # mask out land boxes
-icec = np.where(ocnmask[0, :, :] == 1, icec, np.nan)
+f_ice = np.where(ocnmask[0, :, :] == 1, f_ice, np.nan)
 uwnd = np.where(ocnmask[0, :, :] == 1, uwnd, np.nan)
 sst = np.where(ocnmask[0, :, :] == 1, sst, np.nan)
 
@@ -131,7 +131,7 @@ Sc = vec_schmidt('CO2', sst)
 
 # solve for Kw (gas transfer velocity) for each ocean cell
 a = 0.251 # from Wanninkhof 2014
-Kw = a * uwnd**2 * (Sc/660)**-0.5 * (1 - icec) # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
+Kw = a * uwnd**2 * (Sc/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
 
 p2.plot_surface2d(model_lon, model_lat, Kw.T, 0, 20, 'magma', 'Gas transfer velocity (Kw, cm/hr)')
 
@@ -171,15 +171,17 @@ R = np.full(ocnmask.shape, np.nan)
 R[ocnmask == 1] = np.reshape(co2sys_results['revelle_factor'], (-1,), order='F')
 
 # calculate Nowicki et al. parameters
+rho = 1025 # seawater density [kg m-3]
 beta = DIC/aqueous_CO2 # [unitless]
+K0 = aqueous_CO2/pCO2/rho # [µmol m-3 atm-1], in derivation this is defined in per volume units so used density to get there
 del_z1 = model_depth[0] # depth of first layer of model [m]
-tau_CO2 = (del_z1 * beta) / (Kw * R) # timescale of CO2 equilibration [yr]
+tau_CO2 = (del_z1 * beta[0, :, :]) / (Kw * R[0, :, :]) # timescale of air-sea CO2 equilibration [yr]
 
 p2.plot_surface2d(model_lon, model_lat, R[0,:,:].T, 8, 18, 'magma', 'Revelle factor (unitless)') # this is correct
 p2.plot_surface2d(model_lon, model_lat, DIC[0,:,:].T, 1800, 2300, 'magma', 'DIC (µmol kg-1)') # this is correct
 p2.plot_surface2d(model_lon, model_lat, aqueous_CO2[0,:,:].T, 0, 80, 'magma', 'Aqueous CO2 (µmol kg-1)') # I think this is correct
 
-p2.plot_surface2d(model_lon, model_lat, tau_CO2[0,:,:].T, 0, 1.6, 'magma', 'tau_co2 (yr)') # this should be right? comparing to Nowicki 2024 supplemental, the general pattern seems correct, but the gradients here are more dramatic? note: those units are in days, this is in years
+p2.plot_surface2d(model_lon, model_lat, tau_CO2.T, 0, 1.6, 'magma', 'tau_co2 (yr)') # this should be right? comparing to Nowicki 2024 supplemental, the general pattern seems correct, but the gradients here are more dramatic? note: those units are in days, this is in years
 
 #%% setting up full matrix A (transport matrix + fluxes between reservoirs)
 # total matrix will have size (m + 1) x (m + 1)
@@ -190,31 +192,32 @@ m_surf = np.size(surfmask[surfmask == 1]) # total number of surface ocean grid c
 
 # A_11: top left m x m of full matrix A, operates on ∆DIC to calculate change in ∆DIC with each time step
 # A_11 = TR - Q_gas, represents DIC change in each cell due to movement around ocean (TR) + CO2/carbonate chemistry equilibration in surface layer (Q_gas)
-# q_gas = math for carbonate chemistry equilibration in surface ocean, 1/tau_CO2 for surface ocean and zero elsewhere
+# q_gas = math for carbonate chemistry equilibration in surface ocean, (1 - f_ice)/(rho * tau_CO2) for surface ocean and zero elsewhere
 q_gas = np.zeros(ocnmask.shape)
-q_gas[0, :, :] = 1/tau_CO2[0, :, :] # [yr-1]
+
+q_gas[0, :, :] = (1 - f_ice)/(rho * tau_CO2) # [yr-1] --> FOR UNITS TO MAKE SENSE, RHO SHOULD NOT BE HERE, WHY DO I HAVE IT?
+
 Q_gas = diags(q_gas[ocnmask == 1].flatten(order='F'), format='csc') # flatten q_gas and create sparse matrix where q_gas is main diagonal
 A_11 = TR - Q_gas # [yr-1]
 
 # A_12: top right m x 1 of full matrix A, operates on ∆xCO2 to represent flux of atmospheric CO2 to ocean grid cells
 # A_12 = q_atm, surface ocean boxes only
-# A_12 = P_atm /(tau_CO2 * beta), represents air-sea gas exchange from atmosphere to ocean
+# A_12 = (1 - f_ice) * K0 * beta * P_atm /(rho * tau_CO2), represents air-sea gas exchange from atmosphere to ocean
 P_atm = 1 # atmospheric pressure [atm]
-A_12 = (P_atm/(tau_CO2 * beta))[ocnmask == 1].flatten(order='F') # [mol kg-1 yr-1]
+A_12 = ((1 - f_ice) * K0 * beta * P_atm /(rho * tau_CO2))[ocnmask == 1].flatten(order='F') # [yr-1]
 # create sparse matrix of m x 1 dimensions, store A_12 in surface boxes
 A_12 = csc_matrix((A_12[0:m_surf], (range(0,m_surf), np.zeros(m_surf))), shape=(m,1))
 
 # A_21: bottom left 1 x m of full matrix A, operates on ∆DIC to represent flux of oceanic CO2 to atmosphere at each time step
-# A_21 = rho * vol / (Ma * tau_CO2), represents air-sea gas exchange from ocean to atmosphere
-rho = 1025 # seawater density [kg m-3]
-Ma = 1.7e20 # number of moles of air in atmosphere
-A_21 = (rho * model_vols / (Ma * tau_CO2))[ocnmask == 1].flatten(order='F') # [kg mol-1 yr-1]
+# A_21 = rho * vol * (1 - f_ice) / (Ma * tau_CO2), represents air-sea gas exchange from ocean to atmosphere
+Ma = 1.8e26 # number of micromoles of air in atmosphere
+A_21 = (rho * model_vols * (1 - f_ice) / (Ma * tau_CO2))[ocnmask == 1].flatten(order='F') # [kg mol-1 yr-1]
 # create sparse matrix of 1 x m dimensions, store A_21 in surface boxes
 A_21 = csc_matrix((A_21[0:m_surf], (np.zeros(m_surf), range(0,m_surf))), shape=(1,m))
 
 # A_22: bottom right 1 x 1 of full matrix A, operates on ∆xCO2 to represent change of ∆xCO2 with each time step
 # A_22 = -(P_atm/Ma) * sum[(rho * vol) / (tau_CO2 * beta)] in surface ocean boxes only
-A_22 = -(P_atm/Ma) * np.nansum((rho * model_vols[0, :, :]) / (tau_CO2[0, :, :] * beta)) # [yr-1]
+A_22 = np.nansum((-1 * model_vols[0, :, :] * K0[0, :, :] * beta[0, :, :] * P_atm * (1 - f_ice)) / (Ma * tau_CO2 * R[0, :, :])) # [yr-1]
 # create sparse matrix of 1 x 1 dimensions to store A_22
 A_22 = csc_matrix([[A_22]])
 
@@ -256,10 +259,6 @@ b[-1] = 1
 #x[0, -1] = 1 # setting xCO2 at t = 0 to 1
 
 # time step using Euler backward
-# c_t = (I - delt * TR)^-1 * (c_(t-delt) + delt * q(t))
-# LHS = (I - delt * TR)^-1, RHS = (c_(t-delt) + delt * q(t))
-# c_t = spsolve(LHS, RHS)
-
 for idx in range(1, len(t)):
     print(idx)
     if t[idx] <= 90/360: # 1 day time step
@@ -292,7 +291,7 @@ for idx in range(1, len(t)):
     # remove perturbation 
     b[-1] = 0
 
-#%% rebuild 3D concentrations from 1D array used for solving matrix equation
+ #%% rebuild 3D concentrations from 1D array used for solving matrix equation
 delDIC = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
 
 for idx in range(0, len(t)):
@@ -339,9 +338,11 @@ for idx in range(0, len(model_time)):
 # test: sum tracer concentration at each time step (starting at t = 6 when addition is over) to see if conserved
 # currently it is not conserved!! why!
 for idx in range(0, len(model_time)):
-    # multiply mol m^-3 * m^3 to see if AMOUNT is conserved
-    DIC_amount = data['delDIC'].isel(time=idx) * model_vols
-    xCO2_amount = data['delxCO2'].isel(time=idx).values
+    # multiply (mol kg^-1) * (kg m^-3) * m^3 to see if AMOUNT is conserved
+    DIC_amount = data['delDIC'].isel(time=idx) * rho * model_vols
+    
+    # multiply by 10^6 to change from unitless to ppm (still technically unitless)
+    xCO2_amount = data['delxCO2'].isel(time=idx).values * 10e6
     
     print('t = ' + str(idx) + '\t total ∆DIC = {:.2e} µmol'.format(np.nansum(DIC_amount)) + '\t ∆xCO2 = {:.3e} ppm'.format(xCO2_amount))    
     
