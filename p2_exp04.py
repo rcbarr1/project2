@@ -58,7 +58,8 @@ import numpy as np
 from scipy.sparse import eye, diags, csc_matrix, bmat
 from scipy.sparse.linalg import spsolve
 import PyCO2SYS as pyco2
-import time
+#import time
+from tqdm import tqdm 
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -172,8 +173,9 @@ R[ocnmask == 1] = np.reshape(co2sys_results['revelle_factor'], (-1,), order='F')
 
 # calculate Nowicki et al. parameters
 rho = 1025 # seawater density [kg m-3]
+Ma = 1.8e26 # number of micromoles of air in atmosphere
 beta = DIC/aqueous_CO2 # [unitless]
-K0 = aqueous_CO2/pCO2/rho # [µmol m-3 atm-1], in derivation this is defined in per volume units so used density to get there
+K0 = aqueous_CO2/pCO2*rho # [µmol m-3 atm-1], in derivation this is defined in per volume units so used density to get there
 del_z1 = model_depth[0] # depth of first layer of model [m]
 tau_CO2 = (del_z1 * beta[0, :, :]) / (Kw * R[0, :, :]) # timescale of air-sea CO2 equilibration [yr]
 
@@ -194,9 +196,7 @@ m_surf = np.size(surfmask[surfmask == 1]) # total number of surface ocean grid c
 # A_11 = TR - Q_gas, represents DIC change in each cell due to movement around ocean (TR) + CO2/carbonate chemistry equilibration in surface layer (Q_gas)
 # q_gas = math for carbonate chemistry equilibration in surface ocean, (1 - f_ice)/(rho * tau_CO2) for surface ocean and zero elsewhere
 q_gas = np.zeros(ocnmask.shape)
-
-q_gas[0, :, :] = (1 - f_ice)/(rho * tau_CO2) # [yr-1] --> FOR UNITS TO MAKE SENSE, RHO SHOULD NOT BE HERE, WHY DO I HAVE IT?
-
+q_gas[0, :, :] = (1 - f_ice)/(tau_CO2) # [yr-1]
 Q_gas = diags(q_gas[ocnmask == 1].flatten(order='F'), format='csc') # flatten q_gas and create sparse matrix where q_gas is main diagonal
 A_11 = TR - Q_gas # [yr-1]
 
@@ -204,20 +204,19 @@ A_11 = TR - Q_gas # [yr-1]
 # A_12 = q_atm, surface ocean boxes only
 # A_12 = (1 - f_ice) * K0 * beta * P_atm /(rho * tau_CO2), represents air-sea gas exchange from atmosphere to ocean
 P_atm = 1 # atmospheric pressure [atm]
-A_12 = ((1 - f_ice) * K0 * beta * P_atm /(rho * tau_CO2))[ocnmask == 1].flatten(order='F') # [yr-1]
+A_12 = ((1 - f_ice) * K0 * beta * P_atm /(rho * tau_CO2 * R))[ocnmask == 1].flatten(order='F') # [yr-1]
 # create sparse matrix of m x 1 dimensions, store A_12 in surface boxes
 A_12 = csc_matrix((A_12[0:m_surf], (range(0,m_surf), np.zeros(m_surf))), shape=(m,1))
 
 # A_21: bottom left 1 x m of full matrix A, operates on ∆DIC to represent flux of oceanic CO2 to atmosphere at each time step
 # A_21 = rho * vol * (1 - f_ice) / (Ma * tau_CO2), represents air-sea gas exchange from ocean to atmosphere
-Ma = 1.8e26 # number of micromoles of air in atmosphere
 A_21 = (rho * model_vols * (1 - f_ice) / (Ma * tau_CO2))[ocnmask == 1].flatten(order='F') # [kg mol-1 yr-1]
 # create sparse matrix of 1 x m dimensions, store A_21 in surface boxes
 A_21 = csc_matrix((A_21[0:m_surf], (np.zeros(m_surf), range(0,m_surf))), shape=(1,m))
 
 # A_22: bottom right 1 x 1 of full matrix A, operates on ∆xCO2 to represent change of ∆xCO2 with each time step
 # A_22 = -(P_atm/Ma) * sum[(rho * vol) / (tau_CO2 * beta)] in surface ocean boxes only
-A_22 = np.nansum((-1 * model_vols[0, :, :] * K0[0, :, :] * beta[0, :, :] * P_atm * (1 - f_ice)) / (Ma * tau_CO2 * R[0, :, :])) # [yr-1]
+A_22 = -1 * np.nansum((model_vols[0, :, :] * K0[0, :, :] * beta[0, :, :] * P_atm * (1 - f_ice)) / (Ma * tau_CO2 * R[0, :, :])) # [yr-1]
 # create sparse matrix of 1 x 1 dimensions to store A_22
 A_22 = csc_matrix([[A_22]])
 
@@ -245,7 +244,8 @@ t5 = np.arange(500, 1000+dt5, dt5) # use a 100 year time step until the 1000th y
 t = np.concatenate((t1, t2, t3, t4, t5))
 
 # shorten ts for testing
-t = t[0:10]
+#t = t[0:7]
+t = np.arange(0,400,100)
 
 #%% perform time-stepping
 
@@ -255,12 +255,13 @@ x[0, :] = 0 # ∆DIC, ∆xCO2 = 0 at time step 0
 b = np.zeros((m+1, 1)) # [-∆J_CDRocn, -∆J_CDRatm], adding perturbation below
 
 # add perturbation for first time step
-b[-1] = 1
+b[-1] = 10/1e6 # perturbation of x ppm, divide by 10^6 to make units correct
 #x[0, -1] = 1 # setting xCO2 at t = 0 to 1
 
 # time step using Euler backward
-for idx in range(1, len(t)):
-    print(idx)
+for idx in tqdm(range(1, len(t))):
+    #print(idx)
+    '''
     if t[idx] <= 90/360: # 1 day time step
         LHS = eye(A.shape[0], format="csc") - dt1 * A
         RHS = x[idx-1,:] + np.squeeze(dt1*b)
@@ -280,13 +281,17 @@ for idx in range(1, len(t)):
     else: # 100 year time step
         LHS = eye(A.shape[0], format="csc") - dt5 * A
         RHS = x[idx-1,:] + np.squeeze(dt5*b)
+    '''
     
-    start_time = time.time()
+    LHS = eye(A.shape[0], format="csc") - dt5 * A
+    RHS = x[idx-1,:] + np.squeeze(dt5*b)
+    
+    #start_time = time.time()
     
     x[idx,:] = spsolve(LHS,RHS) # time step with backwards Euler
     
-    end_time = time.time()
-    print(str(end_time - start_time) + ' s') # elapsed time of solve in seconds
+    #end_time = time.time()
+    #print(str(end_time - start_time) + ' s') # elapsed time of solve in seconds
     
     # remove perturbation 
     b[-1] = 0
@@ -304,14 +309,14 @@ delxCO2 = x[:, -1] # last output (m + 1) is atmospheric CO2 (xCO2)
 
 #%% save model output in netCDF format
 
-global_attrs = {'description':'testing applying perturbation as nonzero ∆xCO2 at time step zero'}
+global_attrs = {'description':'continuing testing my derivation instead of copying kana - working on how to validate model. time step of 100 year. flipped signs of A21 and A22 to match kana'}
 
 # Save model output
 p2.save_model_output(
-    'exp04_2025-4-1-b.nc', 
+    'exp04_2025-4-14-d.nc', 
     t, 
     model_depth, 
-    model_lon, 
+    model_lon,
     model_lat, 
     tracers=[delDIC, delxCO2], 
     tracer_dims=[('time', 'depth', 'lon', 'lat'), ('time')],
@@ -321,31 +326,39 @@ p2.save_model_output(
 )
 
 #%% open and plot model output
-data = xr.open_dataset(output_path + 'exp04_2025-4-1-b.nc')
+data = xr.open_dataset(output_path + 'exp04_2025-4-14-d.nc')
 
 model_time = data.time
 model_lon = data.lon.data
 model_lat = data.lat.data
 model_depth = data.depth.data
 
-for idx in range(0, len(model_time)):
+#for idx in range(0, len(model_time)):
+for idx in range(0, 4):
     print(idx)
-    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, 0, 1e-3, 'plasma', 'surface ∆DIC (µmol kg-1) at t=' + str(t[idx]))
+    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, 0, 1e-7, 'plasma', 'surface ∆DIC (µmol kg-1) at t=' + str(t[idx]))
    
-for idx in range(0, len(model_time)):
-    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 0, 0, 1e-3, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 201ºE longitude')
+#for idx in range(0, len(model_time)):
+for idx in range(0, 4):
+    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 0, 0, 1e-7, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 201ºE longitude')
     
 # test: sum tracer concentration at each time step (starting at t = 6 when addition is over) to see if conserved
 # currently it is not conserved!! why!
-for idx in range(0, len(model_time)):
+#for idx in range(0, len(model_time)):
+for idx in range(0, 4):
     # multiply (mol kg^-1) * (kg m^-3) * m^3 to see if AMOUNT is conserved
     DIC_amount = data['delDIC'].isel(time=idx) * rho * model_vols
     
     # multiply by 10^6 to change from unitless to ppm (still technically unitless)
-    xCO2_amount = data['delxCO2'].isel(time=idx).values * 10e6
+    xCO2_amount = data['delxCO2'].isel(time=idx).values * 1e6
     
-    print('t = ' + str(idx) + '\t total ∆DIC = {:.2e} µmol'.format(np.nansum(DIC_amount)) + '\t ∆xCO2 = {:.3e} ppm'.format(xCO2_amount))    
+    # or, multiply by mass of air to get moles of CO2 in atmosphere
+    xCO2_amount_mol = data['delxCO2'].isel(time=idx).values * Ma # amount of xCO2 in atmosphere [µmol]
+    total_amount = (np.nansum(DIC_amount) + xCO2_amount_mol) * 1e-6 # [mol]
     
+    print('t = ' + str(idx) + '\t\t total ∆DIC = {:.2f} mol'.format((np.nansum(DIC_amount) * 1e-6)) + '\t ∆xCO2 = {:.2f} mol'.format(xCO2_amount_mol * 1e-6))    
+    
+    print('\t\t\t total CO2 = {:.2f} mol\n'.format(total_amount))
 data.close()
 
 
