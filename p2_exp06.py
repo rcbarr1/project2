@@ -13,6 +13,10 @@ import project2 as p2
 import xarray as xr
 import PyCO2SYS as pyco2
 import gsw
+import pandas as pd
+from scipy.sparse import eye
+from scipy.sparse.linalg import spsolve
+
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -64,20 +68,41 @@ output_coordinates.update({'longitude' : longitude,
 predictor_measurements.update({'salinity' : salinity,
                               'temperature' : temperature})
 
-
-
 # call pyESPERs to calculate total alkalinity [µmol kg-1]
-
 TA_NN, _= PyESPER.PyESPER_NN(['TA'], main_path, output_coordinates, predictor_measurements)
-TA_LIR, _, _ = PyESPER.PyESPER_LIR(['TA'], main_path, output_coordinates, predictor_measurements)
+#TA_LIR, _, _ = PyESPER.PyESPER_LIR(['TA'], main_path, output_coordinates, predictor_measurements)
 
+# reformat and save data
+TA_NN = TA_NN.iloc[:,15].to_numpy() # pull out ESPER prediction of TA, convert to numpy array
+TA_NN_3D = np.full(ocnmask.shape, np.nan)
+TA_NN_3D[ocnmask == 1] = np.reshape(TA_NN, (-1,), order='F') # rebuild 3D array
+np.save(str(data_path) + 'TA_ESPER_NN_3D.npy', TA_NN_3D) # export to xarray to save data
 
+#%% open saved TA file, flatten
+TA_NN_3D = np.load(str(data_path) + 'TA_ESPER_NN_3D.npy')
+TA_NN = TA_NN_3D[ocnmask == 1].flatten(order='F')
 
-#%%
+#%% make sure I'm doing this right–this result should function as a source/sink vector that allows the transport matrix to be static over time
+dt = 1 # 1 year
+LHS = eye(TR.shape[0], format="csc") - dt * TR
 
+q = -1 * TR * TA_NN # this is the flux vector (flat)
 
+RHS = TA_NN + dt * q
+TA_NN_2 = spsolve(LHS, RHS)
 
+#%% test if equal
+should_be_basically_zero_flat = TA_NN_2 - TA_NN
+should_be_basically_zero_3D = np.full(ocnmask.shape, np.nan)
+should_be_basically_zero_3D[ocnmask == 1] = np.reshape(should_be_basically_zero_flat, (-1,), order='F') # rebuild 3D array
 
+p2.plot_surface3d(model_lon[0, :, 0], model_lat[0, 0, :], should_be_basically_zero_3D, 0, -0.1, 0.1, 'plasma', 'Surface AT Flux (µmol kg-1 yr-1)')
+
+#%% data visualization
+q_3D = np.full(ocnmask.shape, np.nan)
+q_3D[ocnmask == 1] = np.reshape(q, (-1,), order='F') # rebuild 3D array
+
+p2.plot_surface3d(model_lon[0, :, 0], model_lat[0, 0, :], q_3D*(10**-6), 0, -.01, .01, 'plasma', 'Surface AT Flux (mol kg-1 yr-1)')
 
 
 

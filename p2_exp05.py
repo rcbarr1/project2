@@ -12,6 +12,8 @@ Created on Mon Apr 21 16:20:50 2025
 
 import PyCO2SYS as pyco2
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import rcParams
 
 # create test scenarios -> assume 1 µmol/kg CaCO3 added,
 # so DIC increases by 1 µmol/kg and TA increases by 2 µmol/kg
@@ -23,6 +25,14 @@ scenarios = [[2000, 0.1, 2200, 0.1],
              [2000, 25, 2200, 50],
              [1800, 1, 2000, 2],
              [2200, 1, 2400, 1],]
+
+scenarios = []
+num_scenarios = 100
+for i in np.logspace(0.0001, 2, num=num_scenarios):
+    scenario = [2000, i, 2200, i*2]
+    scenarios.append(scenario)
+    
+#%% define functions to calculate each way
 
 # using pyCO2SYS: calculate change in pCO2 from t = 0 to t = 1
 def calculate_pyco2sys(DIC0, del_DIC, TA0, del_TA):
@@ -57,17 +67,34 @@ def calculate_linear(DIC0, del_DIC, TA0, del_TA):
     
     return del_pCO2
 
+#%% calculate results
 print('')
-for scenario in scenarios:
-    py_pCO2 = calculate_pyco2sys(scenario[0], scenario[1], scenario[2], scenario[3])
-    linear_pCO2 = calculate_linear(scenario[0], scenario[1], scenario[2], scenario[3])
+py_pCO2 = np.zeros(num_scenarios)
+linear_pCO2 = np.zeros(num_scenarios)
+for i, scenario in enumerate(scenarios):
+    py_pCO2[i] = calculate_pyco2sys(scenario[0], scenario[1], scenario[2], scenario[3])
+    linear_pCO2[i] = calculate_linear(scenario[0], scenario[1], scenario[2], scenario[3])
 
-    print('DIC = ' + str(scenario[0]) + ', ∆DIC = ' + str(scenario[1]) + ', TA = ' + str(scenario[2]) + ', ∆TA = ' + str(scenario[3]) + ' (all µmol/kg)')
-    print('with pyCO2SYS: ∆pCO2 = ' + str(np.round(py_pCO2,5)) + ' µatm')
-    print('with additive assumption: ∆pCO2 = ' + str(np.round(linear_pCO2,5)) + ' µatm\n')
+    #print('DIC = ' + str(scenario[0]) + ', ∆DIC = ' + str(scenario[1]) + ', TA = ' + str(scenario[2]) + ', ∆TA = ' + str(scenario[3]) + ' (all µmol/kg)')
+    #print('with pyCO2SYS: ∆pCO2 = ' + str(np.round(py_pCO2,5)) + ' µatm')
+    #print('with additive assumption: ∆pCO2 = ' + str(np.round(linear_pCO2,5)) + ' µatm\n')
 
+#%% plot results
+rcParams['font.family'] = 'Avenir'
 
+amt_CaCO3 = [scenario[1] for scenario in scenarios] # extract amount of CaCO3 added in each scenario [µmol kg-1]
 
+fig = plt.figure(figsize=(4.5,2))
+ax = fig.gca()
+
+ax.semilogx(np.array(amt_CaCO3), py_pCO2, label='Calculated with PyCO$_{2}$SYS',c='#1649b3')
+ax.semilogx(np.array(amt_CaCO3), linear_pCO2, label='Calculated with linearization',c='#DA9497')
+
+ax.set_xlabel('Amount of CaCO$_{3}$ Added (µmol kg$^{-1}$)')
+ax.set_ylabel('Change in Seawater pCO$_{2}$')
+plt.suptitle('Simulation of Ocean Alkalinity Enhancement', y=1.09)
+plt.title('($A_\mathrm{T}$ = 2200 µmol kg$^{-1}$, DIC = 2000 µmol kg$^{-1}$)',fontsize=10)
+plt.legend()
 
 
 
