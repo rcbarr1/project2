@@ -84,7 +84,8 @@ rcParams['font.family'] = 'Avenir'
 
 amt_CaCO3 = [scenario[1] for scenario in scenarios] # extract amount of CaCO3 added in each scenario [µmol kg-1]
 
-fig = plt.figure(figsize=(4.5,2))
+#fig = plt.figure(figsize=(4.5,2))
+fig = plt.figure(figsize=(5,3.7), dpi=200)
 ax = fig.gca()
 
 ax.semilogx(np.array(amt_CaCO3), py_pCO2, label='Calculated with PyCO$_{2}$SYS',c='#1649b3')
@@ -92,7 +93,8 @@ ax.semilogx(np.array(amt_CaCO3), linear_pCO2, label='Calculated with linearizati
 
 ax.set_xlabel('Amount of CaCO$_{3}$ Added (µmol kg$^{-1}$)')
 ax.set_ylabel('Change in Seawater pCO$_{2}$')
-plt.suptitle('Simulation of Ocean Alkalinity Enhancement', y=1.09)
+#plt.suptitle('Simulation of Ocean Alkalinity Enhancement', y=1.09)
+plt.suptitle('Simulation of Ocean Alkalinity Enhancement', y=0.99)
 plt.title('($A_\mathrm{T}$ = 2200 µmol kg$^{-1}$, DIC = 2000 µmol kg$^{-1}$)',fontsize=10)
 plt.legend()
 

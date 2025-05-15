@@ -340,7 +340,7 @@ for idx in range(0, 4):
    
 #for idx in range(0, len(model_time)):
 for idx in range(0, 4):
-    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 0, 0, 1e-7, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 201ºE longitude')
+    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 100, 0, 1e-7, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 201ºE longitude')
     
 # test: sum tracer concentration at each time step (starting at t = 6 when addition is over) to see if conserved
 # currently it is not conserved!! why!
