@@ -513,18 +513,22 @@ def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
     
     # main plot
     fig = plt.figure(figsize=(10,7))
+    #fig = plt.figure(figsize=(8,4))
     ax = fig.gca()
     levels = np.linspace(vmin-0.1, vmax, 100)
     cntr = plt.contourf(lons, lats, variable_masked, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
     c = plt.colorbar(cntr, ax=ax)
     c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
-    
+    #c.set_label('mol DIC m$^{-2}$ yr$^{-1}$', fontsize=12)
+
     # overlay black for land
     zero_mask = (variable == 0).astype(float)
     ax.contourf(lons, lats, zero_mask, levels=[0.5, 1.5], colors='black', alpha=1.0)
     
     plt.xlabel('longitude (ºE)')
     plt.ylabel('latitude (ºN)')
+    #plt.xlabel('Longitude (ºE)')
+    #plt.ylabel('Latitude (ºN)')
     plt.title(title)
     plt.xlim([0, 360]), plt.ylim([-90,90])
 

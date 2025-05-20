@@ -14,10 +14,14 @@ import xarray as xr
 import gsw
 from scipy.sparse import eye
 from scipy.sparse.linalg import spsolve
+import matplotlib.pyplot as plt
+from matplotlib import rcParams
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
 main_path = '/Users/Reese_1/Documents/Research Projects/project2'
+
+rcParams['font.family'] = 'Avenir'
 
 #%% load transport matrix (OCIM2-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
@@ -403,7 +407,7 @@ p2.plot_surface3d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_air_sea_3D, 
 p2.plot_longitude3d(model_lat[0, 0, :], model_depth[:, 0, 0],  q_DIC_NN_air_sea_3D, 100, -70, 70, 'RdBu', ' DIC_NN Flux (Air-sea, µmol kg-1 yr-1) along 201ºE longitude')
 p2.plot_longitude3d(model_lat[0, 0, :], model_depth[:, 0, 0],  q_DIC_LIR_air_sea_3D, 100, -70, 70, 'RdBu', ' DIC_LIR Flux (Air-sea, µmol kg-1 yr-1) along 201ºE longitude')
 
-#%% calculate NO3 fluxes
+#%% plot NO3 fluxes
 q_NO3_NN_3D = np.full(ocnmask.shape, np.nan)
 q_NO3_NN_3D[ocnmask == 1] = np.reshape(q_NO3_NN, (-1,), order='F') # rebuild 3D array
 
@@ -419,98 +423,184 @@ p2.plot_longitude3d(model_lat[0, 0, :], model_depth[:, 0, 0],  q_NO3_LIR_3D, 100
 
 # to integrate fluxes -> iflux [mol m-2 yr-1] = sum(flux [µmol kg-1 yr-1] * 10^-6 [mol µmol-1] * density [kg m-3] * grid cell thickness [m])
 
-q_AT_NN_surf = np.nansum((q_AT_NN_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]),axis=0)
-q_AT_NN_int = np.nansum((q_AT_NN_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]),axis=0)
+q_AT_NN_surf = np.nansum((q_AT_NN_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]),axis=0)
+q_AT_NN_int = np.nansum((q_AT_NN_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]),axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_surf.T, -8, 8, 'RdBu', 'Integrated Surface AT_NN Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_int.T, -15, 15, 'RdBu', 'Integrated Interior AT_NN Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_surf.T, -8, 8, 'RdBu', 'Integrated Surface AT_NN Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_int.T, -15, 15, 'RdBu', 'Integrated Interior AT_NN Flux (48 m to bottom, mol m-2 yr-1)')
 
-q_AT_LIR_surf = np.nansum((q_AT_LIR_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]),axis=0)
-q_AT_LIR_int = np.nansum((q_AT_LIR_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]),axis=0)
+q_AT_LIR_surf = np.nansum((q_AT_LIR_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]),axis=0)
+q_AT_LIR_int = np.nansum((q_AT_LIR_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]),axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_surf.T, -8, 8, 'RdBu', 'Integrated Surface AT_LIR Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_int.T, -15, 15, 'RdBu', 'Integrated Interior AT_LIR Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_surf.T, -8, 8, 'RdBu', 'Integrated Surface AT_LIR Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_int.T, -15, 15, 'RdBu', 'Integrated Interior AT_LIR Flux (48 m to bottom, mol m-2 yr-1)')
 
 # soft tissue
-q_AT_NN_soft_3D_surf = np.nansum((q_AT_NN_soft_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]), axis=0)
-q_AT_NN_soft_3D_int = np.nansum((q_AT_NN_soft_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]), axis=0)
+q_AT_NN_soft_3D_surf = np.nansum((q_AT_NN_soft_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]), axis=0)
+q_AT_NN_soft_3D_int = np.nansum((q_AT_NN_soft_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]), axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_soft_3D_surf.T, -5, 5, 'RdBu', 'Integrated Surface AT_NN Soft Tissue Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_soft_3D_int.T, -10, 10, 'RdBu', 'Integrated Interior AT_NN Soft Tissue Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_soft_3D_surf.T, -5, 5, 'RdBu', 'Integrated Surface AT_NN Soft Tissue Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_soft_3D_int.T, -10, 10, 'RdBu', 'Integrated Interior AT_NN Soft Tissue Flux (48 m to bottom, mol m-2 yr-1)')
 
-q_AT_LIR_soft_3D_surf = np.nansum((q_AT_LIR_soft_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]), axis=0)
-q_AT_LIR_soft_3D_int = np.nansum((q_AT_LIR_soft_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]), axis=0)
+q_AT_LIR_soft_3D_surf = np.nansum((q_AT_LIR_soft_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]), axis=0)
+q_AT_LIR_soft_3D_int = np.nansum((q_AT_LIR_soft_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]), axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_soft_3D_surf.T, -5, 5, 'RdBu', 'Integrated Surface AT_LIR Soft Tissue Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_soft_3D_int.T, -10, 10, 'RdBu', 'Integrated Interior AT_LIR Soft Tissue Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_soft_3D_surf.T, -5, 5, 'RdBu', 'Integrated Surface AT_LIR Soft Tissue Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_soft_3D_int.T, -10, 10, 'RdBu', 'Integrated Interior AT_LIR Soft Tissue Flux (48 m to bottom, mol m-2 yr-1)')
 
 # hard tissue
-q_AT_NN_hard_3D_surf = np.nansum((q_AT_NN_hard_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]), axis=0)
-q_AT_NN_hard_3D_int = np.nansum((q_AT_NN_hard_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]), axis=0)
+q_AT_NN_hard_3D_surf = np.nansum((q_AT_NN_hard_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]), axis=0)
+q_AT_NN_hard_3D_int = np.nansum((q_AT_NN_hard_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]), axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_hard_3D_surf.T, -10, 10, 'RdBu', 'Integrated Surface AT_NN Hard Tissue Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_hard_3D_int.T, -20, 20, 'RdBu', 'Integrated Interior AT_NN Hard Tissue Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_hard_3D_surf.T, -10, 10, 'RdBu', 'Integrated Surface AT_NN Hard Tissue Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_NN_hard_3D_int.T, -20, 20, 'RdBu', 'Integrated Interior AT_NN Hard Tissue Flux (48 m to bottom, mol m-2 yr-1)')
 
-q_AT_LIR_hard_3D_surf = np.nansum((q_AT_LIR_hard_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]), axis=0)
-q_AT_LIR_hard_3D_int = np.nansum((q_AT_LIR_hard_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]), axis=0)
+q_AT_LIR_hard_3D_surf = np.nansum((q_AT_LIR_hard_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]), axis=0)
+q_AT_LIR_hard_3D_int = np.nansum((q_AT_LIR_hard_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]), axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_hard_3D_surf.T, -10, 10, 'RdBu', 'Integrated Surface AT_LIR Hard Tissue Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_hard_3D_int.T, -20, 20, 'RdBu', 'Integrated Interior AT_LIR Hard Tissue Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_hard_3D_surf.T, -10, 10, 'RdBu', 'Integrated Surface AT_LIR Hard Tissue Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_AT_LIR_hard_3D_int.T, -20, 20, 'RdBu', 'Integrated Interior AT_LIR Hard Tissue Flux (48 m to bottom, mol m-2 yr-1)')
 
 #%% DIC: integrate fluxes from 0-100 m (layers 0 - 8) and (100 m - bottom) (layers 9 - 47)
 
-q_DIC_NN_surf = np.nansum((q_DIC_NN_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]),axis=0)
-q_DIC_NN_int = np.nansum((q_DIC_NN_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]),axis=0)
+q_DIC_NN_surf = np.nansum((q_DIC_NN_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]),axis=0)
+q_DIC_NN_int = np.nansum((q_DIC_NN_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]),axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_surf.T, -30, 30, 'RdBu', 'Integrated Surface DIC_NN Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_int.T, -50, 50, 'RdBu', 'Integrated Interior DIC_NN Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_surf.T, -1000, 1000, 'RdBu', 'Integrated Surface DIC_NN Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_int.T, -1000, 1000, 'RdBu', 'Integrated Interior DIC_NN Flux (48 m to bottom, mol m-2 yr-1)')
 
-q_DIC_LIR_surf = np.nansum((q_DIC_LIR_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]),axis=0)
-q_DIC_LIR_int = np.nansum((q_DIC_LIR_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]),axis=0)
+q_DIC_LIR_surf = np.nansum((q_DIC_LIR_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]),axis=0)
+q_DIC_LIR_int = np.nansum((q_DIC_LIR_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]),axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_surf.T, -30, 30, 'RdBu', 'Integrated Surface DIC_LIR Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_int.T, -50, 50, 'RdBu', 'Integrated Interior DIC_LIR Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_surf.T, -1000, 1000, 'RdBu', 'Integrated Surface DIC_LIR Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_int.T, -1000, 1000, 'RdBu', 'Integrated Interior DIC_LIR Flux (48 m to bottom, mol m-2 yr-1)')
 
 # air sea gas exchange
-q_DIC_NN_air_sea_3D_surf = np.nansum((q_DIC_NN_air_sea_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]), axis=0)
-q_DIC_NN_air_sea_3D_int = np.nansum((q_DIC_NN_air_sea_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]), axis=0)
+q_DIC_NN_air_sea_3D_surf = np.nansum((q_DIC_NN_air_sea_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]), axis=0)
+q_DIC_NN_air_sea_3D_int = np.nansum((q_DIC_NN_air_sea_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]), axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_air_sea_3D_surf.T, -20, 20, 'RdBu', 'Integrated Surface DIC_NN Air-Sea Gas Ex Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_air_sea_3D_int.T, -40, 40, 'RdBu', 'Integrated Interior DIC_NN Air-Sea Gas Ex Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_air_sea_3D_surf.T, -500, 500, 'RdBu', 'Integrated Surface DIC_NN Air-Sea Gas Ex Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_air_sea_3D_int.T, -500, 500, 'RdBu', 'Integrated Interior DIC_NN Air-Sea Gas Ex Flux (48 m to bottom, mol m-2 yr-1)')
 
-q_DIC_LIR_air_sea_3D_surf = np.nansum((q_DIC_LIR_air_sea_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]), axis=0)
-q_DIC_LIR_air_sea_3D_int = np.nansum((q_DIC_LIR_air_sea_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]), axis=0)
+q_DIC_LIR_air_sea_3D_surf = np.nansum((q_DIC_LIR_air_sea_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]), axis=0)
+q_DIC_LIR_air_sea_3D_int = np.nansum((q_DIC_LIR_air_sea_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]), axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_air_sea_3D_surf.T, -20, 20, 'RdBu', 'Integrated Surface DIC_LIR Air-Sea Gas Ex Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_air_sea_3D_int.T, -40, 40, 'RdBu', 'Integrated Interior DIC_LIR Air-Sea Gas Ex Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_air_sea_3D_surf.T, -500, 500, 'RdBu', 'Integrated Surface DIC_LIR Air-Sea Gas Ex Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_air_sea_3D_int.T, -500, 500, 'RdBu', 'Integrated Interior DIC_LIR Air-Sea Gas Ex Flux (48 m to bottom, mol m-2 yr-1)')
 
 # soft tissue
-q_DIC_NN_soft_3D_surf = np.nansum((q_DIC_NN_soft_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]), axis=0)
-q_DIC_NN_soft_3D_int = np.nansum((q_DIC_NN_soft_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]), axis=0)
+q_DIC_NN_soft_3D_surf = np.nansum((q_DIC_NN_soft_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]), axis=0)
+q_DIC_NN_soft_3D_int = np.nansum((q_DIC_NN_soft_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]), axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_soft_3D_surf.T, -20, 20, 'RdBu', 'Integrated Surface DIC_NN Soft Tissue Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_soft_3D_int.T, -40, 40, 'RdBu', 'Integrated Interior DIC_NN Soft Tissue Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_soft_3D_surf.T, -1000, 1000, 'RdBu', 'Integrated Surface DIC_NN Soft Tissue Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_soft_3D_int.T, -1000, 1000, 'RdBu', 'Integrated Interior DIC_NN Soft Tissue Flux (48 m to bottom, mol m-2 yr-1)')
 
-q_DIC_LIR_soft_3D_surf = np.nansum((q_DIC_LIR_soft_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]), axis=0)
-q_DIC_LIR_soft_3D_int = np.nansum((q_DIC_LIR_soft_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]), axis=0)
+q_DIC_LIR_soft_3D_surf = np.nansum((q_DIC_LIR_soft_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]), axis=0)
+q_DIC_LIR_soft_3D_int = np.nansum((q_DIC_LIR_soft_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]), axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_soft_3D_surf.T, -20, 20, 'RdBu', 'Integrated Surface DIC_LIR Soft Tissue Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_soft_3D_int.T, -40, 40, 'RdBu', 'Integrated Interior DIC_LIR Soft Tissue Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_soft_3D_surf.T, -1000, 1000, 'RdBu', 'Integrated Surface DIC_LIR Soft Tissue Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_soft_3D_int.T, -1000, 1000, 'RdBu', 'Integrated Interior DIC_LIR Soft Tissue Flux (48 m to bottom, mol m-2 yr-1)')
 
 # hard tissue
-q_DIC_NN_hard_3D_surf = np.nansum((q_DIC_NN_hard_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]), axis=0)
-q_DIC_NN_hard_3D_int = np.nansum((q_DIC_NN_hard_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]), axis=0)
+q_DIC_NN_hard_3D_surf = np.nansum((q_DIC_NN_hard_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]), axis=0)
+q_DIC_NN_hard_3D_int = np.nansum((q_DIC_NN_hard_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]), axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_hard_3D_surf.T, -10, 10, 'RdBu', 'Integrated Surface DIC_NN Hard Tissue Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_hard_3D_int.T, -20, 20, 'RdBu', 'Integrated Interior DIC_NN Hard Tissue Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_hard_3D_surf.T, -250, 250, 'RdBu', 'Integrated Surface DIC_NN Hard Tissue Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_NN_hard_3D_int.T, -250, 250, 'RdBu', 'Integrated Interior DIC_NN Hard Tissue Flux (48 m to bottom, mol m-2 yr-1)')
 
-q_DIC_LIR_hard_3D_surf = np.nansum((q_DIC_LIR_hard_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]), axis=0)
-q_DIC_LIR_hard_3D_int = np.nansum((q_DIC_LIR_hard_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]), axis=0)
+q_DIC_LIR_hard_3D_surf = np.nansum((q_DIC_LIR_hard_3D[0:5, :, :] * 10**-6 * model_rho[0:5, :, :] * model_thickness[0:5, :, :]), axis=0)
+q_DIC_LIR_hard_3D_int = np.nansum((q_DIC_LIR_hard_3D[5:48, :, :] * 10**-6 * model_rho[5:48, :, :] * model_thickness[5:48, :, :]), axis=0)
 
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_hard_3D_surf.T, -10, 10, 'RdBu', 'Integrated Surface DIC_LIR Hard Tissue Flux (surface to 109 m, mol m-2 yr-1)')
-p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_hard_3D_int.T, -20, 20, 'RdBu', 'Integrated Interior DIC_LIR Soft Hard Flux (109 m to bottom, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_hard_3D_surf.T, -250, 250, 'RdBu', 'Integrated Surface DIC_LIR Hard Tissue Flux (surface to 48 m, mol m-2 yr-1)')
+p2.plot_surface2d(model_lon[0, :, 0], model_lat[0, 0, :], q_DIC_LIR_hard_3D_int.T, -250, 250, 'RdBu', 'Integrated Interior DIC_LIR Soft Hard Flux (48 m to bottom, mol m-2 yr-1)')
 
-#%% METHOD 1: using T1 and T0 to calculate qs
+#%% horizontal averaging
+q_AT_NN_avg = np.nanmean((q_AT_NN_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+q_AT_NN_soft_avg = np.nanmean((q_AT_NN_soft_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+q_AT_NN_hard_avg = np.nanmean((q_AT_NN_hard_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+
+q_AT_LIR_avg = np.nanmean((q_AT_LIR_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+q_AT_LIR_soft_avg = np.nanmean((q_AT_LIR_soft_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+q_AT_LIR_hard_avg = np.nanmean((q_AT_LIR_hard_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+
+data_NN = [q_AT_NN_avg, q_AT_NN_soft_avg, q_AT_NN_hard_avg]
+data_LIR = [q_AT_LIR_avg, q_AT_LIR_soft_avg, q_AT_LIR_hard_avg]
+
+labels = ['Average\nAT flux', 'Average AT\nsoft tissue flux', 'Average AT hard\ntissue flux/residual']
+
+depth_upper = 0
+depth_lower = 20
+
+fig, axs = plt.subplots(1, 3, sharey=True, figsize=(8,4), dpi=200)
+for i, ax in enumerate(axs):
+    
+    # normal averages
+    to_plot_NN = data_NN[i] 
+    to_plot_LIR = data_LIR[i] 
+    
+    # alternatively, absolute values
+    #to_plot_NN = np.abs(data_NN[i])
+    #to_plot_LIR = np.abs(data_LIR[i])
+    
+    # alternatively, running averages
+    #to_plot_NN = np.cumsum(np.abs(to_plot_NN[::-1]))[::-1]
+    #to_plot_LIR = np.cumsum(np.abs(to_plot_LIR[::-1]))[::-1]
+    
+    ax.scatter(to_plot_LIR[depth_upper:depth_lower], model_depth[depth_upper:depth_lower, 0, 0], marker='o', facecolors='none', edgecolors='tab:orange', label='LIR')
+    ax.scatter(to_plot_NN[depth_upper:depth_lower], model_depth[depth_upper:depth_lower, 0, 0], marker='o', facecolors='none', edgecolors='tab:blue', label='NN')
+    ax.set_xlabel(labels[i])
+    if i == 0:
+        ax.legend(loc='lower left')
+
+axs[0].invert_yaxis()
+fig.text(0.04, 0.5, 'Depth (m)', va='center', rotation='vertical')
+fig.text(0.5, -0.08, '(mol m-2 yr-1)', ha='center')
+#%% DIC fluxes
+q_DIC_NN_avg = np.nanmean((q_DIC_NN_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+q_DIC_NN_soft_avg = np.nanmean((q_DIC_NN_soft_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+q_DIC_NN_hard_avg = np.nanmean((q_DIC_NN_hard_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+q_DIC_NN_residual_avg = np.nanmean((q_DIC_NN_air_sea_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+
+q_DIC_LIR_avg = np.nanmean((q_DIC_LIR_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+q_DIC_LIR_soft_avg = np.nanmean((q_DIC_LIR_soft_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+q_DIC_LIR_hard_avg = np.nanmean((q_DIC_LIR_hard_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+q_DIC_LIR_residual_avg = np.nanmean((q_DIC_LIR_air_sea_3D * 10**-6 * model_rho * model_thickness),axis=(1,2))
+
+data_NN = [q_DIC_NN_avg, q_DIC_NN_soft_avg, q_DIC_NN_hard_avg, q_DIC_NN_residual_avg]
+data_LIR = [q_DIC_LIR_avg, q_DIC_LIR_soft_avg, q_DIC_LIR_hard_avg, q_DIC_LIR_residual_avg]
+
+labels = ['Average\nDIC flux', 'Average DIC\nsoft tissue flux', 'Average DIC\nhard tissue flux', 'Average DIC flux\nresidual/air-sea gas ex']
+
+depth_upper = 0
+depth_lower = 20
+
+fig, axs = plt.subplots(1, 4, sharey=True, figsize=(8,4), dpi=200)
+for i, ax in enumerate(axs):
+    
+    # normal averages
+    to_plot_NN = data_NN[i] 
+    to_plot_LIR = data_LIR[i] 
+    
+    # alternatively, absolute values
+    #to_plot_NN = np.abs(data_NN[i])
+    #to_plot_LIR = np.abs(data_LIR[i])
+    
+    # alternatively, running averages
+    to_plot_NN = np.cumsum((to_plot_NN))
+    to_plot_LIR = np.cumsum((to_plot_LIR))
+    
+    ax.scatter(to_plot_LIR[depth_upper:depth_lower], model_depth[depth_upper:depth_lower, 0, 0], marker='o', facecolors='none', edgecolors='tab:orange', label='LIR')
+    ax.scatter(to_plot_NN[depth_upper:depth_lower], model_depth[depth_upper:depth_lower, 0, 0], marker='o', facecolors='none', edgecolors='tab:blue', label='NN')
+    ax.set_xlabel(labels[i])
+    if i == 0:
+        ax.legend(loc='lower left')
+
+axs[0].invert_yaxis()
+fig.text(0.04, 0.5, 'Depth (m)', va='center', rotation='vertical')
+fig.text(0.5, -0.08, '(mol m-2 yr-1)', ha='center')
+
+
+#%% METHOD 1: using T1 and T0 to calculate qs -> WE DECIDED THIS METHOD IS BS
 # solving inverse euler for q(t) assuming that c_t != c_(t-1)
 
 dt = 1 # yr
@@ -561,7 +651,7 @@ q_DIC_LIR_1_air_sea_3D = q_DIC_LIR_1_3D - q_DIC_LIR_1_soft_3D - 0.5*q_AT_LIR_1_h
 
 # to start, look at integrated fluxes of AT and DIC
 
-#%% total fluxes
+# total fluxes
 q_AT_NN_1_surf = np.nansum((q_AT_NN_1_3D[0:9, :, :] * 10**-6 * model_rho[0:9, :, :] * model_thickness[0:9, :, :]),axis=0)
 q_AT_NN_1_int = np.nansum((q_AT_NN_1_3D[9:48, :, :] * 10**-6 * model_rho[9:48, :, :] * model_thickness[9:48, :, :]),axis=0)
 
