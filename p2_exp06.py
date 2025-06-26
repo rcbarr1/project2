@@ -266,6 +266,18 @@ p2.plot_surface3d(model_lon[0, :, 0], model_lat[0, 0, :], DIC_LIR_3D, 0, 1700, 2
 p2.plot_surface3d(model_lon[0, :, 0], model_lat[0, 0, :], TA_NN_3D, 0, 1700, 2500, 'plasma', 'TA_NN (µmol kg-1)')
 p2.plot_surface3d(model_lon[0, :, 0], model_lat[0, 0, :], TA_LIR_3D, 0, 1700, 2500, 'plasma', 'TA_LIR (µmol kg-1)')
 
+#%% check conservation by making parameter = 1 in every ocean box, step once, sum
+dt = 1
+
+test0 = NO3_NN * 0 + 1
+
+LHS = eye(TR.shape[0], format="csc") - dt * TR
+RHS = test0
+test1 = spsolve(LHS, RHS)
+
+print(np.sum(test0))
+print(np.sum(test1))
+
 #%% METHOD 0: solving inverse euler for qs assuming c_t = c_(t-1)
 dt = 1 # 1 year
 
@@ -599,6 +611,7 @@ axs[0].invert_yaxis()
 fig.text(0.04, 0.5, 'Depth (m)', va='center', rotation='vertical')
 fig.text(0.5, -0.08, '(mol m-2 yr-1)', ha='center')
 
+#%% to-do: calculate percent dissolution (see 5/15/2025 notes)
 
 #%% METHOD 1: using T1 and T0 to calculate qs -> WE DECIDED THIS METHOD IS BS
 # solving inverse euler for q(t) assuming that c_t != c_(t-1)
