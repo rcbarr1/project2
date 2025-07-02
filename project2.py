@@ -16,6 +16,10 @@ import xarray as xr
 import h5netcdf
 import datetime as dt
 import matplotlib.cm as cm
+from matplotlib import ticker
+from matplotlib.colors import LogNorm
+
+
 
 def loadmat(filename):
     '''
@@ -533,17 +537,28 @@ def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
     plt.xlim([0, 360]), plt.ylim([-90,90])
 
 
-def plot_surface3d(lons, lats, variable, depth_level, vmin, vmax, cmap, title):
+def plot_surface3d(lons, lats, variable, depth_level, vmin, vmax, cmap, title, logscale=None, lon_lims=None):
     fig = plt.figure(figsize=(10,7))
     ax = fig.gca()
-    levels = np.linspace(vmin-1e-7, vmax, 100)
-    cntr = plt.contourf(lons, lats, variable[depth_level, :, :].T, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
+    
+    if logscale:
+        #levels = np.logspace(vmin, vmax, 100)
+        cntr = plt.contourf(lons, lats, variable[depth_level, :, :].T, norm=LogNorm(), cmap=cmap, vmin=vmin, vmax=vmax) # log scale
+    else:
+        levels = np.linspace(vmin-1e-7, vmax, 100)
+        cntr = plt.contourf(lons, lats, variable[depth_level, :, :].T, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
+    
     c = plt.colorbar(cntr, ax=ax)
     c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
     plt.xlabel('longitude (ºE)')
     plt.ylabel('latitude (ºN)')
     plt.title(title)
-    plt.xlim([0, 360]), plt.ylim([-90,90])
+    
+    if lon_lims==None:
+        plt.xlim([0, 360]), plt.ylim([-90,90])
+    else:
+        plt.ylim([-90,90])
+        plt.xlim(lon_lims)
 
 def plot_longitude3d(lats, depths, variable, longitude, vmin, vmax, cmap, title):
     fig = plt.figure(figsize=(10,7))

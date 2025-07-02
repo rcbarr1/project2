@@ -36,11 +36,23 @@ for i in np.logspace(0.0001, 2, num=num_scenarios):
 
 # using pyCO2SYS: calculate change in pCO2 from t = 0 to t = 1
 def calculate_pyco2sys(DIC0, del_DIC, TA0, del_TA):
-    results0 = pyco2.sys(par1=DIC0, par2=TA0, par1_type=2, par2_type=1)
-    results1 = pyco2.sys(par1=DIC0+del_DIC, par2=TA0+del_TA, par1_type=2, par2_type=1)
+    
+    # PyCO2SYS v2
+    
+    # set up CO2System
+    co2s0 = pyco2.sys(dic=DIC0, alkalinity=TA0)
+    co2s1 = pyco2.sys(dic=DIC0+del_DIC, alkalinity=TA0+del_TA)
+    
+    pCO20 = co2s0['pCO2']
+    pCO21 = co2s1['pCO2']
+    
+    # PyCO2SYS v1
+    
+    #results0 = pyco2.sys(par1=DIC0, par2=TA0, par1_type=2, par2_type=1)
+    #results1 = pyco2.sys(par1=DIC0+del_DIC, par2=TA0+del_TA, par1_type=2, par2_type=1)
 
-    pCO20 = results0['pCO2']
-    pCO21 = results1['pCO2']
+    #pCO20 = results0['pCO2']
+    #pCO21 = results1['pCO2']
     
     return pCO21 - pCO20
 
@@ -51,18 +63,31 @@ def calculate_pyco2sys(DIC0, del_DIC, TA0, del_TA):
 # 3. apply ∆pCO2 = R_DIC * (pCO20/DIC0) * ∆DIC + R_TA * (pCO20/TA0) * ∆TA
 
 def calculate_linear(DIC0, del_DIC, TA0, del_TA):
+    
+    # PyCO2SYS v2
+    
     # calculate Revelle factor
-    results0 = pyco2.sys(par1=DIC0, par2=TA0, par1_type=2, par2_type=1)
-    R_DIC = results0['revelle_factor']
-    pCO20 = results0['pCO2']
-
+    co2s0 = pyco2.sys(dic=DIC0, alkalinity=TA0)
+    R_DIC = co2s0['revelle_factor']
+    pCO20 = co2s0['pCO2']
     
     # calculate TA equivalent of Revelle factor
-    results000001 = pyco2.sys(par1=DIC0, par2=TA0+0.000001, par1_type=2, par2_type=1)
-    pCO2000001 = results000001['pCO2']
+    co2s000001 = pyco2.sys(dic=DIC0, alkalinity=TA0+0.000001)
+    pCO2000001 = co2s000001['pCO2']
     R_TA = ((pCO2000001 - pCO20)/pCO20) / (0.000001/TA0) # checked and this gives the same answer for DIC as revelle factor to 7 sig figs so should work for TA
     
+    # PyCO2SYS v1
+    
+    # calculate Revelle factor
+    #results0 = pyco2.sys(par1=DIC0, par2=TA0, par1_type=2, par2_type=1)
+    #R_DIC = results0['revelle_factor']
+    #pCO20 = results0['pCO2']
 
+    # calculate TA equivalent of Revelle factor
+    #results000001 = pyco2.sys(par1=DIC0, par2=TA0+0.000001, par1_type=2, par2_type=1)
+    #pCO2000001 = results000001['pCO2']
+    #R_TA = ((pCO2000001 - pCO20)/pCO20) / (0.000001/TA0) # checked and this gives the same answer for DIC as revelle factor to 7 sig figs so should work for TA
+    
     del_pCO2 = R_DIC * (pCO20/DIC0) * del_DIC + R_TA * (pCO20/TA0) * del_TA
     
     return del_pCO2
