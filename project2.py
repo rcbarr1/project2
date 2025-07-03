@@ -18,7 +18,8 @@ import datetime as dt
 import matplotlib.cm as cm
 from matplotlib import ticker
 from matplotlib.colors import LogNorm
-
+from tqdm import tqdm
+import time
 
 
 def loadmat(filename):
@@ -148,7 +149,7 @@ def save_model_output(filename, time, depth, lon, lat, tracers, tracer_dims=[('t
             for key, value in global_attrs.items():
                 ncfile.attrs[key] = value
 
-def inpaint_nans3d(array_3d, mask=None, iterations=100):
+def inpaint_nans3d_OLD(array_3d, mask=None, iterations=100):
     '''
     adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
     to incorporate nan mask so inpainting doesn't happen over land 
@@ -211,10 +212,81 @@ def inpaint_nans3d(array_3d, mask=None, iterations=100):
     
     return interpolatedData
 
+def inpaint_nans3d(array_3d, mask=None, iterations=100):
+    '''
+    adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
+    to incorporate nan mask so inpainting doesn't happen over land 
+    
+    array_3d : 3-dimensional array of data to interpolate
+    mask : boolean mask of land points (True) and ocean points (False)
+    iterations : number of times to perform interpolation
+    
+    returns
+    -------
+    interpolated_data : data interpolated to fill in NaNs, masked to remove interpolations over land if mask provided
+    '''
+    # dimensions of input
+    size = array_3d.shape
+    
+    # get index of NaN in data
+    nan_index = np.isnan(array_3d).nonzero()
+    interpolated_data = array_3d.copy()
+    
+    # make an initial guess for the interpolated data using the mean of the non-NaN values
+    interpolated_data[nan_index] = np.nanmean(array_3d)
+    
+    # returns the sign of the neighbor to be averaged for boundary elements
+    def sign(index, max_index):
+        if index == 0:
+            return [1, 0]
+        elif index == max_index - 1:
+            return [-1, 0]
+        else:
+            return [-1, 1]
+    
+    # calculate the sign for each dimension separately
+    nan_index_X, nan_index_Y, nan_index_Z = nan_index[0], nan_index[1], nan_index[2]
+    signs_X = np.array([sign(x, size[0]) for x in nan_index_X])
+    signs_Y = np.array([sign(y, size[1]) for y in nan_index_Y])
+    signs_Z = np.array([sign(z, size[2]) for z in nan_index_Z])
+    
+    # gauss seidel iteration to interpolate NaN values with neighbors
+    for _ in tqdm(range(iterations)):
+        for i in range(len(nan_index_X)):
+            x, y, z = nan_index_X[i], nan_index_Y[i], nan_index_Z[i]
+            dx, dy, dz = signs_X[i], signs_Y[i], signs_Z[i]
+            
+            neighbors = []
+            if dx[0] != 0: # can average with the previous X neighbor
+                neighbors.append(interpolated_data[np.clip(x + dx[0], 0, size[0] - 1), y, z])
+            if dx[1] != 0: # can average with the next X neighbor
+                neighbors.append(interpolated_data[np.clip(x + dx[1], 0, size[0] - 1), y, z])
+            
+            if dy[0] != 0: # can average with the previous Y neighbor
+                neighbors.append(interpolated_data[x, np.clip(y + dy[0], 0, size[1] - 1), z])
+            if dy[1] != 0: # can average with the next Y neighbor
+                neighbors.append(interpolated_data[x, np.clip(y + dy[1], 0, size[1] - 1), z])
+                
+            if dz[0] != 0: # can average with the previous Z neighbor
+                neighbors.append(interpolated_data[x, y, np.clip(z + dz[0], 0, size[2] - 1)])
+            if dz[1] != 0: # can average with the next Z neighbor
+                neighbors.append(interpolated_data[x, y, np.clip(z + dz[1], 0, size[2] - 1)])
+        
+    # average the neighbors to interpolate the NaN value
+    interpolated_data[x, y, z] = np.nanmean(neighbors)
+    
+    # mask out land values if mask provided
+    if mask is not None:
+        interpolated_data[mask == False] = np.NaN
+    
+    return interpolated_data
+                
+
 def inpaint_nans2d(array_2d, mask=None, iterations=100):
     '''
     adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
     to incorporate nan mask so inpainting doesn't happen over land 
+    THIS HAS NOT BEEN UPDATED TO FOLLOW NEW 3D LOGIC
     '''
     # dimensions of input
     size = array_2d.shape
@@ -473,6 +545,92 @@ def regrid_ncep_noaa(data_path, ncep_var, model_lat, model_lon, ocnmask):
         np.save(data_path + 'NCEP_DOE_Reanalysis_II/uwnd_AO.npy', var)
     elif ncep_var == 'sst':
         np.save(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_AO.npy', var)
+
+def regrid_cobalt(cobalt_vrbl, model_depth, model_lat, model_lon, ocnmask, output_path):
+    '''
+    regrid COBALT data to model grid, inpaint nans, save as .npy file
+    
+    Parameters
+    ----------
+    cobalt_vrbl : variable from COBALT model to regrid
+    model_depth : array of model depth levels
+    model_lat : array pf model latitudes
+    model_lon : array of model longitudes
+    ocnmask : mask same shape as glodap_var where 1 marks an ocean cell and 0 marks land
+    output_path : where data is stored
+    
+    '''
+    cobalt_var = cobalt_vrbl.copy()
+    var_name = cobalt_var.name
+
+    # convert longitude to 0-360 from -300 to +60
+    start_time = time.time()
+    cobalt_var['xh'] = (cobalt_var['xh'] + 360) % 360 # convert
+    cobalt_var = cobalt_var.sortby('xh') # resort
+    end_time = time.time()
+    print('\tlongitude converted to OCIM coordinates: ' + str(round(end_time - start_time,3)) + ' s')
+
+    # replace 1e+20 values with np.NaN
+    start_time = time.time()
+    cobalt_var = cobalt_var.where(cobalt_var != 1e20)  
+    end_time = time.time()
+    print('\tNaN values replaced: ' + str(round(end_time - start_time,3)) + ' s')
+
+    # average across time
+    start_time = time.time()
+    cobalt_var = cobalt_var.mean(dim='time', skipna=True)  
+    end_time = time.time()
+    print('\taveraged across time: ' + str(round(end_time - start_time,3)) + ' s')
+
+    # pull out arrays of depth, latitude, and longitude from COBALT
+    cobalt_depth = cobalt_var['zl'].to_numpy() # m below sea surface
+    cobalt_lon = cobalt_var['xh'].to_numpy()     # ºE (originally -300 to +60, now 0 to 360)
+    cobalt_lat = cobalt_var['yh'].to_numpy()     # ºN (-80 to +90)
+
+    # pull out values from COBALT
+    start_time = time.time()
+    var = cobalt_var.values
+    end_time = time.time()
+    print('\tvalues extracted to numpy: ' + str(round(end_time - start_time,3)) + ' s')
+
+    # switch order of COBALT dimensions (originally depth, lat, lon) to match
+    # OCIM dimensions (depth, lon, lat)
+    start_time = time.time()
+    var = np.transpose(var, (0, 2, 1))
+
+    np.save(output_path + var_name + '_averaged_1.npy', var)  
+    end_time = time.time()
+    print('\tvalues transposed, checkpoint array saved: ' + str(round(end_time - start_time,3)) + ' s')
+
+    # create interpolator
+    start_time = time.time()
+    interp = RegularGridInterpolator((cobalt_depth, cobalt_lon, cobalt_lat), var, bounds_error=False, fill_value=None)
+
+    # create meshgrid for OCIM grid
+    depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
+
+    # reshape meshgrid points into a list of coordinates to interpolate to
+    query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
+
+    # perform interpolation (regrid COBALT data to match OCIM grid)
+    var = interp(query_points)
+
+    # transform results back to model grid shape
+    var = var.reshape(depth.shape)
+    
+    np.save(output_path + var_name + '_averaged_regridded_1.npy', var)
+    end_time = time.time()
+    print('\tinterpolation performed, checkpoint array saved: ' + str(round(end_time - start_time,3)) + ' s')
+
+    # inpaint nans
+    start_time = time.time()
+    var = inpaint_nans3d(var, mask=ocnmask.astype(bool))
+    end_time = time.time()
+    print('\tNaNs inpainted: ' + str(round(end_time - start_time,3)) + ' s')
+
+    # save regridded data
+    np.save(output_path + var_name + '_averaged_regridded_inpainted_1.npy', var)
+    print('\tfinal regridded array saved')
     
 def schmidt(gas, temperature):
     '''

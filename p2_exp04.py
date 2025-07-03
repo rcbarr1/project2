@@ -90,6 +90,16 @@ TA = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')   # total alk
 
 p2.plot_surface2d(model_lon, model_lat, DIC[0, :, :].T, 1500, 2500, 'magma', 'GLODAP DIC distribution')
 
+#%% check regridding across depth levels
+i = 47
+
+p2.plot_surface3d(model_lon, model_lat, DIC, i, 1500, 2500, 'magma', 'DIC')
+
+ocnmask_copy = ocnmask.copy()
+ocnmask_copy[ocnmask_copy == 0] = np.NaN
+p2.plot_surface3d(model_lon, model_lat, ocnmask_copy, i, 0, 5, 'magma', 'ocnmask')
+
+
 #%% upload (or regrid) woa18 data for use in CO2 system calculations
 
 # regrid WOA18 data
