@@ -14,10 +14,8 @@ Created on Mon Jun 16 16:15:15 2025
 
 import xarray as xr
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator
 import project2 as p2
 import time
-from tqdm import tqdm
 
 cobalt_path = '/Volumes/LaCie/data/OM4p25_cobalt_v3/'
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
@@ -41,11 +39,13 @@ cobalt = xr.open_dataset(cobalt_path + '19580101.ocean_cobalt_fluxes_int.nc', de
 
 q_diss_arag_plus_btm = cobalt.jdiss_cadet_arag_plus_btm # [mol CACO3 m-2 s-1]
 q_diss_calc_plus_btm = cobalt.jdiss_cadet_calc_plus_btm # [mol CACO3 m-2 s-1]
+#q_diss_arag = cobalt.jdiss_cadet_arag # [mol CACO3 m-2 s-1]
 q_diss_calc = cobalt.jdiss_cadet_calc # [mol CACO3 m-2 s-1]
 q_prod_arag = cobalt.jprod_cadet_arag # [mol CACO3 m-2 s-1]
 q_prod_calc = cobalt.jprod_cadet_calc # [mol CACO3 m-2 s-1]
 
 data = [q_diss_calc, q_prod_arag, q_prod_calc]
+#data = [q_diss_arag]
    
 #%% call regridding & inpainting function
 for d in data:
@@ -78,20 +78,9 @@ p2.plot_surface2d(test_lon, cobalt_lat, test[0, :, :], 1e-11, 1e-9, 'magma', 'ca
 
 #%% open and plot results
 
-# before making copy of array in function
 avg = np.load(output_path + 'jprod_cadet_calc_averaged.npy')
 regr = np.load(output_path + 'jprod_cadet_calc_averaged_regridded.npy')
 inp = np.load(output_path + 'jprod_cadet_calc_averaged_regridded_inpainted.npy')
-
-# after editing function to include copy of array
-avg_1 = np.load(output_path + 'jprod_cadet_calc_averaged_1.npy')
-regr_1 = np.load(output_path + 'jprod_cadet_calc_averaged_regridded_1.npy')
-inp_1 = np.load(output_path + 'jprod_cadet_calc_averaged_regridded_inpainted_1.npy')
-
-# after updating inpainting function
-avg_2 = np.load(output_path + 'jprod_cadet_calc_averaged_2.npy')
-regr_2 = np.load(output_path + 'jprod_cadet_calc_averaged_regridded_2.npy')
-inp_2 = np.load(output_path + 'jprod_cadet_calc_averaged_regridded_inpainted_2.npy')
 
 #%% plots
 # cobalt data
@@ -102,23 +91,22 @@ cobalt_lon_regr = (cobalt_lon + 360) % 360 # convert
 
 #%% averaged across time
 
-i = 74
-test0 = avg_2
+i = 33
+test0 = avg
 #test0[test0<0] = 1e-20
 p2.plot_surface3d(cobalt_lon, cobalt_lat, test0, i, 1e-17, 1e-10, 'magma', 'calc fluxes', logscale=True, lon_lims=[-300, 60])
 
 
 #%% regridded
-i=10
-test1 = regr_2
+i=8
+test1 = regr
 #test1[test1<=0] = 1e-20
 p2.plot_surface3d(model_lon, model_lat, test1, i, 1e-17, 1e-10, 'magma', 'calc fluxes', logscale=True)
 
 
 #%% inpainted
-i = 30
-
-test2 = inp_2
+i = 8
+test2 = inp
 #test2[test2<=0] = 1e-20
 p2.plot_surface3d(model_lon, model_lat, test2, i, 1e-17, 1e-10, 'magma', 'calc fluxes', logscale=True)
 
@@ -126,4 +114,4 @@ p2.plot_surface3d(model_lon, model_lat, test2, i, 1e-17, 1e-10, 'magma', 'calc f
 ocnmask_copy = ocnmask.copy()
 ocnmask_copy[ocnmask_copy == 0] = np.NaN
 
-p2.plot_surface3d(model_lon, model_lat, ocnmask_copy, i, 0, 5, 'magma', 'ocnmask')
+p2.plot_surface3d(model_lon, model_lat, ocnmask_copy, i, 0, 2, 'magma', 'ocnmask')
