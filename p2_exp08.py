@@ -4,7 +4,7 @@
 Try to build a model using Rui's outputs!
 
 Governing equations (based on my own derivation + COBALT governing equations)
-1. d(∆q_xCO2)/dt = ∆q_xCO2,sea-air
+1. d(xCO2)/dt = ∆q_sea-air,xCO2
 2. d(∆DIC)/dt = TR * ∆DIC + ∆q_air-sea,DIC + ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc
 3. d(∆AT)/dt = TR * ∆AT + ∆q_CDR,AT + 2 * [∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc]
 
@@ -15,6 +15,22 @@ in files Rui sent me -> should investigate further soon
 *NOTE: this is assuming no changes to biology, could modulate this (i.e.
 production/respiration changes) in the future (see COBALT governing equations
 for how this affects alkalinity/DIC in that model)
+                                               
+Air-sea gas exchange fluxes have to be multiplied by "x" vector because they
+rely on ∆x's, which means they are incorporated with the transport matrix into
+vector "A"
+
+units: µmol kg-1 s-1
+∆q_sea-air,xCO2 = V * Kw * (1 - f_ice) / Ma / z1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
+∆q_air-sea,DIC = -1 * Kw * (1 - f_ice) / z1 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
+
+simplify with parameter "gamma"
+gamma1 = V * Kw * (1 - f_ice) / Ma / z1
+gamma2 = -Kw * (1 - fice) / z1
+
+∆q_sea-air,xCO2 = gamma1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
+∆q_air-sea,DIC = gamma2 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
+
 
 Created on Tue Jul  8 12:24:04 2025
 
@@ -42,6 +58,25 @@ model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
 model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
+
+#%% add CDR perturbation
+# as a test, add point source of 4 µmol m-2 s-1 NaOH (this is what they did in
+# Wang et al., 2022 Bering Sea paper)
+# with NaOH, no alkalinity change, 1:1 AT:NaOH change
+
+# depth = 0, latitude = ~54, longitude = ~-165
+# in model, this approximately corresponds to model_depth[0], model_lat[73], model_lon[97]
+
+# ∆q_CDR,AT (change in alkalinity due to CDR addition) [µmol m-2 s-1]
+del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
+del_q_CDR_AT_3D[ocnmask == 1] = 0
+del_q_CDR_AT_3D[0, 97, 73] = 4
+del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
+
+# ∆q_CDR,DIC (change in DIC due to CDR addition) [µmol m-2 s-1]
+del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
+del_q_CDR_DIC_3D[ocnmask == 1] = 0
+del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
 
 #%% load in regridded COBALT data (or, regrid COBALT data)
 cobalt_path = data_path + 'COBALT_regridded/'
@@ -174,7 +209,7 @@ beta_AT = AT/aqueous_CO2 # [unitless]
 K0 = aqueous_CO2/pCO2*rho # [µmol m-3 atm-1], in derivation this is defined in per volume units so used density to get there
 Patm = 1 # atmospheric pressure [atm]
 z1 = model_depth[0] # depth of first layer of model [m]
-#V = # volume of first layer of model [m3]
+V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
 
 # add layers of "np.NaN" for all subsurface layers in Kw, f_ice, then flatten
 Kw_3D = np.full(ocnmask.shape, np.nan)
@@ -185,46 +220,75 @@ f_ice_3D = np.full(ocnmask.shape, np.nan)
 f_ice_3D[0, :, :] = f_ice_2D
 f_ice = p2.flatten(f_ice_3D, ocnmask)
 
-#%% plug in values to calculate ∆q_air-sea,DIC and ∆q_sea-air,xCO2
+gamma1 = V * Kw * (1 - f_ice) / Ma / z1
+gamma2 = -Kw * (1 - f_ice) / z1
 
-# ∆q_air-sea,DIC [µmol kg-1 s-1]
-del_q_air_sea_DIC = -1 * Kw * (1 - f_ice) / z1 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
+#%% set up time stepping
+# see p2_exp04.py for more advanced time stepping, test for now
 
-# ∆q_sea-air,xCO2 [DOUBLE CHECK UNITS]
-del_q_sea_air_xCO2 = V * Kw * (1 - f_ice) / Ma / z1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
+t = np.arange(0,4,1)
 
-#%% add CDR perturbation
-# as a test, add point source of 4 µmol m-2 s-1 NaOH (this is what they did in
-# Wang et al., 2022 Bering Sea paper)
-# with NaOH, no alkalinity change, 1:1 AT:NaOH change
+#%% construct matricies
+# matrix form:
+#  dx/dt = A * x + b
+#  x = variable(s) of interest
+#  A = transport matrix (TR) plus any processes with dependence on x   
+#  b = source/sink vector (processes not dependent on x)
+    
+# m = # ocean grid cells
+# nt = # time steps
 
-# depth = 0, latitude = ~54, longitude = ~-165
-# in model, this approximately corresponds to model_depth[0], model_lat[73], model_lon[97]
+m = TR.shape[0]
+nt = len(t)
 
-# ∆q_CDR,AT (change in alkalinity due to CDR addition) [µmol m-2 s-1]
-del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
-del_q_CDR_AT_3D[ocnmask == 1] = 0
-del_q_CDR_AT_3D[0, 97, 73] = 4
-del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
+# x = [ ∆xCO2 ] --> 1 * nt
+#     [ ∆DIC  ] --> m * nt
+#     [ ∆AT   ] --> m * nt
 
-# ∆q_CDR,DIC (change in DIC due to CDR addition) [µmol m-2 s-1]
-del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
-del_q_CDR_DIC_3D[ocnmask == 1] = 0
-del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
+x = np.zeros((1 + 2*m, nt))
 
+# b = [ 0                                                                          ] --> 1 * ns, b[0]
+#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc)] --> m * ns, b[1:(m+1)]
+#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc     ] --> m * ns, b[(m+1):(2*m+1)]
 
+b = np.zeros((1 + 2*m, nt))
 
+# add in source/sink vectors for ∆AT, only add perturbation for time step 0
 
+# for ∆AT
+# b[1:(m+1),0] = del_q_CDR_AT + 2 * (del_q_diss_arag + del_q_diss_calc - del_q_prod_arag - del_q_prod_calc)
+b[1:(m+1),0] = del_q_CDR_AT + 2 * (del_q_diss_calc - del_q_prod_arag - del_q_prod_calc) # TEMPORARY IGNORING DISS,ARAG B/C I DON'T HAVE IT YET
+# b[1:(m+1),1:nt] = np.tile(2 * (del_q_diss_arag + del_q_diss_calc - del_q_prod_arag - del_q_prod_calc)[:, np.newaxis], (1, 3))
+b[1:(m+1),1:nt] = np.tile(2 * (del_q_diss_calc - del_q_prod_arag - del_q_prod_calc)[:, np.newaxis], (1, 3)) # TEMPORARY IGNORING DISS,ARAG B/C I DON'T HAVE IT YET
 
+# for ∆DIC
+b[(m+1):(2*m+1),0] = 2
+# b[(m+1):(2*m+1),0] = del_q_CDR_DIC + del_q_diss_arag + del_q_diss_calc - del_q_prod_arag - del_q_prod_calc
+b[(m+1):(2*m+1),0] = del_q_CDR_DIC + del_q_diss_calc - del_q_prod_arag - del_q_prod_calc # TEMPORARY IGNORING DISS,ARAG B/C I DON'T HAVE IT YET
+# b[(m+1):(2*m+1),1:nt] = np.tile((del_q_diss_arag + del_q_diss_calc - del_q_prod_arag - del_q_prod_calc)[:, np.newaxis], (1, 3))
+b[(m+1):(2*m+1),1:nt] = np.tile((del_q_diss_calc - del_q_prod_arag - del_q_prod_calc)[:, np.newaxis], (1, 3)) # TEMPORARY IGNORING DISS,ARAG B/C I DON'T HAVE IT YET
 
+# dimensions
+# A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
+#     [m x 1][m x m][m x m]
+#     [m x 1][m x m][m x m]
 
+# what acts on what
+# A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need b)
+#     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need b)
+#     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need b)
 
+# math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
+# A = [-gamma1 * K0 * Patm      ][gamma1 * rho * R_DIC / beta_DIC][gamma1 * rho * R_AT / beta_AT]
+#     [-gamma2 * K0 * Patm / rho][TR + gamma2 * R_DIC / beta_DIC ][gamma2 * R_AT / beta_AT      ]
+#     [0                        ][0                              ][TR                           ]
 
+# notation for setup
+# A = [A00][A01][A02]
+#     [A10][A11][A12]
+#     [A20][A21][A22]
 
-
-
-
-
+A00 
 
 
 
