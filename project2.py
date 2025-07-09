@@ -155,6 +155,15 @@ def flatten(e_3D, ocnmask):
     '''
     return e_3D[ocnmask == 1].flatten(order='F')
 
+def make_3D(e_flat, ocnmask):
+    '''
+    returns 1D array to 3D, adds np.NaN for land boxes as defined by ocnmask. Fortran ordering
+    '''
+    e_3D = np.full(ocnmask.shape, np.nan)
+    e_3D[ocnmask == 1] = np.reshape(e_flat, (-1,), order='F')
+    
+    return e_3D
+
 def inpaint_nans3d_OLD(array_3d, mask=None, iterations=100):
     '''
     adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
