@@ -193,7 +193,6 @@ del_q_air_sea_DIC = -1 * Kw * (1 - f_ice) / z1 * (R_DIC * del_DIC / beta_DIC + R
 # ∆q_sea-air,xCO2 [DOUBLE CHECK UNITS]
 del_q_sea_air_xCO2 = V * Kw * (1 - f_ice) / Ma / z1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
 
-
 #%% add CDR perturbation
 # as a test, add point source of 4 µmol m-2 s-1 NaOH (this is what they did in
 # Wang et al., 2022 Bering Sea paper)
@@ -203,14 +202,15 @@ del_q_sea_air_xCO2 = V * Kw * (1 - f_ice) / Ma / z1 * (rho * R_DIC * del_DIC / b
 # in model, this approximately corresponds to model_depth[0], model_lat[73], model_lon[97]
 
 # ∆q_CDR,AT (change in alkalinity due to CDR addition) [µmol m-2 s-1]
-del_q_CDR_AT_3D = np.full(ocnmask.shape, 0)
+del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
+del_q_CDR_AT_3D[ocnmask == 1] = 0
 del_q_CDR_AT_3D[0, 97, 73] = 4
 del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
 
 # ∆q_CDR,DIC (change in DIC due to CDR addition) [µmol m-2 s-1]
-del_q_CDR_DIC_3D = np.full(ocnmask.shape, 0)
+del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
+del_q_CDR_DIC_3D[ocnmask == 1] = 0
 del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
-
 
 
 
