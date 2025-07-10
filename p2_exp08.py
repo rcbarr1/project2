@@ -41,6 +41,7 @@ import project2 as p2
 import xarray as xr
 import numpy as np
 import PyCO2SYS as pyco2
+from scipy import sparse
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -288,7 +289,49 @@ b[(m+1):(2*m+1),1:nt] = np.tile((del_q_diss_calc - del_q_prod_arag - del_q_prod_
 #     [A10][A11][A12]
 #     [A20][A21][A22]
 
-A00 
+# to solve for ∆xCO2
+A00 = -1 * Patm * np.nansum(gamma1 * K0) # using nansum because all subsurface boxes are NaN, we only want surface
+A01 = np.nan_to_num(gamma1 * rho * R_DIC / beta_DIC) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
+A02 = np.nan_to_num(gamma1 * rho * R_AT / beta_AT)
+
+# combine into A0 row
+A0_ = np.full(1 + 2*m, np.nan)
+A0_[0] = A00
+A0_[1:(m+1)] = A01
+A0_[(m+1):(2*m+1)] = A02
+
+del A00, A01, A02
+
+# to solve for ∆DIC
+A10 = np.nan_to_num(-1 * gamma2 * K0 * Patm / rho)# is csc the most efficient format? come back to this
+A11 = TR + sparse.diags(np.nan_to_num(gamma2 * R_DIC / beta_DIC), format='csc')
+A12 = sparse.diags(np.nan_to_num(gamma2 * R_AT / beta_AT))
+
+A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
+
+del A10, A11, A12
+
+# to solve for ∆AT
+A20 = np.zeros(m)
+A21 = 0 * TR
+A22 = TR
+
+A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
+
+del A20, A21, A22
+
+# build into one mega-array!!
+A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
+
+del A0_, A1_, A2_
+
+
+
+
+
+
+
+
 
 
 
