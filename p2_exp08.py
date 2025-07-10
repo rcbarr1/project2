@@ -5,10 +5,15 @@ Try to build a model using Rui's outputs!
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2
-2. d(∆DIC)/dt = TR * ∆DIC + ∆q_air-sea,DIC + ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc
-3. d(∆AT)/dt = TR * ∆AT + ∆q_CDR,AT + 2 * [∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc]
+2. d(∆DIC)/dt = TR * ∆DIC + ∆q_air-sea,DIC + ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC
+3. d(∆AT)/dt = TR * ∆AT + ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT
 
-*NOTE: burial is included in dissolution in 'plus_btm' versions of calcium and
+where ∆q_diss,DIC = ∆q_diss,arag + ∆q_diss,calc
+      ∆q_prod,DIC = ∆q_prod,arag + ∆q_prod,calc
+      ∆q_diss,AT = 2 * (∆q_diss,arag + ∆q_diss,calc)
+      ∆q_prod,AT = 2 * (∆q_prod,arag + ∆q_prod,calc)
+
+*NOTE: burial is included in 'diss' in 'plus_btm' versions of calcium and
 aragonite dissolution, but for some reason these arrays were all equal to zero
 in files Rui sent me -> should investigate further soon
 
@@ -30,7 +35,6 @@ gamma2 = -Kw * (1 - fice) / z1
 
 ∆q_sea-air,xCO2 = gamma1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
 ∆q_air-sea,DIC = gamma2 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
-
 
 Created on Tue Jul  8 12:24:04 2025
 
@@ -60,6 +64,10 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
+# grid cell z-dimension for converting from surface area to volume
+grid_z = model_vols / model_data['area'].to_numpy()
+rho = 1025 # seawater density for volume to mass [kg m-3]
+
 #%% add CDR perturbation
 # as a test, add point source of 4 µmol m-2 s-1 NaOH (this is what they did in
 # Wang et al., 2022 Bering Sea paper)
@@ -68,15 +76,17 @@ model_vols = model_data['vol'].to_numpy() # m^3
 # depth = 0, latitude = ~54, longitude = ~-165
 # in model, this approximately corresponds to model_depth[0], model_lat[73], model_lon[97]
 
-# ∆q_CDR,AT (change in alkalinity due to CDR addition) [µmol m-2 s-1]
+# ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 s-1]
 del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
 del_q_CDR_AT_3D[ocnmask == 1] = 0
-del_q_CDR_AT_3D[0, 97, 73] = 4
+del_q_CDR_AT_3D[0, 97, 73] = 4 # [µmol m-2 s-1]
+del_q_CDR_AT_3D = del_q_CDR_AT_3D * grid_z / rho # convert from [µmol AT m-2 s-1] to [µmol AT kg-1 s-1]
 del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
 
-# ∆q_CDR,DIC (change in DIC due to CDR addition) [µmol m-2 s-1]
+# ∆q_CDR,DIC (change in DIC due to CDR addition) - final units: [µmol DIC kg-1 s-1]
 del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
 del_q_CDR_DIC_3D[ocnmask == 1] = 0
+del_q_CDR_DIC_3D = del_q_CDR_DIC_3D * grid_z / rho # convert from [µmol DIC m-2 s-1] to [µmol DIC kg-1 s-1]
 del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
 
 #%% load in regridded COBALT data (or, regrid COBALT data)
@@ -88,27 +98,33 @@ cobalt_path = data_path + 'COBALT_regridded/'
 #p2.regrid_cobalt(cobalt.jprod_cadet_arag, model_depth, model_lat, model_lon, ocnmask, cobalt_path)
 #p2.regrid_cobalt(cobalt.jprod_cadet_calc, model_depth, model_lat, model_lon, ocnmask, cobalt_path)
 
-#q_diss_arag_3D = np.load(data_path + 'COBALT_regridded/jdiss_cadet_arag.npy') # [mol CACO3 m-2 s-1]
+# final units: [µmol DIC kg-1 s-1]
+#q_diss_arag_3D = np.load(cobalt_path + 'jdiss_cadet_arag.npy') # [mol CACO3 m-2 s-1]
 q_diss_calc_3D = np.load(cobalt_path + 'jdiss_cadet_calc.npy') # [mol CACO3 m-2 s-1]
+#q_diss_DIC_3D = (q_diss_arag_3D + q_diss_calc_3D) * 1e-6 * grid_z / rho # [µmol DIC kg-1 s-1]
+q_diss_DIC_3D = (q_diss_calc_3D) * 1e-6 * grid_z / rho # [µmol DIC m-2 s-1]
+q_diss_AT_3D = q_diss_DIC_3D * 2 # [µmol DIC m-2 s-1]
+
 q_prod_arag_3D = np.load(cobalt_path + 'jprod_cadet_arag.npy') # [mol CACO3 m-2 s-1]
 q_prod_calc_3D = np.load(cobalt_path + 'jprod_cadet_calc.npy') # [mol CACO3 m-2 s-1]
+q_prod_DIC_3D = (q_prod_arag_3D + q_prod_calc_3D) * 1e-6 * grid_z / rho # [µmol DIC kg-1 s-1]
+q_prod_AT_3D = q_prod_DIC_3D * 2 # [µmol AT kg-1 s-1]
 
 #%% make assumptions to calculate "delta" for dissolution and production
 # right now, assuming linear relationship with arbitrary factor of 0.1 to see
 # if this even sort of works
 
-# ∆q_diss,arag [mol m-2 s-1]
-#del_q_diss_arag = p2.flatten(0.1 * q_diss_arag_3D, ocnmask)
+# ∆q_diss,DIC [µmol DIC kg-1 s-1]
+q_diss_DIC = p2.flatten(0.1 * q_diss_DIC_3D, ocnmask)
 
-# ∆q_diss,calc [mol m-2 s-1]
-del_q_diss_calc = p2.flatten(0.1 * q_diss_calc_3D, ocnmask)
+# ∆q_diss,AT [µmol AT kg-1 s-1 s-1]
+q_diss_AT = p2.flatten(0.1 * q_diss_AT_3D, ocnmask)
 
-# ∆q_prod,arag [mol m-2 s-1]
-del_q_prod_arag = p2.flatten(0.1 * q_prod_arag_3D, ocnmask)
+# ∆q_prod,DIC [µmol DIC kg-1 s-1]
+q_prod_DIC = p2.flatten(0.1 * q_prod_DIC_3D, ocnmask)
 
-# ∆q_prod,calc [mol m-2 s-1]
-del_q_prod_calc = p2.flatten(0.1 * q_prod_calc_3D, ocnmask)
-
+# ∆q_prod,AT [µmol AT kg-1 s-1]
+q_prod_AT = p2.flatten(0.1 * q_prod_AT_3D, ocnmask)
 
 #%% set up air-sea gas exchange (Wanninkhof 2014)
 
@@ -203,7 +219,6 @@ pCO2_000001 = co2sys_000001['pCO2']
 R_AT = ((pCO2_000001 - pCO2)/pCO2) / (0.000001/AT)
 
 # calculate Nowicki et al. parameters
-rho = 1025 # seawater density [kg m-3]
 Ma = 1.8e26 # number of micromoles of air in atmosphere
 beta_DIC = DIC/aqueous_CO2 # [unitless]
 beta_AT = AT/aqueous_CO2 # [unitless]
@@ -248,26 +263,26 @@ nt = len(t)
 
 x = np.zeros((1 + 2*m, nt))
 
-# b = [ 0                                                                          ] --> 1 * ns, b[0]
-#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc)] --> m * ns, b[1:(m+1)]
-#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc     ] --> m * ns, b[(m+1):(2*m+1)]
+# b = [ 0                                                                           ] --> 1 * ns, b[0]
+#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * ns, b[1:(m+1)]
+#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * ns, b[(m+1):(2*m+1)]
+
+# which translates to...
+# b = [ 0                                      ] --> 1 * ns, b[0]
+#     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * ns, b[1:(m+1)]
+#     [ ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC ] --> m * ns, b[(m+1):(2*m+1)]
 
 b = np.zeros((1 + 2*m, nt))
 
 # add in source/sink vectors for ∆AT, only add perturbation for time step 0
 
 # for ∆AT
-# b[1:(m+1),0] = del_q_CDR_AT + 2 * (del_q_diss_arag + del_q_diss_calc - del_q_prod_arag - del_q_prod_calc)
-b[1:(m+1),0] = del_q_CDR_AT + 2 * (del_q_diss_calc - del_q_prod_arag - del_q_prod_calc) # TEMPORARY IGNORING DISS,ARAG B/C I DON'T HAVE IT YET
-# b[1:(m+1),1:nt] = np.tile(2 * (del_q_diss_arag + del_q_diss_calc - del_q_prod_arag - del_q_prod_calc)[:, np.newaxis], (1, 3))
-b[1:(m+1),1:nt] = np.tile(2 * (del_q_diss_calc - del_q_prod_arag - del_q_prod_calc)[:, np.newaxis], (1, 3)) # TEMPORARY IGNORING DISS,ARAG B/C I DON'T HAVE IT YET
+b[1:(m+1),0] = del_q_CDR_AT + q_diss_AT - q_prod_AT
+b[1:(m+1),1:nt] = np.tile((q_diss_AT - q_prod_AT)[:, np.newaxis], (1, 3))
 
 # for ∆DIC
-b[(m+1):(2*m+1),0] = 2
-# b[(m+1):(2*m+1),0] = del_q_CDR_DIC + del_q_diss_arag + del_q_diss_calc - del_q_prod_arag - del_q_prod_calc
-b[(m+1):(2*m+1),0] = del_q_CDR_DIC + del_q_diss_calc - del_q_prod_arag - del_q_prod_calc # TEMPORARY IGNORING DISS,ARAG B/C I DON'T HAVE IT YET
-# b[(m+1):(2*m+1),1:nt] = np.tile((del_q_diss_arag + del_q_diss_calc - del_q_prod_arag - del_q_prod_calc)[:, np.newaxis], (1, 3))
-b[(m+1):(2*m+1),1:nt] = np.tile((del_q_diss_calc - del_q_prod_arag - del_q_prod_calc)[:, np.newaxis], (1, 3)) # TEMPORARY IGNORING DISS,ARAG B/C I DON'T HAVE IT YET
+b[(m+1):(2*m+1),0] = del_q_CDR_DIC + q_diss_DIC - q_prod_DIC
+b[(m+1):(2*m+1),1:nt] = np.tile((q_diss_DIC - q_prod_DIC)[:, np.newaxis], (1, 3))
 
 # dimensions
 # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
@@ -325,8 +340,7 @@ A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
 
 del A0_, A1_, A2_
 
-
-
+#%% perform time stepping
 
 
 
