@@ -400,6 +400,9 @@ x_xCO2 = x[0, :]
 x_DIC  = x[1:(m+1), :]
 x_AT   = x[(m+1):(2*m+1), :]
 
+# convert xCO2 units from unitless [atm CO2 / atm air] or [mol CO2 / mol air] to ppm
+x_xCO2 *= 1e6
+
 # reconstruct 3D arrays for DIC and AT
 x_DIC_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
 x_AT_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
@@ -415,7 +418,39 @@ for idx in range(0, len(t)):
     x_DIC_3D[idx, :, :, :] = x_DIC_reshaped
     x_AT_3D[idx, :, :, :] = x_AT_reshaped
 
+#%% save model output in netCDF format
+global_attrs = {'description':'continuing testing my derivation instead of copying kana - working on how to validate model. time step of 100 year. flipped signs of A21 and A22 to match kana'}
 
+# save model output
+p2.save_model_output(
+    'exp04_2025-4-14-d.nc', 
+    t, 
+    model_depth, 
+    model_lon,
+    model_lat, 
+    tracers=[x_xCO2, x_DIC_3D, x_AT_3D], 
+    tracer_dims=[('time'), ('time', 'depth', 'lon', 'lat'), ('time', 'depth', 'lon', 'lat')],
+    tracer_names=['delxCO2', 'delDIC', 'delAT'], 
+    tracer_units=['ppm', 'µmol kg-3', 'µmol kg-3'],
+    global_attrs=global_attrs
+)
+
+#%% open and plot model output
+data = xr.open_dataset(output_path + 'exp08_2025-7-11-a.nc')
+
+model_time = data.time
+model_lon = data.lon.data
+model_lat = data.lat.data
+model_depth = data.depth.data
+
+for idx in range(0, len(model_time)):
+    print(idx)
+    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, 0, 1e-7, 'plasma', 'surface ∆DIC (µmol kg-1) at t=' + str(t[idx]))
+   
+for idx in range(0, len(model_time)):
+    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 100, 0, 1e-7, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 201ºE longitude')
+    
+# test: conservation?
 
 
 
