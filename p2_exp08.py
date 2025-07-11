@@ -285,14 +285,14 @@ nt = len(t)
 
 x = np.zeros((1 + 2*m, nt))
 
-# b = [ 0                                                                           ] --> 1 * ns, b[0]
-#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * ns, b[1:(m+1)]
-#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * ns, b[(m+1):(2*m+1)]
+# b = [ 0                                                                           ] --> 1 * nt, b[0]
+#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * nt, b[1:(m+1)]
+#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * nt, b[(m+1):(2*m+1)]
 
 # which translates to...
-# b = [ 0                                      ] --> 1 * ns, b[0]
-#     [ ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC ] --> m * ns, b[1:(m+1)]
-#     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * ns, b[(m+1):(2*m+1)]
+# b = [ 0                                      ] --> 1 * nt, b[0]
+#     [ ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC ] --> m * nt, b[1:(m+1)]
+#     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * nt, b[(m+1):(2*m+1)]
 
 b = np.zeros((1 + 2*m, nt))
 
@@ -389,13 +389,31 @@ for idx in tqdm(range(1, len(t))):
     '''
     
     LHS = sparse.eye(A.shape[0], format="csc") - dt * A
-    RHS = x[idx-1,:] + np.squeeze(dt*b)
+    RHS = x[:,idx-1] + np.squeeze(dt*b[:,idx-1])
         
-    x[idx,:] = spsolve(LHS,RHS) # time step with backwards Euler
-        
-    # remove perturbation 
-    b[-1] = 0
+    x[:,idx] = spsolve(LHS,RHS) # time step with backwards Euler
 
+#%% rebuild 3D concentrations from 1D array used for solving matrix equation
+
+# partition "x" into xCO2, DIC, and AT
+x_xCO2 = x[0, :]
+x_DIC  = x[1:(m+1), :]
+x_AT   = x[(m+1):(2*m+1), :]
+
+# reconstruct 3D arrays for DIC and AT
+x_DIC_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+x_AT_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+
+# for each time step, reshape 1D array into 3D array, then save to larger 4D array output (time, depth, longitude, latitude)
+for idx in range(0, len(t)):
+    x_DIC_reshaped = np.full(ocnmask.shape, np.nan)
+    x_AT_reshaped = np.full(ocnmask.shape, np.nan)
+
+    x_DIC_reshaped[ocnmask == 1] = np.reshape(x_DIC[0:-1, idx], (-1,), order='F')
+    x_AT_reshaped[ocnmask == 1] = np.reshape(x_AT[0:-1, idx], (-1,), order='F')
+    
+    x_DIC_3D[idx, :, :, :] = x_DIC_reshaped
+    x_AT_3D[idx, :, :, :] = x_AT_reshaped
 
 
 
