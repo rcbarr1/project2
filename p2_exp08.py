@@ -4,9 +4,9 @@
 Try to build a model using Rui's outputs!
 
 Governing equations (based on my own derivation + COBALT governing equations)
-1. d(xCO2)/dt = ∆q_sea-air,xCO2
-2. d(∆DIC)/dt = TR * ∆DIC + ∆q_air-sea,DIC + ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC
-3. d(∆AT)/dt = TR * ∆AT + ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT
+1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [atm CO2 (atm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
+2. d(∆DIC)/dt = TR * ∆DIC + ∆q_air-sea,DIC + ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC --> [µmol DIC (kg seawater)-1 yr-1]
+3. d(∆AT)/dt = TR * ∆AT + ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT --> [µmol AT (kg seawater)-1 yr-1]
 
 where ∆q_diss,DIC = ∆q_diss,arag + ∆q_diss,calc
       ∆q_prod,DIC = ∆q_prod,arag + ∆q_prod,calc
@@ -46,6 +46,8 @@ import xarray as xr
 import numpy as np
 import PyCO2SYS as pyco2
 from scipy import sparse
+from tqdm import tqdm
+from scipy.sparse.linalg import spsolve
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -240,9 +242,26 @@ gamma1 = V * Kw * (1 - f_ice) / Ma / z1
 gamma2 = -Kw * (1 - f_ice) / z1
 
 #%% set up time stepping
-# see p2_exp04.py for more advanced time stepping, test for now
 
+# simple for now
 t = np.arange(0,4,1)
+dt = 1 # time step length
+
+# more complicated time stepping
+# set up time domain
+#dt1 = 1/360 # 1 day
+#dt2 = 1/12 # 1 month
+#dt3 = 1 # 1 year
+#dt4 = 10 # 10 years
+#dt5 = 100 # 100 years
+
+#t1 = np.arange(0, 90/360, dt1) # use a 1 day time step for the first 90 days
+#t2 = np.arange(90/360, 5, dt2) # use a 1 month time step until the 5th year
+#t3 = np.arange(5, 100, dt3) # use a 1 year time step until the 100th year
+#t4 = np.arange(100, 500, dt4) # use a 10 year time step until the 500th year
+#t5 = np.arange(500, 1000+dt5, dt5) # use a 100 year time step until the 1000th year
+
+#t = np.concatenate((t1, t2, t3, t4, t5))
 
 #%% construct matricies
 # matrix form:
@@ -251,6 +270,9 @@ t = np.arange(0,4,1)
 #  A = transport matrix (TR) plus any processes with dependence on x   
 #  b = source/sink vector (processes not dependent on x)
     
+# UNITS NOTE: all xCO2 units are yr-1 all AT units are µmol AT kg-1 s-2, all DIC units are µmol DIC kg-1 s-2
+# see comment at top for more info
+
 # m = # ocean grid cells
 # nt = # time steps
 
@@ -264,25 +286,25 @@ nt = len(t)
 x = np.zeros((1 + 2*m, nt))
 
 # b = [ 0                                                                           ] --> 1 * ns, b[0]
-#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * ns, b[1:(m+1)]
-#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * ns, b[(m+1):(2*m+1)]
+#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * ns, b[1:(m+1)]
+#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * ns, b[(m+1):(2*m+1)]
 
 # which translates to...
 # b = [ 0                                      ] --> 1 * ns, b[0]
-#     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * ns, b[1:(m+1)]
-#     [ ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC ] --> m * ns, b[(m+1):(2*m+1)]
+#     [ ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC ] --> m * ns, b[1:(m+1)]
+#     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * ns, b[(m+1):(2*m+1)]
 
 b = np.zeros((1 + 2*m, nt))
 
 # add in source/sink vectors for ∆AT, only add perturbation for time step 0
 
-# for ∆AT
-b[1:(m+1),0] = del_q_CDR_AT + q_diss_AT - q_prod_AT
-b[1:(m+1),1:nt] = np.tile((q_diss_AT - q_prod_AT)[:, np.newaxis], (1, 3))
-
 # for ∆DIC
-b[(m+1):(2*m+1),0] = del_q_CDR_DIC + q_diss_DIC - q_prod_DIC
-b[(m+1):(2*m+1),1:nt] = np.tile((q_diss_DIC - q_prod_DIC)[:, np.newaxis], (1, 3))
+b[1:(m+1),0] = del_q_CDR_DIC + q_diss_DIC - q_prod_DIC
+b[1:(m+1),1:nt] = np.tile((q_diss_DIC - q_prod_DIC)[:, np.newaxis], (1, 3))
+
+# for ∆AT
+b[(m+1):(2*m+1),0] = del_q_CDR_AT + q_diss_AT - q_prod_AT
+b[(m+1):(2*m+1),1:nt] = np.tile((q_diss_AT - q_prod_AT)[:, np.newaxis], (1, 3))
 
 # dimensions
 # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
@@ -340,8 +362,39 @@ A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
 
 del A0_, A1_, A2_
 
-#%% perform time stepping
+#%% perform time stepping using Euler backward
 
+for idx in tqdm(range(1, len(t))):
+    '''
+    more complicated time stepping
+    if t[idx] <= 90/360: # 1 day time step
+        LHS = eye(A.shape[0], format="csc") - dt1 * A
+        RHS = x[idx-1,:] + np.squeeze(dt1*b)
+   
+    elif (t[idx] > 90/360) & (t[idx] <= 5): # 1 month time step
+        LHS = eye(A.shape[0], format="csc") - dt2 * A
+        RHS = x[idx-1,:] + np.squeeze(dt2*b)
+    
+    elif (t[idx] > 5) & (t[idx] <= 100): # 1 year time step
+        LHS = eye(A.shape[0], format="csc") - dt3 * A
+        RHS = x[idx-1,:] + np.squeeze(dt3*b)
+   
+    elif (t[idx] > 100) & (t[idx] <= 500): # 10 year time step
+        LHS = eye(A.shape[0], format="csc") - dt4 * A
+        RHS = x[idx-1,:] + np.squeeze(dt4*b)
+    
+    else: # 100 year time step
+        LHS = eye(A.shape[0], format="csc") - dt5 * A
+        RHS = x[idx-1,:] + np.squeeze(dt5*b)
+    '''
+    
+    LHS = sparse.eye(A.shape[0], format="csc") - dt * A
+    RHS = x[idx-1,:] + np.squeeze(dt*b)
+        
+    x[idx,:] = spsolve(LHS,RHS) # time step with backwards Euler
+        
+    # remove perturbation 
+    b[-1] = 0
 
 
 
