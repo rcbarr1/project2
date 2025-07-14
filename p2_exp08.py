@@ -362,7 +362,11 @@ A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
 
 del A0_, A1_, A2_
 
+del TR
+
 #%% perform time stepping using Euler backward
+LHS = sparse.eye(A.shape[0], format="csc") - dt * A
+del A
 
 for idx in tqdm(range(1, len(t))):
     '''
@@ -387,8 +391,6 @@ for idx in tqdm(range(1, len(t))):
         LHS = eye(A.shape[0], format="csc") - dt5 * A
         RHS = x[idx-1,:] + np.squeeze(dt5*b)
     '''
-    
-    LHS = sparse.eye(A.shape[0], format="csc") - dt * A
     RHS = x[:,idx-1] + np.squeeze(dt*b[:,idx-1])
         
     x[:,idx] = spsolve(LHS,RHS) # time step with backwards Euler
@@ -412,18 +414,18 @@ for idx in range(0, len(t)):
     x_DIC_reshaped = np.full(ocnmask.shape, np.nan)
     x_AT_reshaped = np.full(ocnmask.shape, np.nan)
 
-    x_DIC_reshaped[ocnmask == 1] = np.reshape(x_DIC[0:-1, idx], (-1,), order='F')
-    x_AT_reshaped[ocnmask == 1] = np.reshape(x_AT[0:-1, idx], (-1,), order='F')
+    x_DIC_reshaped[ocnmask == 1] = np.reshape(x_DIC[:, idx], (-1,), order='F')
+    x_AT_reshaped[ocnmask == 1] = np.reshape(x_AT[:, idx], (-1,), order='F')
     
     x_DIC_3D[idx, :, :, :] = x_DIC_reshaped
     x_AT_3D[idx, :, :, :] = x_AT_reshaped
 
 #%% save model output in netCDF format
-global_attrs = {'description':'continuing testing my derivation instead of copying kana - working on how to validate model. time step of 100 year. flipped signs of A21 and A22 to match kana'}
+global_attrs = {'description':'test save to make sure I get data after this run, is empty array'}
 
 # save model output
 p2.save_model_output(
-    'exp04_2025-4-14-d.nc', 
+    'exp08_2025-7-14-a.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -436,7 +438,7 @@ p2.save_model_output(
 )
 
 #%% open and plot model output
-data = xr.open_dataset(output_path + 'exp08_2025-7-11-a.nc')
+data = xr.open_dataset(output_path + 'exp08_2025-7-14-a.nc')
 
 model_time = data.time
 model_lon = data.lon.data
