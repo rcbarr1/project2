@@ -331,7 +331,7 @@ p2.save_model_output(
     tracers=[delDIC, delxCO2], 
     tracer_dims=[('time', 'depth', 'lon', 'lat'), ('time')],
     tracer_names=['delDIC', 'delxCO2'], 
-    tracer_units=['µmol kg-3', 'ppm'],
+    tracer_units=['µmol kg-3', 'unitless [mol C / mol air]'], # had previously erroneously marked xCO2 units as ppm, will be off in files saved before 7-11-2025
     global_attrs=global_attrs
 )
 

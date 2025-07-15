@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Try to build a model using Rui's outputs!
+Created on Tue Jul 15 11:13:48 2025
+
+EXP10: Creating zero-sensitivity run for simulations.
+- Assuming that ∆q_diss and ∆q_prod terms are equal to 0.
+exp10_2025-7-15-a.nc
+- NaOH (4 µmol NaOH m-2 s-1, which is 4 µmol AT m-2 s-1) added before first time step ONLY at model_depth[0], model_lat[73], model_lon[97]
+exp10_2025-7-15-b.nc
+- CaCO3 (2 µmol CaCO3 m-2 s-1, which is 2 µmol DIC m-2 s-1 and 4 µmol AT m-2 s-1) added before first time step ONLY at model_depth[0], model_lat[73], model_lon[97]
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [atm CO2 (atm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -36,9 +43,19 @@ gamma2 = -Kw * (1 - fice) / z1
 ∆q_sea-air,xCO2 = gamma1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
 ∆q_air-sea,DIC = gamma2 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
 
-Created on Tue Jul  8 12:24:04 2025
+Note about transport matrix set-up
+- This was designed in matlab, which uses "fortran-style" aka column major ordering
+- This means that "e" and "b" vectors (see John et al., 2020) must be constructed in this order
+- This is complicated by the fact that the land boxes are excluded from the transport matrix
+- The length of e and b vectors, as well as the length and width of the
+  transport operator, are equal to the total number of ocean boxes in the model
+- Best practices: create "e" and "b" vectors in three dimensions, flatten and mask out land boxes simultaneously 
 
-@author: Reese Barrett
+Naming convention for saving model runs (see .txt file for explanation of experiments)
+    exp##__YYYY-MM-DD-a.nc (where expXX corresponds to the python file used to
+    run the experiment; a, b, c etc. represent model runs from the same day)
+
+@author: Reese C. Barrett
 """
 
 import project2 as p2
@@ -48,6 +65,13 @@ import PyCO2SYS as pyco2
 from scipy import sparse
 from tqdm import tqdm
 from scipy.sparse.linalg import spsolve
+import os
+
+# set fewer threads to see if I can avoid running out of memory and crashing
+os.environ["OMP_NUM_THREADS"] = "4"
+os.environ["OPENBLAS_NUM_THREADS"] = "4"
+os.environ["MKL_NUM_THREADS"] = "4"
+os.environ["NUMEXPR_NUM_THREADS"] = "4"
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -74,9 +98,11 @@ rho = 1025 # seawater density for volume to mass [kg m-3]
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
 
 #%% add CDR perturbation
-# as a test, add point source of 4 µmol m-2 s-1 NaOH (this is what they did in
-# Wang et al., 2022 Bering Sea paper)
-# with NaOH, no alkalinity change, 1:1 AT:NaOH change
+# for experiment "a", add point source of 4 µmol m-2 s-1 NaOH (this is what
+# they did in Wang et al., 2022 Bering Sea paper)
+#  --> with NaOH, no DIC change, 1:1 AT:NaOH change
+# for experiment "b", add point source of 2 µmol m-2 s-1 CaCO3
+#  --> per mole of CaCO3, DIC will change by 1 unit, AT will change by 2 units
 
 # depth = 0, latitude = ~54, longitude = ~-165
 # in model, this approximately corresponds to model_depth[0], model_lat[73], model_lon[97]
@@ -88,48 +114,12 @@ del_q_CDR_AT_3D[0, 97, 73] = 4 # [µmol m-2 s-1]
 del_q_CDR_AT_3D = del_q_CDR_AT_3D * grid_z / rho * sec_per_year # convert from [µmol AT m-2 s-1] to [µmol AT kg-1 yr-1]
 del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
 
-# ∆q_CDR,DIC (change in DIC due to CDR addition) - final units: [µmol DIC kg-1 s-1]
+# ∆q_CDR,DIC (change in DIC due to CDR addition) - final units: [µmol DIC kg-1 yr-1]
 del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
 del_q_CDR_DIC_3D[ocnmask == 1] = 0
+del_q_CDR_DIC_3D[0, 97, 73] = 2 # [µmol m-2 s-1], turn this off for NaOH run but on for CaCO3 run
 del_q_CDR_DIC_3D = del_q_CDR_DIC_3D * grid_z / rho * sec_per_year # convert from [µmol DIC m-2 s-1] to [µmol DIC kg-1 yr-1]
 del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
-
-#%% load in regridded COBALT data (or, regrid COBALT data)
-cobalt_path = data_path + 'COBALT_regridded/'
-
-#cobalt = xr.open_dataset('/Volumes/LaCie/data/OM4p25_cobalt_v3/19580101.ocean_cobalt_fluxes_int.nc', decode_cf=False)
-#p2.regrid_cobalt(cobalt.jdiss_cadet_arag, model_depth, model_lat, model_lon, ocnmask, cobalt_path)
-#p2.regrid_cobalt(cobalt.jdiss_cadet_calc, model_depth, model_lat, model_lon, ocnmask, cobalt_path)
-#p2.regrid_cobalt(cobalt.jprod_cadet_arag, model_depth, model_lat, model_lon, ocnmask, cobalt_path)
-#p2.regrid_cobalt(cobalt.jprod_cadet_calc, model_depth, model_lat, model_lon, ocnmask, cobalt_path)
-
-# final units: [µmol DIC kg-1 s-1] or [µmol AT kg-1 yr-1]
-#q_diss_arag_3D = np.load(cobalt_path + 'jdiss_cadet_arag.npy') # [mol CACO3 m-2 s-1]
-q_diss_calc_3D = np.load(cobalt_path + 'jdiss_cadet_calc.npy') # [mol CACO3 m-2 s-1]
-#q_diss_DIC_3D = (q_diss_arag_3D + q_diss_calc_3D) * 1e-6 * grid_z / rho * sec_per_year # [µmol DIC kg-1 s-1]
-q_diss_DIC_3D = (q_diss_calc_3D) * 1e-6 * grid_z / rho * sec_per_year # [µmol DIC kg-1 yr-1]
-q_diss_AT_3D = q_diss_DIC_3D * 2 # [µmol AT kg-1 yr-1]
-
-q_prod_arag_3D = np.load(cobalt_path + 'jprod_cadet_arag.npy') # [mol CACO3 m-2 s-1]
-q_prod_calc_3D = np.load(cobalt_path + 'jprod_cadet_calc.npy') # [mol CACO3 m-2 s-1]
-q_prod_DIC_3D = (q_prod_arag_3D + q_prod_calc_3D) * 1e-6 * grid_z / rho * sec_per_year # [µmol DIC kg-1 yr-1]
-q_prod_AT_3D = q_prod_DIC_3D * 2 # [µmol AT kg-1 yr-1]
-
-#%% make assumptions to calculate "delta" for dissolution and production
-# right now, assuming linear relationship with arbitrary factor of 0.1 to see
-# if this even sort of works
-
-# ∆q_diss,DIC [µmol DIC kg-1 yr-1]
-q_diss_DIC = p2.flatten(0.1 * q_diss_DIC_3D, ocnmask)
-
-# ∆q_diss,AT [µmol AT kg-1 yr-1]
-q_diss_AT = p2.flatten(0.1 * q_diss_AT_3D, ocnmask)
-
-# ∆q_prod,DIC [µmol DIC kg-1 yr-1]
-q_prod_DIC = p2.flatten(0.1 * q_prod_DIC_3D, ocnmask)
-
-# ∆q_prod,AT [µmol AT kg-1 yr-1]
-q_prod_AT = p2.flatten(0.1 * q_prod_AT_3D, ocnmask)
 
 #%% set up air-sea gas exchange (Wanninkhof 2014)
 
@@ -250,22 +240,6 @@ gamma2 = -Kw * (1 - f_ice) / z1
 t = np.arange(0,4,1)
 dt = 1 # time step length
 
-# more complicated time stepping
-# set up time domain
-#dt1 = 1/360 # 1 day
-#dt2 = 1/12 # 1 month
-#dt3 = 1 # 1 year
-#dt4 = 10 # 10 years
-#dt5 = 100 # 100 years
-
-#t1 = np.arange(0, 90/360, dt1) # use a 1 day time step for the first 90 days
-#t2 = np.arange(90/360, 5, dt2) # use a 1 month time step until the 5th year
-#t3 = np.arange(5, 100, dt3) # use a 1 year time step until the 100th year
-#t4 = np.arange(100, 500, dt4) # use a 10 year time step until the 500th year
-#t5 = np.arange(500, 1000+dt5, dt5) # use a 100 year time step until the 1000th year
-
-#t = np.concatenate((t1, t2, t3, t4, t5))
-
 #%% construct matricies
 # matrix form:
 #  dx/dt = A * x + b
@@ -297,17 +271,16 @@ x = np.zeros((1 + 2*m, nt))
 #     [ ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC ] --> m * nt, b[1:(m+1)]
 #     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * nt, b[(m+1):(2*m+1)]
 
+# EXCEPT, ASSUMING ALL ∆q_diss & ∆q_prod = 0 FOR ZERO-SENSITIVITY RUN
 b = np.zeros((1 + 2*m, nt))
 
-# add in source/sink vectors for ∆AT, only add perturbation for time step 0
+# add in source/sink vectors for ∆AT, only add CDR perturbation for time step 0
 
 # for ∆DIC
-b[1:(m+1),0] = del_q_CDR_DIC + q_diss_DIC - q_prod_DIC
-b[1:(m+1),1:nt] = np.tile((q_diss_DIC - q_prod_DIC)[:, np.newaxis], (1, 3))
+b[1:(m+1),0] = del_q_CDR_DIC
 
 # for ∆AT
-b[(m+1):(2*m+1),0] = del_q_CDR_AT + q_diss_AT - q_prod_AT
-b[(m+1):(2*m+1),1:nt] = np.tile((q_diss_AT - q_prod_AT)[:, np.newaxis], (1, 3))
+b[(m+1):(2*m+1),0] = del_q_CDR_AT
 
 # dimensions
 # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
@@ -372,28 +345,6 @@ LHS = sparse.eye(A.shape[0], format="csc") - dt * A
 del A
 
 for idx in tqdm(range(1, len(t))):
-    '''
-    more complicated time stepping
-    if t[idx] <= 90/360: # 1 day time step
-        LHS = eye(A.shape[0], format="csc") - dt1 * A
-        RHS = x[idx-1,:] + np.squeeze(dt1*b)
-   
-    elif (t[idx] > 90/360) & (t[idx] <= 5): # 1 month time step
-        LHS = eye(A.shape[0], format="csc") - dt2 * A
-        RHS = x[idx-1,:] + np.squeeze(dt2*b)
-    
-    elif (t[idx] > 5) & (t[idx] <= 100): # 1 year time step
-        LHS = eye(A.shape[0], format="csc") - dt3 * A
-        RHS = x[idx-1,:] + np.squeeze(dt3*b)
-   
-    elif (t[idx] > 100) & (t[idx] <= 500): # 10 year time step
-        LHS = eye(A.shape[0], format="csc") - dt4 * A
-        RHS = x[idx-1,:] + np.squeeze(dt4*b)
-    
-    else: # 100 year time step
-        LHS = eye(A.shape[0], format="csc") - dt5 * A
-        RHS = x[idx-1,:] + np.squeeze(dt5*b)
-    '''
     RHS = x[:,idx-1] + np.squeeze(dt*b[:,idx-1])
         
     x[:,idx] = spsolve(LHS,RHS) # time step with backwards Euler
@@ -424,11 +375,11 @@ for idx in range(0, len(t)):
     x_AT_3D[idx, :, :, :] = x_AT_reshaped
 
 #%% save model output in netCDF format
-global_attrs = {'description':'test save to make sure I get data after this as run is array of zeros'}
+global_attrs = {'description':'Zero-sensitivity run b - all del_q_prod and del_q_diss are set to equal zero - addition of 2 umol m-2 s-1 of CaCO3 in Bering Strait'}
 
 # save model output
 p2.save_model_output(
-    'exp08_2025-7-14-b.nc', 
+    'exp10_2025-7-15-b.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -441,27 +392,35 @@ p2.save_model_output(
 )
 
 #%% open and plot model output
-data = xr.open_dataset(output_path + 'exp08_2025-7-14-a.nc')
+data = xr.open_dataset(output_path + 'exp10_2025-7-15-a.nc')
 
 model_time = data.time
+nt = len(model_time)
+
 model_lon = data.lon.data
 model_lat = data.lat.data
 model_depth = data.depth.data
 
 for idx in range(0, nt):
-    print(idx)
-    p2.plot_surface3d(model_lon, model_lat, data['delAT'].isel(time=idx).values, 0, 0, 5e-5, 'plasma', 'surface ∆DIC (µmol kg-1) at t=' + str(t[idx]))
-   
+    p2.plot_surface3d(model_lon, model_lat, data['delAT'].isel(time=idx).values, 0, 0, 5e-5, 'plasma', 'surface ∆AT (µmol kg-1) at t=' + str(model_time[idx].values))
+
 for idx in range(0, nt):
-    p2.plot_longitude3d(model_lat, model_depth, data['delAT'].isel(time=idx).values, 97, 0, 5e-5, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 165ºW longitude')
+    p2.plot_longitude3d(model_lat, model_depth, data['delAT'].isel(time=idx).values, 97, 0, 5e-5, 'plasma', ' ∆AT (µmol kg-1) at t=' +str(model_time[idx].values) + ' along 165ºW longitude')
+
+for idx in range(0, nt):
+    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, 0, 5e-5, 'plasma', 'surface ∆DIC (µmol kg-1) at t=' + str(model_time[idx].values))
     
-# test: conservation across time steps 1, 2, 3
-# not conserved, but I think this is because I am missing data from Rui! Even still, might not be conserved and that's okay?
 for idx in range(0, nt):
-    print(np.nansum(data['delAT'].isel(time=idx).values))
-
-
-
-
-
-
+    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 97, 0, 5e-5, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(model_time[idx].values) + ' along 165ºW longitude')
+    
+print('total delAT:')
+for idx in range(0, nt):
+    print('\t' + str(np.round(np.nansum(data['delAT'].isel(time=idx).values),4)) + ' µmol kg-1')
+    
+print('total delDIC:')
+for idx in range(0, nt):
+    print('\t' + str(np.round(np.nansum(data['delDIC'].isel(time=idx).values),4)) + ' µmol kg-1')
+    
+print('delxCO2:')
+for idx in range(0, nt):
+    print('\t' + str(np.round(data['delxCO2'].isel(time=idx).values,10)) + ' ppm')
