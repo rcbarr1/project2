@@ -9,6 +9,14 @@ exp10_2025-7-15-a.nc
 - NaOH (4 µmol NaOH m-2 s-1, which is 4 µmol AT m-2 s-1) added before first time step ONLY at model_depth[0], model_lat[73], model_lon[97]
 exp10_2025-7-15-b.nc
 - CaCO3 (2 µmol CaCO3 m-2 s-1, which is 2 µmol DIC m-2 s-1 and 4 µmol AT m-2 s-1) added before first time step ONLY at model_depth[0], model_lat[73], model_lon[97]
+exp10_2025-7-16-a.nc
+- Same NaOH simulation as above, with spilu solver
+exp10_2025-7-16-b.nc
+- Same CaCO3 simulation as above, with spilu solver
+exp10_2025-7-16-c.nc
+- Same NaOH simulation as above, with pyamg ruge_stuben_solver preconditoner + gmres solver
+exp10_2025-7-16-d.nc
+- Same CaCO3 simulation as above, with pyamg ruge_stuben_solver preconditoner + gmres solver
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [atm CO2 (atm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -64,14 +72,16 @@ import numpy as np
 import PyCO2SYS as pyco2
 from scipy import sparse
 from tqdm import tqdm
-from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import spsolve, spilu, LinearOperator, gmres
 import os
+from time import time
+import pyamg
 
 # set fewer threads to see if I can avoid running out of memory and crashing
-os.environ["OMP_NUM_THREADS"] = "4"
-os.environ["OPENBLAS_NUM_THREADS"] = "4"
-os.environ["MKL_NUM_THREADS"] = "4"
-os.environ["NUMEXPR_NUM_THREADS"] = "4"
+#os.environ["OMP_NUM_THREADS"] = "2"
+#os.environ["OPENBLAS_NUM_THREADS"] = "2"
+#os.environ["MKL_NUM_THREADS"] = "2"
+#os.environ["NUMEXPR_NUM_THREADS"] = "2"
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -117,7 +127,7 @@ del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
 # ∆q_CDR,DIC (change in DIC due to CDR addition) - final units: [µmol DIC kg-1 yr-1]
 del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
 del_q_CDR_DIC_3D[ocnmask == 1] = 0
-del_q_CDR_DIC_3D[0, 97, 73] = 2 # [µmol m-2 s-1], turn this off for NaOH run but on for CaCO3 run
+#del_q_CDR_DIC_3D[0, 97, 73] = 2 # [µmol m-2 s-1], turn this off for NaOH run but on for CaCO3 run
 del_q_CDR_DIC_3D = del_q_CDR_DIC_3D * grid_z / rho * sec_per_year # convert from [µmol DIC m-2 s-1] to [µmol DIC kg-1 yr-1]
 del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
 
@@ -341,14 +351,66 @@ del A0_, A1_, A2_
 del TR
 
 #%% perform time stepping using Euler backward
+#LHS = sparse.eye(A.shape[0], format="csc") - dt * A
+#del A
+#
+#for idx in tqdm(range(1, len(t))):
+#    RHS = x[:,idx-1] + np.squeeze(dt*b[:,idx-1])
+#        
+#    x[:,idx] = spsolve(LHS,RHS) # time step with backwards Euler
+
 LHS = sparse.eye(A.shape[0], format="csc") - dt * A
-del A
+
+start = time()
+ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
+stop = time()
+print('ilu calculations: ' + str(stop - start) + ' s')
+
+M = LinearOperator(LHS.shape, ilu.solve)
 
 for idx in tqdm(range(1, len(t))):
+    # add starting guess after first time step
+    if idx > 1:
+        x0 = x[:,idx-1]
+    else:
+        x0=None
+    
     RHS = x[:,idx-1] + np.squeeze(dt*b[:,idx-1])
-        
-    x[:,idx] = spsolve(LHS,RHS) # time step with backwards Euler
+    x[:,idx], info = gmres(LHS, RHS, M=M, x0=x0)
+    
+    if info > 0:
+        print(f"Didn't converge in {info} iterations.")
+    elif info != 0:
+        print("Illegal input or breakdown.")
 
+'''
+LHS = sparse.eye(A.shape[0], format="csc") - dt * A
+
+start = time()
+ml = pyamg.ruge_stuben_solver(LHS)
+stop = time()
+print('preconditioner calculations: ' + str(stop - start) + ' s')
+
+# create preconditioner as a LinearOperator for GMRES
+M = LinearOperator(LHS.shape, matvec=ml.aspreconditioner())
+
+for idx in tqdm(range(1, len(t))):
+    # add starting guess after first time step
+    if idx > 1:
+        x0 = x[:,idx-1]
+    else:
+        x0=None
+        
+    RHS = x[:,idx-1] + np.squeeze(dt*b[:,idx-1])    
+    
+    # call GMRES solver
+    x[:,idx], info = gmres(LHS, RHS, M=M, x0=x0, restart=50, tol=1e-8, maxiter=1000)
+    
+    if info > 0:
+        print(f"Didn't converge in {info} iterations.")
+    elif info != 0:
+        print("Illegal input or breakdown.")
+'''
 #%% rebuild 3D concentrations from 1D array used for solving matrix equation
 
 # partition "x" into xCO2, DIC, and AT
@@ -375,11 +437,16 @@ for idx in range(0, len(t)):
     x_AT_3D[idx, :, :, :] = x_AT_reshaped
 
 #%% save model output in netCDF format
-global_attrs = {'description':'Zero-sensitivity run b - all del_q_prod and del_q_diss are set to equal zero - addition of 2 umol m-2 s-1 of CaCO3 in Bering Strait'}
+#global_attrs = {'description':'Zero-sensitivity run a - all del_q_prod and del_q_diss are set to equal zero - addition of 4 umol m-2 s-1 of NaOH in Bering Strait'}
+#global_attrs = {'description':'Zero-sensitivity run b - all del_q_prod and del_q_diss are set to equal zero - addition of 2 umol m-2 s-1 of CaCO3 in Bering Strait'}
+#global_attrs = {'description':'Zero-sensitivity run a with ilu solver - all del_q_prod and del_q_diss are set to equal zero - addition of 4 umol m-2 s-1 of NaOH in Bering Strait'}
+#global_attrs = {'description':'Zero-sensitivity run b with ilu solver- all del_q_prod and del_q_diss are set to equal zero - addition of 2 umol m-2 s-1 of CaCO3 in Bering Strait'}
+global_attrs = {'description':'Zero-sensitivity run a with pyamg ruge_stuben_solver preconditoner and gmres solver - all del_q_prod and del_q_diss are set to equal zero - addition of 4 umol m-2 s-1 of NaOH in Bering Strait'}
+#global_attrs = {'description':'Zero-sensitivity run b with pyamg ruge_stuben_solver preconditoner and gmres solver - all del_q_prod and del_q_diss are set to equal zero - addition of 2 umol m-2 s-1 of CaCO3 in Bering Strait'}
 
 # save model output
 p2.save_model_output(
-    'exp10_2025-7-15-b.nc', 
+    'exp10_2025-7-16-c.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -392,7 +459,7 @@ p2.save_model_output(
 )
 
 #%% open and plot model output
-data = xr.open_dataset(output_path + 'exp10_2025-7-15-a.nc')
+data = xr.open_dataset(output_path + 'exp10_2025-7-16-c.nc')
 
 model_time = data.time
 nt = len(model_time)

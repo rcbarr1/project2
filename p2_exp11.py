@@ -5,8 +5,21 @@ Created on Tue Jul 15 11:15:02 2025
 
 EXP11: Trying to replicate Yamamoto et al., 2024 results ("instantaneous OAE")
 - Assuming that ∆q_diss term is equal to 0.
-exp11_2025-7-15-a.nc
-- Perturbation of 1 μmol kg−1 yr−1 in the top ocean layer for the first 30 days
+exp11_2025-7-21-a.nc
+- Testing ILU + GMRES
+- Perturbation of 1 μmol kg−1 yr−1 in a point in top ocean layer for the first 30 days
+- Shortened time steps after
+exp11_2025-7-21-b.nc
+- Testing ILU + LGMRES
+- Perturbation of 1 µmol kg-1 yr-1 in a point in top ocean layer for the first 30 days
+- Shortened time steps after
+exp11_2025-7-21-c.nc
+- RUNNING SOMETHING TO COMPARE WITH KANA RESULTS
+- Perturbation of 1 µmol kg-1 yr-1 in a point in top ocean layer for the first 30 days
+exp11_2025-7-??-?.nc
+- TO-DO: Testing SPSOLVE
+- Perturbation of 1 µmol kg-1 yr-1 in a point in top ocean layer for the first 30 days
+- Going to see how many time steps I can do?
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [atm CO2 (atm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -56,21 +69,14 @@ Naming convention for saving model runs (see .txt file for explanation of experi
 @author: Reese C. Barrett
 """
 
-
 import project2 as p2
 import xarray as xr
 import numpy as np
 import PyCO2SYS as pyco2
 from scipy import sparse
-from tqdm import tqdm
-from scipy.sparse.linalg import spsolve
-import os
-
-# set fewer threads to see if I can avoid running out of memory and crashing
-os.environ["OMP_NUM_THREADS"] = "4"
-os.environ["OPENBLAS_NUM_THREADS"] = "4"
-os.environ["MKL_NUM_THREADS"] = "4"
-os.environ["NUMEXPR_NUM_THREADS"] = "4"
+#from tqdm import tqdm
+from scipy.sparse.linalg import spilu, LinearOperator, lgmres
+from time import time
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -98,6 +104,8 @@ sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
 
 #%% add CDR perturbation
 # Add surface ocean perturbation of -1 µmol kg-1 yr-1 in DIC, no change in AT
+# Applying perturbation at (-39.5, 101), which is (model_lat[25], model_lon[50])
+# Goal: compare results with Yamamoto et al., 2024 supplemental figures
 
 # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
 del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
@@ -107,7 +115,7 @@ del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
 # ∆q_CDR,DIC (change in DIC due to CDR addition) - final units: [µmol DIC kg-1 yr-1]
 del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
 del_q_CDR_DIC_3D[ocnmask == 1] = 0
-del_q_CDR_DIC_3D[0, :, :] = -1 # µmol kg-1 yr-1
+del_q_CDR_DIC_3D[0, 50, 25] = -1 # µmol kg-1 yr-1
 del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
 
 #%% set up air-sea gas exchange (Wanninkhof 2014)
@@ -233,13 +241,22 @@ dt3 = 1 # 1 year
 dt4 = 10 # 10 years
 dt5 = 100 # 100 years
 
+# Kana's time stepping
 t1 = np.arange(0, 90/360, dt1) # use a 1 day time step for the first 90 days
 t2 = np.arange(90/360, 5, dt2) # use a 1 month time step until the 5th year
 t3 = np.arange(5, 100, dt3) # use a 1 year time step until the 100th year
 t4 = np.arange(100, 500, dt4) # use a 10 year time step until the 500th year
 t5 = np.arange(500, 1000+dt5, dt5) # use a 100 year time step until the 1000th year
 
+# shortened time stepping to test solvers
+#t1 = np.arange(0, 30/360, dt1) # use a 1 day time step for the first 30 days
+#t2 = np.arange(30/360, 1, dt2) # use a 1 month time step until the 1st year
+#t3 = np.arange(1, 3, dt3) # use a 1 year time step until the 3rd year
+#t4 = np.arange(3, 23, dt4) # use a 10 year time step until the 23rd year
+#t5 = np.arange(23, 123+dt5, dt5) # use a 100 year time step until the 1000th year
+
 t = np.concatenate((t1, t2, t3, t4, t5))
+#t = np.concatenate((t1, t2, t3))
 
 #%% construct matricies
 # matrix form:
@@ -276,7 +293,7 @@ b = np.zeros((1 + 2*m, nt))
 
 # add in source/sink vectors for ∆AT, only add perturbation for time step 0
 
-#%% for ∆DIC, add perturbation for first 30 days
+# for ∆DIC, add perturbation for first 30 days
 b[1:(m+1),0:30] = np.tile(del_q_CDR_DIC[:, np.newaxis], (1,30))
 
 # for ∆AT, no change
@@ -300,7 +317,7 @@ b[1:(m+1),0:30] = np.tile(del_q_CDR_DIC[:, np.newaxis], (1,30))
 # A = [A00][A01][A02]
 #     [A10][A11][A12]
 #     [A20][A21][A22]
-#%%
+
 # to solve for ∆xCO2
 A00 = -1 * Patm * np.nansum(gamma1 * K0) # using nansum because all subsurface boxes are NaN, we only want surface
 A01 = np.nan_to_num(gamma1 * rho * R_DIC / beta_DIC) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
@@ -340,29 +357,109 @@ del A0_, A1_, A2_
 del TR
 
 #%% perform time stepping using Euler backward
+LHS1 = sparse.eye(A.shape[0], format="csc") - dt1 * A
+LHS2 = sparse.eye(A.shape[0], format="csc") - dt2 * A
+LHS3 = sparse.eye(A.shape[0], format="csc") - dt3 * A
+LHS4 = sparse.eye(A.shape[0], format="csc") - dt4 * A
+LHS5 = sparse.eye(A.shape[0], format="csc") - dt5 * A
 
-for idx in tqdm(range(1, len(t))):
+# test condition number of matrix
+est1 = sparse.linalg.onenormest(LHS1)
+print("Estimated 1-norm condition number LHS1: ", est1)
+est2 = sparse.linalg.onenormest(LHS2)
+print("Estimated 1-norm condition number LHS2: ", est2)
+est3 = sparse.linalg.onenormest(LHS3)
+print("Estimated 1-norm condition number LHS3: ", est3)
+est4 = sparse.linalg.onenormest(LHS4)
+print("Estimated 1-norm condition number LHS4: ", est4)
+est5 = sparse.linalg.onenormest(LHS5)
+print("Estimated 1-norm condition number LHS5: ", est5)
+
+start = time()
+ilu1 = spilu(LHS1.tocsc(), drop_tol=1e-5, fill_factor=20)
+stop = time()
+print('ilu1 calculations: ' + str(stop - start) + ' s')
+
+start = time()
+ilu2 = spilu(LHS2.tocsc(), drop_tol=1e-5, fill_factor=20)
+stop = time()
+print('ilu2 calculations: ' + str(stop - start) + ' s')
+
+start = time()
+ilu3 = spilu(LHS3.tocsc(), drop_tol=1e-3, fill_factor=10)
+stop = time()
+print('ilu3 calculations: ' + str(stop - start) + ' s')
+
+start = time()
+ilu4 = spilu(LHS4.tocsc(), drop_tol=1e-5, fill_factor=20)
+stop = time()
+print('ilu4 calculations: ' + str(stop - start) + ' s')
+
+start = time()
+ilu5 = spilu(LHS5.tocsc())
+stop = time()
+print('ilu5 calculations: ' + str(stop - start) + ' s')
+
+M1 = LinearOperator(LHS1.shape, ilu1.solve)
+M2 = LinearOperator(LHS2.shape, ilu2.solve)
+M3 = LinearOperator(LHS3.shape, ilu3.solve)
+M4 = LinearOperator(LHS4.shape, ilu4.solve)
+M5 = LinearOperator(LHS5.shape, ilu5.solve)
+
+#%%
+#for idx in tqdm(range(1, len(t))):
+for idx in range(1, len(t)):
+    
+    # add starting guess after first time step
+    if idx > 1:
+        x0 = x[:,idx-1]
+    else:
+        x0=None
+    
     if t[idx] <= 90/360: # 1 day time step
-        LHS = sparse.eye(A.shape[0], format="csc") - dt1 * A
-        RHS = x[idx-1,:] + np.squeeze(dt1*b[:,idx-1])
+    #if t[idx] <= 30/360: # 1 day time step
+        RHS = x[:,idx-1] + np.squeeze(dt1*b[:,idx-1])
+        start = time()
+        x[:,idx], info = lgmres(LHS1, RHS, M=M1, x0=x0, rtol = 1e-5, atol=0)
+        stop = time()
+        print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
    
     elif (t[idx] > 90/360) & (t[idx] <= 5): # 1 month time step
-        LHS = sparse.eye(A.shape[0], format="csc") - dt2 * A
-        RHS = x[idx-1,:] + np.squeeze(dt2*b[:,idx-1])
+    #elif (t[idx] > 30/360) & (t[idx] <= 1): # 1 month time step
+        RHS = x[:,idx-1] + np.squeeze(dt2*b[:,idx-1])
+        start = time()
+        x[:,idx], info = lgmres(LHS2, RHS, M=M2, x0=x0, rtol = 1e-5, atol=0)
+        stop = time()
+        print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
     
     elif (t[idx] > 5) & (t[idx] <= 100): # 1 year time step
-        LHS = sparse.eye(A.shape[0], format="csc") - dt3 * A
-        RHS = x[idx-1,:] + np.squeeze(dt3*b[:,idx-1])
-   
+    #elif (t[idx] > 1) & (t[idx] <= 3): # 1 year time step
+        start = time()
+        RHS = x[:,idx-1] + np.squeeze(dt3*b[:,idx-1])
+        x[:,idx], info = lgmres(LHS3, RHS, M=M3, x0=x0, rtol = 1e-5, atol=0)
+        stop = time()
+        print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+
     elif (t[idx] > 100) & (t[idx] <= 500): # 10 year time step
-        LHS = sparse.eye(A.shape[0], format="csc") - dt4 * A
-        RHS = x[idx-1,:] + np.squeeze(dt4*b[:,idx-1])
-    
+    #elif (t[idx] > 3) & (t[idx] <= 23): # 10 year time step
+        start = time()
+        RHS = x[:,idx-1] + np.squeeze(dt4*b[:,idx-1])
+        x[:,idx], info = lgmres(LHS4, RHS, M=M4, x0=x0, rtol = 1e-5, atol=0)
+        stop = time()
+        print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+
     else: # 100 year time step
-        LHS = sparse.eye(A.shape[0], format="csc") - dt5 * A
-        RHS = x[idx-1,:] + np.squeeze(dt5*b[:,idx-1])
-            
-    x[:,idx] = spsolve(LHS,RHS) # time step with backwards Euler
+        start = time()
+        RHS = x[:,idx-1] + np.squeeze(dt5*b[:,idx-1])
+        x[:,idx], info = lgmres(LHS5, RHS, M=M5, x0=x0, rtol = 1e-5, atol=0)
+        stop = time()
+        print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+        
+if info != 0:
+    if info > 0:
+        print(f'did not converge in {info} iterations.')
+    else:
+        print('illegal input or breakdown')
 
 #%% rebuild 3D concentrations from 1D array used for solving matrix equation
 
@@ -390,11 +487,11 @@ for idx in range(0, len(t)):
     x_AT_3D[idx, :, :, :] = x_AT_reshaped
 
 #%% save model output in netCDF format
-global_attrs = {'description':'Attempting to replicate Yamamoto et al 2024 results - instantaneous OAE'}
+global_attrs = {'description':'Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE'}
 
 # save model output
 p2.save_model_output(
-    'exp11_2025-7-15-a.nc', 
+    'exp11_2025-7-21-c.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -407,21 +504,27 @@ p2.save_model_output(
 )
 
 #%% open and plot model output
-data = xr.open_dataset(output_path + 'exp11_2025-7-15-a.nc')
+'''
+data = xr.open_dataset(output_path + 'exp11_2025-7-21-a.nc')
 
+test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
+for x in test:
+    print(x)
+    
 model_time = data.time
 model_lon = data.lon.data
 model_lat = data.lat.data
 model_depth = data.depth.data
 
-for idx in range(0, nt):
+for idx in range(42, nt):
     print(idx)
-    p2.plot_surface3d(model_lon, model_lat, data['delAT'].isel(time=idx).values, 0, 0, 5e-5, 'plasma', 'surface ∆DIC (µmol kg-1) at t=' + str(t[idx]))
+    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, 0, 5e-5, 'plasma', 'A : surface ∆DIC (µmol kg-1) at t=' + str(t[idx]))
    
 for idx in range(0, nt):
-    p2.plot_longitude3d(model_lat, model_depth, data['delAT'].isel(time=idx).values, 97, 0, 5e-5, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 165ºW longitude')
+    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 97, 0, 5e-5, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 165ºW longitude')
     
 # test: conservation across time steps 1, 2, 3
 # not conserved, but I think this is because I am missing data from Rui! Even still, might not be conserved and that's okay?
 for idx in range(0, nt):
     print(np.nansum(data['delAT'].isel(time=idx).values))
+'''
