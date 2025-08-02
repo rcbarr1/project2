@@ -16,6 +16,8 @@ import xarray as xr
 import numpy as np
 import project2 as p2
 import time
+from scipy.interpolate import RegularGridInterpolator
+from tqdm import tqdm
 
 cobalt_path = '/Volumes/LaCie/data/OM4p25_cobalt_v3/'
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
@@ -46,7 +48,10 @@ q_prod_calc = cobalt.jprod_cadet_calc # [mol CACO3 m-2 s-1]
 
 data = [q_diss_calc, q_prod_arag, q_prod_calc]
 #data = [q_diss_arag]
-   
+
+
+cobalt_vrbl = q_prod_calc
+
 #%% call regridding & inpainting function
 for d in data:
 #d = data[0]
@@ -89,26 +94,23 @@ cobalt_lon = q_prod_calc['xh'].to_numpy()     # ºE (originally -300 to +60, now
 cobalt_lat = q_prod_calc['yh'].to_numpy()     # ºN (-80 to +90)
 cobalt_lon_regr = (cobalt_lon + 360) % 360 # convert
 
-#%% averaged across time
-
-i = 33
-test0 = avg
-#test0[test0<0] = 1e-20
-p2.plot_surface3d(cobalt_lon, cobalt_lat, test0, i, 1e-17, 1e-10, 'magma', 'calc fluxes', logscale=True, lon_lims=[-300, 60])
-
+#%% inpainted
+i = 40
+test2 = avg
+#test2 = inp
+#test2[test2<=0] = 1e-20
+p2.plot_surface3d(model_lon, model_lat, test2, i, 1e-17, 1e-10, 'magma', 'calc fluxes', logscale=True, lon_lims=[0, 360])
 
 #%% regridded
-i=8
 test1 = regr
 #test1[test1<=0] = 1e-20
-p2.plot_surface3d(model_lon, model_lat, test1, i, 1e-17, 1e-10, 'magma', 'calc fluxes', logscale=True)
+p2.plot_surface3d(model_lon, model_lat, test1, i, 1e-17, 1e-10, 'magma', 'calc fluxes', logscale=True, lon_lims=[0, 360])
 
-
-#%% inpainted
-i = 8
-test2 = inp
-#test2[test2<=0] = 1e-20
-p2.plot_surface3d(model_lon, model_lat, test2, i, 1e-17, 1e-10, 'magma', 'calc fluxes', logscale=True)
+#%% averaged across time
+j = np.abs(cobalt_depth - model_depth[i]).argmin()
+test0 = inp
+#test0[test0<0] = 1e-20
+p2.plot_surface3d(cobalt_lon, cobalt_lat, test0, j, 1e-17, 1e-10, 'magma', 'calc fluxes', logscale=True, lon_lims=[0, 360])
 
 #%% plotting ocnmask to compare inpainting -> something is wrong, deep ocean layers do not look like deep ocean ocnmask
 ocnmask_copy = ocnmask.copy()

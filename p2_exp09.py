@@ -7,14 +7,12 @@ EXP09: Creating control run for simulations.
 - Assuming that all ∆q terms are equal to 0.
 
 Governing equations (based on my own derivation + COBALT governing equations)
-1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [atm CO2 (atm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
-2. d(∆DIC)/dt = TR * ∆DIC + ∆q_air-sea,DIC + ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC --> [µmol DIC (kg seawater)-1 yr-1]
-3. d(∆AT)/dt = TR * ∆AT + ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT --> [µmol AT (kg seawater)-1 yr-1]
+1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [atm CO2 (atm air)-1 yr-1] or [mol CO2 (mol air)-1 yr-1]
+2. d(∆DIC)/dt = TR * ∆DIC + ∆q_air-sea,DIC + ∆q_hard,DIC + ∆q_CDR,DIC --> [mol DIC (kg seawater)-1 yr-1]
+3. d(∆AT)/dt = TR * ∆AT + ∆q_hard,AT + ∆q_CDR,AT --> [µmol AT (kg seawater)-1 yr-1]
 
-where ∆q_diss,DIC = ∆q_diss,arag + ∆q_diss,calc
-      ∆q_prod,DIC = ∆q_prod,arag + ∆q_prod,calc
-      ∆q_diss,AT = 2 * (∆q_diss,arag + ∆q_diss,calc)
-      ∆q_prod,AT = 2 * (∆q_prod,arag + ∆q_prod,calc)
+where ∆q_hard,DIC = ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc (FROM COBALT)
+      ∆q_hard,AT = 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) (FROM COBALT)
 
 *NOTE: burial is included in 'diss' in 'plus_btm' versions of calcium and
 aragonite dissolution, but for some reason these arrays were all equal to zero
@@ -24,28 +22,28 @@ in files Rui sent me -> should investigate further soon
 production/respiration changes) in the future (see COBALT governing equations
 for how this affects alkalinity/DIC in that model)
                                                
-Air-sea gas exchange fluxes have to be multiplied by "x" vector because they
-rely on ∆x's, which means they are incorporated with the transport matrix into
+Air-sea gas exchange fluxes have to be multiplied by "c" vector because they
+rely on ∆c's, which means they are incorporated with the transport matrix into
 vector "A"
 
-units: µmol kg-1 s-1
-∆q_sea-air,xCO2 = V * Kw * (1 - f_ice) / Ma / z1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
-∆q_air-sea,DIC = -1 * Kw * (1 - f_ice) / z1 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
+units: mol kg-1 yr-1
+∆q_sea-air,xCO2 = k * V * (1 - f_ice) / Ma / z1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
+∆q_air-sea,DIC = - k * (1 - f_ice) / z1 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
 
 simplify with parameter "gamma"
-gamma1 = V * Kw * (1 - f_ice) / Ma / z1
-gamma2 = -Kw * (1 - fice) / z1
+gammax = k * V * (1 - f_ice) / Ma / z1
+gammaC = - k * (1 - fice) / z1
 
-∆q_sea-air,xCO2 = gamma1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
-∆q_air-sea,DIC = gamma2 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
+∆q_sea-air,xCO2 = gammax * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
+∆q_air-sea,DIC = gammaC * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
 
 Note about transport matrix set-up
 - This was designed in matlab, which uses "fortran-style" aka column major ordering
-- This means that "e" and "b" vectors (see John et al., 2020) must be constructed in this order
+- This means that "c" and "b" vectors must be constructed in this order
 - This is complicated by the fact that the land boxes are excluded from the transport matrix
-- The length of e and b vectors, as well as the length and width of the
+- The length of "c" and "b" vectors, as well as the length and width of the
   transport operator, are equal to the total number of ocean boxes in the model
-- Best practices: create "e" and "b" vectors in three dimensions, flatten and mask out land boxes simultaneously 
+- Best practices: create "c" and "b" vectors in three dimensions, flatten and mask out land boxes simultaneously 
 
 Naming convention for saving model runs (see .txt file for explanation of experiments)
     exp##__YYYY-MM-DD-a.nc (where expXX corresponds to the python file used to
@@ -90,12 +88,12 @@ dt = 1 # time step length
 
 #%% construct matricies
 # matrix form:
-#  dx/dt = A * x + b
-#  x = variable(s) of interest
-#  A = transport matrix (TR) plus any processes with dependence on x   
-#  b = source/sink vector (processes not dependent on x)
+#  dc/dt = A * c + b
+#  c = variable(s) of interest
+#  A = transport matrix (TR) plus any processes with dependence on c  
+#  q = source/sink vector (processes not dependent on c)
     
-# UNITS NOTE: all xCO2 units are yr-1, all AT units are µmol AT kg-1 s-2, all DIC units are µmol DIC kg-1 s-2
+# UNITS NOTE: all xCO2 units are yr-1, all AT units are mol AT kg-1, all DIC units are mol DIC kg-1
 # see comment at top for more info
 
 # m = # ocean grid cells
@@ -104,23 +102,23 @@ dt = 1 # time step length
 m = TR.shape[0]
 nt = len(t)
 
-# x = [ ∆xCO2 ] --> 1 * nt
+# c = [ ∆xCO2 ] --> 1 * nt
 #     [ ∆DIC  ] --> m * nt
 #     [ ∆AT   ] --> m * nt
 
-x = np.zeros((1 + 2*m, nt))
+c = np.zeros((1 + 2*m, nt))
 
-# b = [ 0                                                                           ] --> 1 * nt, b[0]
-#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * nt, b[1:(m+1)]
-#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * nt, b[(m+1):(2*m+1)]
+# q = [ 0                                                                           ] --> 1 * nt, q[0]
+#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * nt, q[1:(m+1)]
+#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * nt, q[(m+1):(2*m+1)]
 
 # which translates to...
-# b = [ 0                                      ] --> 1 * nt, b[0]
-#     [ ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC ] --> m * nt, b[1:(m+1)]
-#     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * nt, b[(m+1):(2*m+1)]
+# q = [ 0                        ] --> 1 * nt, q[0]
+#     [ ∆q_CDR,DIC + ∆q_hard,DIC ] --> m * nt, q[1:(m+1)]
+#     [ ∆q_CDR,AT + ∆q_hard,AT   ] --> m * nt, q[(m+1):(2*m+1)]
 
 # EXCEPT, ASSUMING ALL = 0 FOR CONTROL RUN
-b = np.zeros((1 + 2*m, nt))
+q = np.zeros((1 + 2*m, nt))
 
 # add in source/sink vectors for ∆AT, only add perturbation for time step 0
 
@@ -130,13 +128,13 @@ b = np.zeros((1 + 2*m, nt))
 #     [m x 1][m x m][m x m]
 
 # what acts on what
-# A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need b)
-#     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need b)
-#     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need b)
+# A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
+#     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
+#     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
 
 # math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
-# A = [-gamma1 * K0 * Patm      ][gamma1 * rho * R_DIC / beta_DIC][gamma1 * rho * R_AT / beta_AT]
-#     [-gamma2 * K0 * Patm / rho][TR + gamma2 * R_DIC / beta_DIC ][gamma2 * R_AT / beta_AT      ]
+# A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
+#     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
 #     [0                        ][0                              ][TR                           ]
 
 # BUT, WITH NO AIR-SEA GAS EXCHANGE (∆q_air-sea = 0), looks like this:
@@ -192,33 +190,37 @@ LHS = sparse.eye(A.shape[0], format="csc") - dt * A
 del A
 
 for idx in tqdm(range(1, len(t))):
-    RHS = x[:,idx-1] + np.squeeze(dt*b[:,idx-1])
-    x[:,idx] = spsolve(LHS,RHS) # time step with backwards Euler
+    RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx-1])
+    c[:,idx] = spsolve(LHS,RHS) # time step with backwards Euler
 
 #%% rebuild 3D concentrations from 1D array used for solving matrix equation
 
 # partition "x" into xCO2, DIC, and AT
-x_xCO2 = x[0, :]
-x_DIC  = x[1:(m+1), :]
-x_AT   = x[(m+1):(2*m+1), :]
+c_xCO2 = c[0, :]
+c_DIC  = c[1:(m+1), :]
+c_AT   = c[(m+1):(2*m+1), :]
 
 # convert xCO2 units from unitless [atm CO2 / atm air] or [mol CO2 / mol air] to ppm
-x_xCO2 *= 1e6
+c_xCO2 *= 1e6
+
+# convert DIC and AT units from mol kg-1 to µmol kg-1
+c_DIC *= 1e6
+c_AT *= 1e6
 
 # reconstruct 3D arrays for DIC and AT
-x_DIC_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
-x_AT_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+c_DIC_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+c_AT_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
 
 # for each time step, reshape 1D array into 3D array, then save to larger 4D array output (time, depth, longitude, latitude)
 for idx in range(0, len(t)):
-    x_DIC_reshaped = np.full(ocnmask.shape, np.nan)
-    x_AT_reshaped = np.full(ocnmask.shape, np.nan)
+    c_DIC_reshaped = np.full(ocnmask.shape, np.nan)
+    c_AT_reshaped = np.full(ocnmask.shape, np.nan)
 
-    x_DIC_reshaped[ocnmask == 1] = np.reshape(x_DIC[:, idx], (-1,), order='F')
-    x_AT_reshaped[ocnmask == 1] = np.reshape(x_AT[:, idx], (-1,), order='F')
+    c_DIC_reshaped[ocnmask == 1] = np.reshape(c_DIC[:, idx], (-1,), order='F')
+    c_AT_reshaped[ocnmask == 1] = np.reshape(c_AT[:, idx], (-1,), order='F')
     
-    x_DIC_3D[idx, :, :, :] = x_DIC_reshaped
-    x_AT_3D[idx, :, :, :] = x_AT_reshaped
+    c_DIC_3D[idx, :, :, :] = c_DIC_reshaped
+    c_AT_3D[idx, :, :, :] = c_AT_reshaped
 
 #%% save model output in netCDF format
 global_attrs = {'description':'Control run - all del_q are set to 0'}
@@ -230,7 +232,7 @@ p2.save_model_output(
     model_depth, 
     model_lon,
     model_lat, 
-    tracers=[x_xCO2, x_DIC_3D, x_AT_3D], 
+    tracers=[c_xCO2, c_DIC_3D, c_AT_3D], 
     tracer_dims=[('time',), ('time', 'depth', 'lon', 'lat'), ('time', 'depth', 'lon', 'lat')],
     tracer_names=['delxCO2', 'delDIC', 'delAT'], 
     tracer_units=['ppm', 'umol kg-3', 'umol kg-3'],

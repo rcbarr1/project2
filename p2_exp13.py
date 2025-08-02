@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Jul 15 11:13:48 2025
+Created on Thu Jul 31 15:20:34 2025
 
-EXP10: Creating zero-sensitivity run for simulations.
+EXP13: Creating zero-sensitivity run for simulations, but recalculating Revelle factors each time to see if it matters.
+
 NOTE: HAVE NOT RERUN THESE SINCE MAKING PCO2 UNITS CORRECTION
 - Assuming that ∆q_diss and ∆q_prod terms are equal to 0.
-exp10_2025-7-31-a.nc
+exp13_2025-7-31-a.nc
 - NaOH (4 µmol NaOH m-2 s-1, which is 4 µmol AT m-2 s-1) added before first time step ONLY at model_depth[0], model_lat[73], model_lon[97]
-exp10_2025-7-31-b.nc
+exp13_2025-7-31-b.nc
 - CaCO3 (2 µmol CaCO3 m-2 s-1, which is 2 µmol DIC m-2 s-1 and 4 µmol AT m-2 s-1) added before first time step ONLY at model_depth[0], model_lat[73], model_lon[97]
 
 Governing equations (based on my own derivation + COBALT governing equations)
@@ -144,11 +145,7 @@ T = p2.flatten(T_3D, ocnmask)
 Si = p2.flatten(Si_3D, ocnmask)
 P = p2.flatten(P_3D, ocnmask)
 
-#p2.plot_surface3d(model_lon, model_lat, S_3D, 0, 25, 38, 'magma', 'WOA salinity distribution')
-#p2.plot_surface3d(model_lon, model_lat, T_3D, 0, -10, 35, 'magma', 'WOA temp distribution')
-#p2.plot_surface3d(model_lon, model_lat, Si_3D, 0, 0, 30, 'magma', 'WOA silicate distribution')
-#p2.plot_surface3d(model_lon, model_lat, P_3D, 0, 0, 2.5, 'magma', 'WOA phosphate distribution')
-
+#%%
 # regrid NCEP/DOE reanalysis II data
 #p2.regrid_ncep_noaa(data_path, 'icec', model_lat, model_lon, ocnmask)
 #p2.regrid_ncep_noaa(data_path, 'uwnd', model_lat, model_lon, ocnmask)
@@ -163,7 +160,7 @@ sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_AO.npy') #
 vec_schmidt = np.vectorize(p2.schmidt)
 Sc_2D = vec_schmidt('CO2', sst_2D)
 
-# solve for Kw (gas transfer velocity) for each ocean cell
+# solve for k (gas transfer velocity) for each ocean cell
 a = 0.251 # from Wanninkhof 2014
 k_2D = a * uwnd_2D**2 * (Sc_2D/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
 
@@ -187,53 +184,12 @@ DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy') # dissol
 AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')   # total alkalinity [µmol kg-1]
 
 # flatten data
-DIC = p2.flatten(DIC_3D, ocnmask)
-AT = p2.flatten(AT_3D, ocnmask)
+DIC0 = p2.flatten(DIC_3D, ocnmask)
+AT0 = p2.flatten(AT_3D, ocnmask)
 
 # create "pressure" array by broadcasting depth array
 pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
 pressure = pressure_3D[ocnmask == 1].flatten(order='F')
-
-# use CO2SYS with GLODAP and WOA data to solve for carbonate system at each grid cell
-# do this for only ocean grid cells
-# this is PyCO2SYSv2
-co2sys = pyco2.sys(dic=DIC, alkalinity=AT, salinity=S, temperature=T,
-                   pressure=pressure, total_silicate=Si, total_phosphate=P)
-
-# extract key results arrays
-pCO2 = co2sys['pCO2'] * 1e-6 # pCO2 [atm]
-aqueous_CO2 = co2sys['CO2'] * 1e-6 # aqueous CO2 [mol kg-1]
-R_C = co2sys['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
-
-# calculate revelle factor w.r.t. AT [unitless]
-# must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
-co2sys_000001 = pyco2.sys(dic=DIC, alkalinity=AT+0.000001, salinity=S,
-                       temperature=T, pressure=pressure, total_silicate=Si,
-                       total_phosphate=P)
-
-pCO2_000001 = co2sys_000001['pCO2']
-R_A = ((pCO2_000001 - pCO2)/pCO2) / (0.000001/AT)
-
-# calculate Nowicki et al. parameters
-Ma = 1.8e20 # number of moles of air in atmosphere
-beta_C = DIC*1e-6/aqueous_CO2 # [unitless]
-beta_A = AT*1e-6/aqueous_CO2 # [unitless]
-K0 = aqueous_CO2/pCO2*rho # [mol m-3 atm-1], in derivation this is defined in per volume units so used density to get there
-Patm = 1 # atmospheric pressure [atm]
-z1 = model_depth[0] # depth of first layer of model [m]
-V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
-
-# add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
-k_3D = np.full(ocnmask.shape, np.nan)
-k_3D[0, :, :] = k_2D
-k = p2.flatten(k_3D, ocnmask)
-
-f_ice_3D = np.full(ocnmask.shape, np.nan)
-f_ice_3D[0, :, :] = f_ice_2D
-f_ice = p2.flatten(f_ice_3D, ocnmask)
-
-gammax = k * V * (1 - f_ice) / Ma / z1
-gammaC = -1 * k * (1 - f_ice) / z1
 
 #%% set up time stepping
 
@@ -283,81 +239,7 @@ q[1:(m+1),0] = del_q_CDR_DIC
 # for ∆AT
 q[(m+1):(2*m+1),0] = del_q_CDR_AT
 
-# dimensions
-# A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
-#     [m x 1][m x m][m x m]
-#     [m x 1][m x m][m x m]
-
-# what acts on what
-# A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
-#     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
-#     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
-
-# math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
-# A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
-#     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
-#     [0                        ][0                              ][TR                           ]
-
-# notation for setup
-# A = [A00][A01][A02]
-#     [A10][A11][A12]
-#     [A20][A21][A22]
-
-# to solve for ∆xCO2
-A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
-A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
-A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
-
-# combine into A0 row
-A0_ = np.full(1 + 2*m, np.nan)
-A0_[0] = A00
-A0_[1:(m+1)] = A01
-A0_[(m+1):(2*m+1)] = A02
-
-del A00, A01, A02
-
-# to solve for ∆DIC
-A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) # is csc the most efficient format? come back to this
-A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
-A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
-
-A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
-
-del A10, A11, A12
-
-# to solve for ∆AT
-A20 = np.zeros(m)
-A21 = 0 * TR
-A22 = TR
-
-A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
-
-del A20, A21, A22
-
-# build into one mega-array!!
-A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
-
-del A0_, A1_, A2_
-
-del TR
-
 #%% perform time stepping using Euler backward
-#LHS = sparse.eye(A.shape[0], format="csc") - dt * A
-#del A
-#
-#for idx in tqdm(range(1, len(t))):
-#    RHS = x[:,idx-1] + np.squeeze(dt*b[:,idx-1])
-#        
-#    x[:,idx] = spsolve(LHS,RHS) # time step with backwards Euler
-
-LHS = sparse.eye(A.shape[0], format="csc") - dt * A
-
-start = time()
-ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
-stop = time()
-print('ilu calculations: ' + str(stop - start) + ' s')
-
-M = LinearOperator(LHS.shape, ilu.solve)
 
 for idx in tqdm(range(1, len(t))):
     # add starting guess after first time step
@@ -365,6 +247,116 @@ for idx in tqdm(range(1, len(t))):
         c0 = c[:,idx-1]
     else:
         c0=None
+    
+    # update DIC and AT here to recalculate R factors at each time step
+    DIC = DIC0 + c[1:(m+1), idx-1]
+    AT = AT0 + c[(m+1):(2*m+1), idx-1]
+    
+    # use CO2SYS with GLODAP and WOA data to solve for carbonate system at each grid cell
+    # do this for only ocean grid cells
+    # this is PyCO2SYSv2
+    co2sys = pyco2.sys(dic=DIC, alkalinity=AT, salinity=S, temperature=T,
+                       pressure=pressure, total_silicate=Si, total_phosphate=P)
+    
+    # extract key results arrays
+    pCO2 = co2sys['pCO2'] * 1e-6 # pCO2 [atm]
+    aqueous_CO2 = co2sys['CO2'] * 1e-6 # aqueous CO2 [mol kg-1]
+    R_C = co2sys['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
+    
+    # calculate revelle factor w.r.t. AT [unitless]
+    # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
+    co2sys_000001 = pyco2.sys(dic=DIC, alkalinity=AT+0.000001, salinity=S,
+                           temperature=T, pressure=pressure, total_silicate=Si,
+                           total_phosphate=P)
+    
+    pCO2_000001 = co2sys_000001['pCO2']
+    R_A = ((pCO2_000001 - pCO2)/pCO2) / (0.000001/AT)
+    
+    # calculate Nowicki et al. parameters
+    Ma = 1.8e20 # number of moles of air in atmosphere
+    beta_C = DIC*1e-6/aqueous_CO2 # [unitless]
+    beta_A = AT*1e-6/aqueous_CO2 # [unitless]
+    K0 = aqueous_CO2/pCO2*rho # [mol m-3 atm-1], in derivation this is defined in per volume units so used density to get there
+    Patm = 1 # atmospheric pressure [atm]
+    z1 = model_depth[0] # depth of first layer of model [m]
+    V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
+    
+    # add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
+    k_3D = np.full(ocnmask.shape, np.nan)
+    k_3D[0, :, :] = k_2D
+    k = p2.flatten(k_3D, ocnmask)
+    
+    f_ice_3D = np.full(ocnmask.shape, np.nan)
+    f_ice_3D[0, :, :] = f_ice_2D
+    f_ice = p2.flatten(f_ice_3D, ocnmask)
+    
+    gammax = k * V * (1 - f_ice) / Ma / z1
+    gammaC = -1 * k * (1 - f_ice) / z1
+    
+    # dimensions
+    # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
+    #     [m x 1][m x m][m x m]
+    #     [m x 1][m x m][m x m]
+
+    # what acts on what
+    # A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
+    #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
+    #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
+
+    # math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
+    # A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
+    #     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
+    #     [0                        ][0                              ][TR                           ]
+
+    # notation for setup
+    # A = [A00][A01][A02]
+    #     [A10][A11][A12]
+    #     [A20][A21][A22]
+
+    # to solve for ∆xCO2
+    A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
+    A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
+    A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
+
+    # combine into A0 row
+    A0_ = np.full(1 + 2*m, np.nan)
+    A0_[0] = A00
+    A0_[1:(m+1)] = A01
+    A0_[(m+1):(2*m+1)] = A02
+
+    del A00, A01, A02
+
+    # to solve for ∆DIC
+    A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) # is csc the most efficient format? come back to this
+    A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
+    A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
+
+    A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
+
+    del A10, A11, A12
+
+    # to solve for ∆AT
+    A20 = np.zeros(m)
+    A21 = 0 * TR
+    A22 = TR
+
+    A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
+
+    del A20, A21, A22
+
+    # build into one mega-array!!
+    A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
+
+    del A0_, A1_, A2_
+    
+    LHS = sparse.eye(A.shape[0], format="csc") - dt * A
+    
+    start = time()
+    ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
+    stop = time()
+    print('ilu calculations: ' + str(stop - start) + ' s')
+    
+    M = LinearOperator(LHS.shape, ilu.solve)
     
     RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx-1])
     c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
@@ -405,12 +397,12 @@ for idx in range(0, len(t)):
     c_AT_3D[idx, :, :, :] = c_AT_reshaped
 
 #%% save model output in netCDF format
-#global_attrs = {'description':'Zero-sensitivity run a with ilu/lgmres solver - all del_q_prod and del_q_diss are set to equal zero - addition of 4 umol m-2 s-1 of NaOH in Bering Strait'}
-global_attrs = {'description':'Zero-sensitivity run b with ilu/lgmres solver- all del_q_prod and del_q_diss are set to equal zero - addition of 2 umol m-2 s-1 of CaCO3 in Bering Strait'}
+#global_attrs = {'description':'Zero-sensitivity run a with ilu/lgmres solver - updating R factors at each time step - all del_q_prod and del_q_diss are set to equal zero - addition of 4 umol m-2 s-1 of NaOH in Bering Strait'}
+global_attrs = {'description':'Zero-sensitivity run b with ilu/lgmres solver - updating R factors at each time step - all del_q_prod and del_q_diss are set to equal zero - addition of 2 umol m-2 s-1 of CaCO3 in Bering Strait'}
 
 # save model output
 p2.save_model_output(
-    'exp10_2025-7-31-b.nc', 
+    'exp13_2025-7-31-b.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -423,7 +415,7 @@ p2.save_model_output(
 )
 
 #%% open and plot model output
-data = xr.open_dataset(output_path + 'exp10_2025-7-31-a.nc')
+data = xr.open_dataset(output_path + 'exp13_2025-7-31-b.nc')
 
 model_time = data.time
 nt = len(model_time)

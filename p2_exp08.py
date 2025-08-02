@@ -3,15 +3,15 @@
 """
 Try to build a model using Rui's outputs!
 
-Governing equations (based on my own derivation + COBALT governing equations)
-1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [atm CO2 (atm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
-2. d(∆DIC)/dt = TR * ∆DIC + ∆q_air-sea,DIC + ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC --> [µmol DIC (kg seawater)-1 yr-1]
-3. d(∆AT)/dt = TR * ∆AT + ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT --> [µmol AT (kg seawater)-1 yr-1]
+NOTE: THIS IS NOT FULLY CORRECTED OR UPDATED, NO LONGER MAINTAINING (SEE LATER EXPERIMENTS FOR CORRECT CODE)
 
-where ∆q_diss,DIC = ∆q_diss,arag + ∆q_diss,calc
-      ∆q_prod,DIC = ∆q_prod,arag + ∆q_prod,calc
-      ∆q_diss,AT = 2 * (∆q_diss,arag + ∆q_diss,calc)
-      ∆q_prod,AT = 2 * (∆q_prod,arag + ∆q_prod,calc)
+Governing equations (based on my own derivation + COBALT governing equations)
+1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [atm CO2 (atm air)-1 yr-1] or [mol CO2 (mol air)-1 yr-1]
+2. d(∆DIC)/dt = TR * ∆DIC + ∆q_air-sea,DIC + ∆q_hard,DIC + ∆q_CDR,DIC --> [mol DIC (kg seawater)-1 yr-1]
+3. d(∆AT)/dt = TR * ∆AT + ∆q_hard,AT + ∆q_CDR,AT --> [µmol AT (kg seawater)-1 yr-1]
+
+where ∆q_hard,DIC = ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc (FROM COBALT)
+      ∆q_hard,AT = 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) (FROM COBALT)
 
 *NOTE: burial is included in 'diss' in 'plus_btm' versions of calcium and
 aragonite dissolution, but for some reason these arrays were all equal to zero
@@ -21,24 +21,34 @@ in files Rui sent me -> should investigate further soon
 production/respiration changes) in the future (see COBALT governing equations
 for how this affects alkalinity/DIC in that model)
                                                
-Air-sea gas exchange fluxes have to be multiplied by "x" vector because they
-rely on ∆x's, which means they are incorporated with the transport matrix into
+Air-sea gas exchange fluxes have to be multiplied by "c" vector because they
+rely on ∆c's, which means they are incorporated with the transport matrix into
 vector "A"
 
-units: µmol kg-1 s-1
-∆q_sea-air,xCO2 = V * Kw * (1 - f_ice) / Ma / z1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
-∆q_air-sea,DIC = -1 * Kw * (1 - f_ice) / z1 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
+units: mol kg-1 s-1
+∆q_sea-air,xCO2 = - k * V * (1 - f_ice) / Ma / z1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
+∆q_air-sea,DIC = k * (1 - f_ice) / z1 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
 
 simplify with parameter "gamma"
-gamma1 = V * Kw * (1 - f_ice) / Ma / z1
-gamma2 = -Kw * (1 - fice) / z1
+gammax = - k * V * (1 - f_ice) / Ma / z1
+gammaC = k * (1 - fice) / z1
 
-∆q_sea-air,xCO2 = gamma1 * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
-∆q_air-sea,DIC = gamma2 * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
+∆q_sea-air,xCO2 = gammax * (rho * R_DIC * del_DIC / beta_DIC + rho * R_AT * del_AT / beta_AT - K0 * Patm * del_xCO2)
+∆q_air-sea,DIC = gammaC * (R_DIC * del_DIC / beta_DIC + R_AT * del_AT / beta_AT - K0 * Patm / rho * del_xCO2)
 
-Created on Tue Jul  8 12:24:04 2025
+Note about transport matrix set-up
+- This was designed in matlab, which uses "fortran-style" aka column major ordering
+- This means that "c" and "b" vectors must be constructed in this order
+- This is complicated by the fact that the land boxes are excluded from the transport matrix
+- The length of "c" and "b" vectors, as well as the length and width of the
+  transport operator, are equal to the total number of ocean boxes in the model
+- Best practices: create "c" and "b" vectors in three dimensions, flatten and mask out land boxes simultaneously 
 
-@author: Reese Barrett
+Naming convention for saving model runs (see .txt file for explanation of experiments)
+    exp##__YYYY-MM-DD-a.nc (where expXX corresponds to the python file used to
+    run the experiment; a, b, c etc. represent model runs from the same day)
+
+@author: Reese C. Barrett
 """
 
 import project2 as p2
