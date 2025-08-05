@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Jul 15 11:15:02 2025
+Created on Mon Aug  4 14:08:37 2025
 
-EXP11: Trying to replicate Yamamoto et al., 2024 results ("instantaneous OAE")
-- Assuming that ∆q_diss term is equal to 0.
-exp11_2025-7-21-a.nc
-- Testing ILU + GMRES
-- Perturbation at a point in top ocean layer for the first 30 days
-- Shortened time steps after
-exp11_2025-7-21-b.nc
-- Testing ILU + LGMRES
-- Perturbation of at a point in top ocean layer for the first 30 days
-- Shortened time steps after
-exp11_2025-7-31-a.nc
-- RUNNING SOMETHING TO COMPARE WITH KANA RESULTS
-- Perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
-- This turned out to have a units error, hopefully that's why its' efficiency was too low
-exp11_2025-8-1-a.nc
-- Kana comparison a: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
-exp11_2025-8-1-b.nc
-- Kana comparison b: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
-exp11_2025-8-1-c.nc
-- Kana comparison c: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
-exp11_2025-8-1-d.nc
-- Kana comparison d: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
+EXP15: Trying to replicate Burt et al., 2021 results
+- 75 year simulations, each with increase of 0.25 Pmol AT yr-1 in one of 9 domains:
+    GLOBAL: global
+    SPNA: subpolar north atlantic
+    SPNP: subpolar north pacific
+    STNA: subtropical north atlantic
+    STNP: subtropical north pacific
+    IND: indian ocean
+    STSA: subtropical south atlantic
+    STSP: subtropical south pacific
+    SO: southern ocean
+- model outputs from this experiment are as follows:
+exp15_2025-08-04-GLOBAL.nc
+exp15_2025-08-04-SPNA.nc
+exp15_2025-08-04-SPNP.nc
+exp15_2025-08-04-STNA.nc
+exp15_2025-08-04-STNP.nc
+exp15_2025-08-04-IND.nc
+exp15_2025-08-04-STSA.nc
+exp15_2025-08-04-STSP.nc
+exp15_2025-08-04-SO.nc
+
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [µatm CO2 (µatm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -76,7 +76,7 @@ import xarray as xr
 import numpy as np
 import PyCO2SYS as pyco2
 from scipy import sparse
-#from tqdm import tqdm
+from tqdm import tqdm
 from scipy.sparse.linalg import spilu, LinearOperator, lgmres
 from time import time
 import matplotlib.pyplot as plt
@@ -104,6 +104,62 @@ rho = 1025 # seawater density for volume to mass [kg m-3]
 
 # to help with conversions
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
+
+#%% define regional masks (these are ROUGH approximations of burt paper)
+ocnmask_GLOBAL = ocnmask[0, :, :].copy()
+
+# subpolar north atlantic
+ocnmask_SPNA = ocnmask[0, :, :].copy()
+ocnmask_SPNA[0:150, :] = 0
+ocnmask_SPNA[174:180, :] = 0
+ocnmask_SPNA[:, 0:69] = 0
+ocnmask_SPNA[:, 80:90] = 0
+
+# subpolar north pacific
+ocnmask_SPNP = ocnmask[0, :, :].copy()
+ocnmask_SPNP[0:69, :] = 0
+ocnmask_SPNP[118:180, :] = 0
+ocnmask_SPNP[:, 0:68] = 0
+ocnmask_SPNP[:, 78:90] = 0
+
+# subtropical north atlantic
+ocnmask_STNA = ocnmask[0, :, :].copy()
+ocnmask_STNA[0:139, :] = 0
+ocnmask_STNA[177:180, :] = 0
+ocnmask_STNA[:, 0:57] = 0
+ocnmask_STNA[:, 69:90] = 0
+
+# subtropical north pacific
+ocnmask_STNP = ocnmask[0, :, :].copy()
+ocnmask_STNP[0:60, :] = 0
+ocnmask_STNP[125:180, :] = 0
+ocnmask_STNP[:, 0:53] = 0
+ocnmask_STNP[:, 68:90] = 0
+
+# indian ocean
+ocnmask_IND = ocnmask[0, :, :].copy()
+ocnmask_IND[0:20, :] = 0
+ocnmask_IND[50:180, :] = 0
+ocnmask_IND[:, 0:39] = 0
+ocnmask_IND[:, 61:90] = 0
+
+# subtropical south atlantic
+ocnmask_STSA = ocnmask[0, :, :].copy()
+ocnmask_STSA[6:145, :] = 0
+ocnmask_STSA[:, 0:18] = 0
+ocnmask_STSA[:, 37:90] = 0
+
+# subtropical south pacific
+ocnmask_STSP = ocnmask[0, :, :].copy()
+ocnmask_STSP[0:77, :] = 0
+ocnmask_STSP[138:180, :] = 0
+ocnmask_STSP[:, 0:25] = 0
+ocnmask_STSP[:, 40:90] = 0
+
+# southern ocean
+ocnmask_SO = ocnmask[0, :, :].copy()
+ocnmask_SO[:, 0:13] = 0
+ocnmask_SO[:, 15:90] = 0
 
 #%% set up air-sea gas exchange (Wanninkhof 2014)
 
@@ -218,84 +274,68 @@ f_ice = p2.flatten(f_ice_3D, ocnmask)
 gammax = k * V * (1 - f_ice) / Ma / z1
 gammaC = -1 * k * (1 - f_ice) / z1
 
-#%% plot pCO2, Revelle factor, K0, and k
-# HAVE NOTE UPDATED THESE UNITS SINCE SWITCHING FROM MOLES TO µMOLES
-
-#pCO2_3D = p2.make_3D(pCO2, ocnmask)
-#R_C_3D = p2.make_3D(R_C, ocnmask)
-#K0_3D = p2.make_3D(K0, ocnmask)
-
-#p2.plot_surface3d(model_lon, model_lat, pCO2_3D, 0, 220, 500, 'jet', 'pCO2 (ppm) calculated with pyCO2SYS from regridded GLODAP DIC & AT (OCIM grid)', lon_lims=[0, 360])
-#p2.plot_surface3d(model_lon, model_lat, R_C_3D, 0, 6, 18, 'viridis', 'Revelle Factor calculated with pyCO2SYS from regridded GLODAP DIC & AT (OCIM grid)', lon_lims=[0, 360])
-#p2.plot_surface3d(model_lon, model_lat, K0_3D / rho, 0, 0, .1, 'magma', 'Calculated solubility of CO2 (mol kg-1 atm-1)', lon_lims=[0, 360])
-#p2.plot_surface3d(model_lon, model_lat, k_3D / (24*365.25/100), 0, 0, 25, 'magma', 'Calculated gas transfer velocity k (cm/hr)', lon_lims=[0, 360])
-
-#p2.plot_surface3d(model_lon, model_lat, k_3D / (24*365.25/100) * K0_3D / rho / 11.1371, 0, 0, .15, 'magma', 'k (cm/hr) * K0 (mol/kg/atm) / 11.1371', lon_lims=[0, 360])
-
 #%% set up time stepping
 
-# more complicated time stepping
-# set up time domain
-dt1 = 1/360 # 1 day
-dt2 = 1/12 # 1 month
-dt3 = 1 # 1 year
-dt4 = 10 # 10 years
-dt5 = 100 # 100 years
-
-# Kana's time stepping
-t1 = np.arange(0, 90/360, dt1) # use a 1 day time step for the first 90 days
-t2 = np.arange(90/360, 5, dt2) # use a 1 month time step until the 5th year
-t3 = np.arange(5, 100, dt3) # use a 1 year time step until the 100th year
-t4 = np.arange(100, 500, dt4) # use a 10 year time step until the 500th year
-t5 = np.arange(500, 1000+dt5, dt5) # use a 100 year time step until the 1000th year
-
-# shortened time stepping to test solvers
-#t1 = np.arange(0, 30/360, dt1) # use a 1 day time step for the first 30 days
-#t2 = np.arange(30/360, 1, dt2) # use a 1 month time step until the 1st year
-#t3 = np.arange(1, 3, dt3) # use a 1 year time step until the 3rd year
-#t4 = np.arange(3, 23, dt4) # use a 10 year time step until the 23rd year
-#t5 = np.arange(23, 123+dt5, dt5) # use a 100 year time step until the 1000th year
-
-t = np.concatenate((t1, t2, t3, t4, t5))
-#t = np.concatenate((t1, t2, t3))
+dt = 1 # 1 year
+t = np.arange(0, 76, dt) # 75 years after year 0
 
 #%% run multiple experiments
-experiment_names = ['exp11_2025-8-1-a.nc', 'exp11_2025-8-1-b.nc', 'exp11_2025-8-1-c.nc', 'exp11_2025-8-1-d.nc']
-experiment_attrs = ['Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE - location is model_lon[50] model_lat[25]',
-                    'Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE',
-                    'Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE',
-                    'Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE']
+experiment_names = ['exp15_2025-08-04-SPNA.nc',
+                    'exp15_2025-08-04-SPNP.nc',
+                    'exp15_2025-08-04-STNA.nc',
+                    'exp15_2025-08-04-STNP.nc',
+                    'exp15_2025-08-04-IND.nc',
+                    'exp15_2025-08-04-STSA.nc',
+                    'exp15_2025-08-04-STSP.nc',
+                    'exp15_2025-08-04-SO.nc',
+                    'exp15_2025-08-04-GLOBAL.nc']
+                    
+experiment_attrs = ['Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subpolar north atlantic',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subpolar north pacific',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical north atlantic',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical north pacific',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across indian ocean',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical south atlantic',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical south pacific',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across southern ocean',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across global ocean']
 
-# Applying perturbations at (-39.5, 101), which is (model_lat[25], model_lon[50])
-#                           (5.9, -99), which is (model_lat[47], model_lon[130])
-#                           (61.3, -175), which is (model_lat[76], model_lon[92]) 
-#                           (61.3, -27), which is (model_lat[76], model_lon[166])
-
-experiment_lons_idx = [50, 130, 92, 166]
-experiment_lats_idx = [25, 47, 76, 76]
-
+experiment_masks = [ocnmask_SPNA,
+                    ocnmask_SPNP,
+                    ocnmask_STNA,
+                    ocnmask_STNP,
+                    ocnmask_IND,
+                    ocnmask_STSA,
+                    ocnmask_STSP,
+                    ocnmask_SO,
+                    ocnmask_GLOBAL]
+#%%
 for exp_idx in range(0, len(experiment_names)):
     experiment_name = experiment_names[exp_idx]
     experiment_attr = experiment_attrs[exp_idx]
-    experiment_lon_idx = experiment_lons_idx[exp_idx]
-    experiment_lat_idx = experiment_lats_idx[exp_idx]
+    experiment_mask = experiment_masks[exp_idx]
 
     # add CDR perturbation
-    # Add surface ocean perturbation of -1 µmol kg-1 yr-1 in DIC, no change in AT
-    # Goal: compare results with Yamamoto et al., 2024 supplemental figures
+    # surface ocean perturbation of 0.25 Pmol AT yr-1 in AT, no change in DIC
+
+    # calculate mass of area perturbation is to be distributed across
+    pert_mass = np.sum(model_vols[0, :, :] * experiment_mask) * rho # kg
+    
+    # calculate concentration of tracer to distribute (µmol AT kg-1 yr-1)
+    pert_conc = 0.25e15 * 1e6 / pert_mass
     
     # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
     del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
     del_q_CDR_AT_3D[ocnmask == 1] = 0
+    del_q_CDR_AT_3D[0, :, :][experiment_mask == 1] = pert_conc # apply previously calculated perturbation to zone of interest [µmol AT kg-1 yr-1]
     del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
     
     # ∆q_CDR,DIC (change in DIC due to CDR addition) - final units: [µmol DIC kg-1 yr-1]
     del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
-    del_q_CDR_DIC_3D[ocnmask == 1] = 0
-    del_q_CDR_DIC_3D[0, experiment_lon_idx, experiment_lat_idx] = -1 # µmol kg-1 yr-1
+    del_q_CDR_DIC_3D[ocnmask == 1] = 0 # no change in DIC
     del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
     
-    #%% construct matricies
+    # construct matricies
     # matrix form:
     #  dc/dt = A * c + q
     #  c = variable(s) of interest
@@ -330,10 +370,11 @@ for exp_idx in range(0, len(experiment_names)):
     
     # add in source/sink vectors for ∆AT, only add perturbation for time step 0
     
-    # for ∆DIC, add perturbation for first 30 days
-    q[1:(m+1),0:30] = np.tile(del_q_CDR_DIC[:, np.newaxis], (1,30))
+    # for ∆DIC, no change
     
-    # for ∆AT, no change
+    
+    # for ∆AT, add perturbation annually
+    q[(m+1):(2*m+1),:] = np.tile(del_q_CDR_AT[:, np.newaxis], (1,nt))
     
     # dimensions
     # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
@@ -390,61 +431,24 @@ for exp_idx in range(0, len(experiment_names)):
     A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
     
     del A0_, A1_, A2_
+        
+    # perform time stepping using Euler backward
+    LHS = sparse.eye(A.shape[0], format="csc") - dt * A
     
-    #del TR
-    
-    #%% perform time stepping using Euler backward
-    LHS1 = sparse.eye(A.shape[0], format="csc") - dt1 * A
-    LHS2 = sparse.eye(A.shape[0], format="csc") - dt2 * A
-    LHS3 = sparse.eye(A.shape[0], format="csc") - dt3 * A
-    LHS4 = sparse.eye(A.shape[0], format="csc") - dt4 * A
-    LHS5 = sparse.eye(A.shape[0], format="csc") - dt5 * A
-    
-    #%% test condition number of matrix
-    est1 = sparse.linalg.onenormest(LHS1)
-    print("Estimated 1-norm condition number LHS1: ", est1)
-    est2 = sparse.linalg.onenormest(LHS2)
-    print("Estimated 1-norm condition number LHS2: ", est2)
-    est3 = sparse.linalg.onenormest(LHS3)
-    print("Estimated 1-norm condition number LHS3: ", est3)
-    est4 = sparse.linalg.onenormest(LHS4)
-    print("Estimated 1-norm condition number LHS4: ", est4)
-    est5 = sparse.linalg.onenormest(LHS5)
-    print("Estimated 1-norm condition number LHS5: ", est5)
+    # test condition number of matrix
+    est = sparse.linalg.onenormest(LHS)
+    print("Estimated 1-norm condition number LHS: ", est)
     
     start = time()
-    ilu1 = spilu(LHS1.tocsc(), drop_tol=1e-5, fill_factor=20)
+    ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
     stop = time()
-    print('ilu1 calculations: ' + str(stop - start) + ' s')
+    print('ilu calculations: ' + str(stop - start) + ' s')
+    
+    M = LinearOperator(LHS.shape, ilu.solve)
     
     start = time()
-    ilu2 = spilu(LHS2.tocsc(), drop_tol=1e-5, fill_factor=20)
-    stop = time()
-    print('ilu2 calculations: ' + str(stop - start) + ' s')
     
-    start = time()
-    ilu3 = spilu(LHS3.tocsc(), drop_tol=1e-3, fill_factor=10)
-    stop = time()
-    print('ilu3 calculations: ' + str(stop - start) + ' s')
-    
-    start = time()
-    ilu4 = spilu(LHS4.tocsc(), drop_tol=1e-5, fill_factor=20)
-    stop = time()
-    print('ilu4 calculations: ' + str(stop - start) + ' s')
-    
-    start = time()
-    ilu5 = spilu(LHS5.tocsc())
-    stop = time()
-    print('ilu5 calculations: ' + str(stop - start) + ' s')
-    
-    M1 = LinearOperator(LHS1.shape, ilu1.solve)
-    M2 = LinearOperator(LHS2.shape, ilu2.solve)
-    M3 = LinearOperator(LHS3.shape, ilu3.solve)
-    M4 = LinearOperator(LHS4.shape, ilu4.solve)
-    M5 = LinearOperator(LHS5.shape, ilu5.solve)
-    
-    #for idx in tqdm(range(1, len(t))):
-    for idx in range(1, len(t)):
+    for idx in tqdm(range(1, len(t))):
         
         # add starting guess after first time step
         if idx > 1:
@@ -452,52 +456,23 @@ for exp_idx in range(0, len(experiment_names)):
         else:
             c0=None
         
-        if t[idx] <= 90/360: # 1 day time step
-        #if t[idx] <= 30/360: # 1 day time step
-            RHS = c[:,idx-1] + np.squeeze(dt1*q[:,idx-1])
-            start = time()
-            c[:,idx], info = lgmres(LHS1, RHS, M=M1, x0=c0, rtol = 1e-5, atol=0)
-            stop = time()
-            print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+        RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx-1])
+        #start = time()
+        c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
+        #stop = time()
+        #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
        
-        elif (t[idx] > 90/360) & (t[idx] <= 5): # 1 month time step
-        #elif (t[idx] > 30/360) & (t[idx] <= 1): # 1 month time step
-            RHS = c[:,idx-1] + np.squeeze(dt2*q[:,idx-1])
-            start = time()
-            c[:,idx], info = lgmres(LHS2, RHS, M=M2, x0=c0, rtol = 1e-5, atol=0)
-            stop = time()
-            print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-        
-        elif (t[idx] > 5) & (t[idx] <= 100): # 1 year time step
-        #elif (t[idx] > 1) & (t[idx] <= 3): # 1 year time step
-            start = time()
-            RHS = c[:,idx-1] + np.squeeze(dt3*q[:,idx-1])
-            c[:,idx], info = lgmres(LHS3, RHS, M=M3, x0=c0, rtol = 1e-5, atol=0)
-            stop = time()
-            print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-    
-        elif (t[idx] > 100) & (t[idx] <= 500): # 10 year time step
-        #elif (t[idx] > 3) & (t[idx] <= 23): # 10 year time step
-            start = time()
-            RHS = c[:,idx-1] + np.squeeze(dt4*q[:,idx-1])
-            c[:,idx], info = lgmres(LHS4, RHS, M=M4, x0=c0, rtol = 1e-5, atol=0)
-            stop = time()
-            print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-    
-        else: # 100 year time step
-            start = time()
-            RHS = c[:,idx-1] + np.squeeze(dt5*q[:,idx-1])
-            c[:,idx], info = lgmres(LHS5, RHS, M=M5, x0=c0, rtol = 1e-5, atol=0)
-            stop = time()
-            print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-            
         if info != 0:
             if info > 0:
                 print(f'did not converge in {info} iterations.')
             else:
                 print('illegal input or breakdown')
     
-    #%% rebuild 3D concentrations from 1D array used for solving matrix equation
+    
+    stop = time()
+    print('time stepping total time: ' + str(stop - start) + ' s')
+    
+    # rebuild 3D concentrations from 1D array used for solving matrix equation
     
     # partition "x" into xCO2, DIC, and AT
     c_xCO2 = c[0, :]
@@ -522,7 +497,7 @@ for exp_idx in range(0, len(experiment_names)):
         c_DIC_3D[idx, :, :, :] = c_DIC_reshaped
         c_AT_3D[idx, :, :, :] = c_AT_reshaped
     
-    #%% save model output in netCDF format
+    # save model output in netCDF format
     global_attrs = {'description': experiment_attr}
     
     # save model output
@@ -538,11 +513,11 @@ for exp_idx in range(0, len(experiment_names)):
         tracer_units=['ppm', 'umol kg-3', 'umol kg-3'],
         global_attrs=global_attrs
     )
+
 '''
 #%% open and plot model output
 
-data = xr.open_dataset(output_path + 'exp11_2025-7-31-a.nc')
-
+data = xr.open_dataset(output_path + 'exp15_2025-08-04-GLOBAL.nc')
 #test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
 #for x in test:
 #    print(x)
@@ -576,5 +551,5 @@ alpha = del_C_atm / del_C_CDR * 100 # unitless
 print('alpha at t = 5 yr: ' + str(round(alpha[147], 2)) + ' %')
 print('alpha at t = 20 yr: ' + str(round(alpha[162], 2)) + ' %')
 print('alpha at t = 50 yr: ' + str(round(alpha[192], 2)) + ' %')
-print('alpha at t = 100 yr: ' + str(round(alpha[242], 2)) + ' %')
+print('alpha at t = 100 yr: ' + str(round(alpha[242], 2)) + ' %')"""
 '''
