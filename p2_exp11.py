@@ -25,6 +25,12 @@ exp11_2025-8-1-c.nc
 - Kana comparison c: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
 exp11_2025-8-1-d.nc
 - Kana comparison d: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
+exp11_2025-8-6-a.nc
+- Same simulation as exp11_2025-8-1-a.nc except only running for 5 years and getting rid of AT factor change to see if I get the same results as kana
+exp11_2025-8-6-b.nc
+- Same simulation as exp11_2025-8-1-a.nc except only running for 5 years and getting rid of AT factor change to see if I get the same results as kana
+- ALSO using OCIM1 to see if results change
+
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [µatm CO2 (µatm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -97,13 +103,34 @@ model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
 model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
+model_areas = model_data['area'].to_numpy() # m^2
+
+# try OCIM1
+#model_data = p2.loadmat(data_path + 'OCIM2_48L_base/OCIM1_CTL.mat')
+
+#TR = model_data['output']['TR']
+#ocnmask = np.asfortranarray(model_data['output']['M3d'])
+#ocnmask = np.transpose(ocnmask, axes=(2, 1, 0))
+
+#model_depth = np.array(model_data['output']['grid']['zt']) # m below sea surface
+#model_lon = np.array(model_data['output']['grid']['xt']) # ºE
+#model_lat = np.array(model_data['output']['grid']['yt']) # ºN
+#model_vols = np.asfortranarray(model_data['output']['grid']['DXT3d']) * np.asfortranarray(model_data['output']['grid']['DYT3d']) * np.asfortranarray(model_data['output']['grid']['DZT3d']) # m^3
+#model_vols = np.transpose(model_vols, axes=(2, 1, 0))
+
+#model_vols = np.asfortranarray(model_data['output']['grid']['DXT3d']) * np.asfortranarray(model_data['output']['grid']['DYT3d']) * np.asfortranarray(model_data['output']['grid']['DZT3d']) # m^3
+#model_vols = np.transpose(model_vols, axes=(2, 1, 0))
+
+#model_areas = np.asfortranarray(model_data['output']['grid']['DXT3d']) * np.asfortranarray(model_data['output']['grid']['DYT3d']) # m^2
+#model_areas = np.transpose(model_areas, axes=(2, 1, 0))
 
 # grid cell z-dimension for converting from surface area to volume
-grid_z = model_vols / model_data['area'].to_numpy()
+grid_z = model_vols / model_areas
 rho = 1025 # seawater density for volume to mass [kg m-3]
 
 # to help with conversions
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
+
 
 #%% set up air-sea gas exchange (Wanninkhof 2014)
 
@@ -219,18 +246,33 @@ gammax = k * V * (1 - f_ice) / Ma / z1
 gammaC = -1 * k * (1 - f_ice) / z1
 
 #%% plot pCO2, Revelle factor, K0, and k
-# HAVE NOTE UPDATED THESE UNITS SINCE SWITCHING FROM MOLES TO µMOLES
 
-#pCO2_3D = p2.make_3D(pCO2, ocnmask)
-#R_C_3D = p2.make_3D(R_C, ocnmask)
-#K0_3D = p2.make_3D(K0, ocnmask)
+pCO2_3D = p2.make_3D(pCO2, ocnmask) # µatm CO2
+R_C_3D = p2.make_3D(R_C, ocnmask) # unitless
+K0_3D = p2.make_3D(K0, ocnmask) # µmol CO2 m-3 (µatm CO2)-1
 
-#p2.plot_surface3d(model_lon, model_lat, pCO2_3D, 0, 220, 500, 'jet', 'pCO2 (ppm) calculated with pyCO2SYS from regridded GLODAP DIC & AT (OCIM grid)', lon_lims=[0, 360])
-#p2.plot_surface3d(model_lon, model_lat, R_C_3D, 0, 6, 18, 'viridis', 'Revelle Factor calculated with pyCO2SYS from regridded GLODAP DIC & AT (OCIM grid)', lon_lims=[0, 360])
-#p2.plot_surface3d(model_lon, model_lat, K0_3D / rho, 0, 0, .1, 'magma', 'Calculated solubility of CO2 (mol kg-1 atm-1)', lon_lims=[0, 360])
-#p2.plot_surface3d(model_lon, model_lat, k_3D / (24*365.25/100), 0, 0, 25, 'magma', 'Calculated gas transfer velocity k (cm/hr)', lon_lims=[0, 360])
+p2.plot_surface3d(model_lon, model_lat, pCO2_3D, 0, 220, 500, 'jet', 'pCO2 (ppm) calculated with pyCO2SYS from regridded GLODAP DIC & AT (OCIM grid)', lon_lims=[0, 360])
+p2.plot_surface3d(model_lon, model_lat, R_C_3D, 0, 6, 18, 'viridis', 'Revelle Factor calculated with pyCO2SYS from regridded GLODAP DIC & AT (OCIM grid)', lon_lims=[0, 360])
+p2.plot_surface3d(model_lon, model_lat, K0_3D / rho, 0, 0, .1, 'magma', 'Calculated solubility of CO2 (mol kg-1 atm-1)', lon_lims=[0, 360])
+p2.plot_surface3d(model_lon, model_lat, k_3D / (24*365.25/100), 0, 0, 25, 'magma', 'Calculated gas transfer velocity k (cm/hr)', lon_lims=[0, 360])
 
-#p2.plot_surface3d(model_lon, model_lat, k_3D / (24*365.25/100) * K0_3D / rho / 11.1371, 0, 0, .15, 'magma', 'k (cm/hr) * K0 (mol/kg/atm) / 11.1371', lon_lims=[0, 360])
+p2.plot_surface3d(model_lon, model_lat, k_3D / (24*365.25/100) * K0_3D / rho / 11.1371, 0, 0, .15, 'magma', 'k (cm/hr) * K0 (mol/kg/atm) / 11.1371', lon_lims=[0, 360])
+
+fig = plt.figure(figsize=(6,5), dpi=200)
+ax = fig.gca()
+ax.scatter(uwnd_2D.flatten(), k_2D.flatten() / (24*365.25/100))
+ax.set_xlabel('annual mean of forecast of U-wind at 10 m [m/s]')
+ax.set_ylabel('gas transfer velocity $k_{660}$ [cm/hr]')
+ax.set_xlim([-20, 20])
+ax.set_ylim([0, 200])
+
+fig = plt.figure(figsize=(6,5), dpi=200)
+ax = fig.gca()
+ax.scatter(sst_2D.flatten() + 273.15, K0_3D[0, :, :].flatten() / rho)
+ax.set_xlabel('sea surface temperature [K]')
+ax.set_ylabel('solubility of CO2 $K_{0}$ [mol kg-1 atm-1]')
+#ax.set_xlim([270, 310])
+#ax.set_ylim([0.02, 0.07])
 
 #%% set up time stepping
 
@@ -257,6 +299,7 @@ t5 = np.arange(500, 1000+dt5, dt5) # use a 100 year time step until the 1000th y
 #t5 = np.arange(23, 123+dt5, dt5) # use a 100 year time step until the 1000th year
 
 t = np.concatenate((t1, t2, t3, t4, t5))
+t = np.concatenate((t1, t2)) # for shortened sim
 #t = np.concatenate((t1, t2, t3))
 
 #%% run multiple experiments
@@ -274,6 +317,12 @@ experiment_attrs = ['Attempting to repeat Yamamoto et al 2024 experiment - insta
 experiment_lons_idx = [50, 130, 92, 166]
 experiment_lats_idx = [25, 47, 76, 76]
 
+# for shortened sim
+experiment_names = ['exp11_2025-8-6-a.nc']
+experiment_attrs = ['Attempting to repeat Yamamoto et al 2024 experiment - 5 years only - no AT contribution to air-sea gas exchange - instantaneous OAE - location is model_lon[50] model_lat[25]']
+experiment_lons_idx = [50]
+experiment_lats_idx = [25]
+#%%
 for exp_idx in range(0, len(experiment_names)):
     experiment_name = experiment_names[exp_idx]
     experiment_attr = experiment_attrs[exp_idx]
@@ -295,7 +344,7 @@ for exp_idx in range(0, len(experiment_names)):
     del_q_CDR_DIC_3D[0, experiment_lon_idx, experiment_lat_idx] = -1 # µmol kg-1 yr-1
     del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
     
-    #%% construct matricies
+    # construct matricies
     # matrix form:
     #  dc/dt = A * c + q
     #  c = variable(s) of interest
@@ -393,14 +442,14 @@ for exp_idx in range(0, len(experiment_names)):
     
     #del TR
     
-    #%% perform time stepping using Euler backward
+    # perform time stepping using Euler backward
     LHS1 = sparse.eye(A.shape[0], format="csc") - dt1 * A
     LHS2 = sparse.eye(A.shape[0], format="csc") - dt2 * A
     LHS3 = sparse.eye(A.shape[0], format="csc") - dt3 * A
     LHS4 = sparse.eye(A.shape[0], format="csc") - dt4 * A
     LHS5 = sparse.eye(A.shape[0], format="csc") - dt5 * A
     
-    #%% test condition number of matrix
+    # test condition number of matrix
     est1 = sparse.linalg.onenormest(LHS1)
     print("Estimated 1-norm condition number LHS1: ", est1)
     est2 = sparse.linalg.onenormest(LHS2)
@@ -422,6 +471,7 @@ for exp_idx in range(0, len(experiment_names)):
     stop = time()
     print('ilu2 calculations: ' + str(stop - start) + ' s')
     
+    '''
     start = time()
     ilu3 = spilu(LHS3.tocsc(), drop_tol=1e-3, fill_factor=10)
     stop = time()
@@ -436,12 +486,15 @@ for exp_idx in range(0, len(experiment_names)):
     ilu5 = spilu(LHS5.tocsc())
     stop = time()
     print('ilu5 calculations: ' + str(stop - start) + ' s')
+    '''
     
     M1 = LinearOperator(LHS1.shape, ilu1.solve)
     M2 = LinearOperator(LHS2.shape, ilu2.solve)
+    '''
     M3 = LinearOperator(LHS3.shape, ilu3.solve)
     M4 = LinearOperator(LHS4.shape, ilu4.solve)
     M5 = LinearOperator(LHS5.shape, ilu5.solve)
+    '''
     
     #for idx in tqdm(range(1, len(t))):
     for idx in range(1, len(t)):
@@ -467,7 +520,7 @@ for exp_idx in range(0, len(experiment_names)):
             c[:,idx], info = lgmres(LHS2, RHS, M=M2, x0=c0, rtol = 1e-5, atol=0)
             stop = time()
             print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-        
+        '''
         elif (t[idx] > 5) & (t[idx] <= 100): # 1 year time step
         #elif (t[idx] > 1) & (t[idx] <= 3): # 1 year time step
             start = time()
@@ -490,6 +543,7 @@ for exp_idx in range(0, len(experiment_names)):
             c[:,idx], info = lgmres(LHS5, RHS, M=M5, x0=c0, rtol = 1e-5, atol=0)
             stop = time()
             print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+        '''
             
         if info != 0:
             if info > 0:
@@ -497,7 +551,7 @@ for exp_idx in range(0, len(experiment_names)):
             else:
                 print('illegal input or breakdown')
     
-    #%% rebuild 3D concentrations from 1D array used for solving matrix equation
+    # rebuild 3D concentrations from 1D array used for solving matrix equation
     
     # partition "x" into xCO2, DIC, and AT
     c_xCO2 = c[0, :]
@@ -522,7 +576,7 @@ for exp_idx in range(0, len(experiment_names)):
         c_DIC_3D[idx, :, :, :] = c_DIC_reshaped
         c_AT_3D[idx, :, :, :] = c_AT_reshaped
     
-    #%% save model output in netCDF format
+    # save model output in netCDF format
     global_attrs = {'description': experiment_attr}
     
     # save model output
@@ -538,10 +592,11 @@ for exp_idx in range(0, len(experiment_names)):
         tracer_units=['ppm', 'umol kg-3', 'umol kg-3'],
         global_attrs=global_attrs
     )
-'''
+
+
 #%% open and plot model output
 
-data = xr.open_dataset(output_path + 'exp11_2025-7-31-a.nc')
+data = xr.open_dataset(output_path + 'exp11_2025-8-6-b.nc')
 
 #test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
 #for x in test:
@@ -564,17 +619,27 @@ for idx in range(0, nt):
 
 #%% calculate kana's "alpha" metric to compare with supplemental figure S2
 # alpha = ∆C_atm / ∆C_CDR
+
+# forgot to save this out oops, recalculating here
+experiment_del_q_CDRs = []
+for exp_idx in range(0, len(experiment_names)):
+    del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
+    del_q_CDR_DIC_3D[ocnmask == 1] = 0
+    del_q_CDR_DIC_3D[0, experiment_lons_idx[exp_idx], experiment_lats_idx[exp_idx]] = -1 # µmol kg-1 yr-1
+    del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
+    experiment_del_q_CDRs.append(del_q_CDR_DIC)
+
 del_C_atm = np.full((nt), np.nan)
 del_C_CDR = np.full((nt), np.nan)
 
 for idx in range(0, nt):
     del_C_CDR[idx] = np.nansum(del_q_CDR_DIC_3D * dt1 * idx * rho * model_vols) # [µmol CO2]
-    del_C_atm[idx] = data['delxCO2'].isel(time=idx).values * Ma # [µmol CO2]
+    del_C_atm[idx] = data['delxCO2'].isel(time=idx).values * 1e-6 * Ma # [µmol CO2]
     
 alpha = del_C_atm / del_C_CDR * 100 # unitless
 
-print('alpha at t = 5 yr: ' + str(round(alpha[147], 2)) + ' %')
-print('alpha at t = 20 yr: ' + str(round(alpha[162], 2)) + ' %')
-print('alpha at t = 50 yr: ' + str(round(alpha[192], 2)) + ' %')
-print('alpha at t = 100 yr: ' + str(round(alpha[242], 2)) + ' %')
-'''
+print('alpha at t = 5 yr: ' + str(round(alpha[146], 2)) + ' %')
+#print('alpha at t = 5 yr: ' + str(round(alpha[147], 2)) + ' %')
+#print('alpha at t = 20 yr: ' + str(round(alpha[162], 2)) + ' %')
+#print('alpha at t = 50 yr: ' + str(round(alpha[192], 2)) + ' %')
+#print('alpha at t = 100 yr: ' + str(round(alpha[242], 2)) + ' %')

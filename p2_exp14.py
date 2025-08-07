@@ -73,6 +73,7 @@ from scipy import sparse
 from scipy.sparse.linalg import spilu, LinearOperator, lgmres
 from time import time
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'

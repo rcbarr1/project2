@@ -80,6 +80,8 @@ from tqdm import tqdm
 from scipy.sparse.linalg import spilu, LinearOperator, lgmres
 from time import time
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import matplotlib.patches as mpatches
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -160,6 +162,78 @@ ocnmask_STSP[:, 40:90] = 0
 ocnmask_SO = ocnmask[0, :, :].copy()
 ocnmask_SO[:, 0:13] = 0
 ocnmask_SO[:, 15:90] = 0
+
+# plot mask locations
+fig, ax = plt.subplots(figsize=(12, 6))
+extent = [0, 360, -90, 90]
+alpha = 0.6
+
+# plot land/ocean background
+rgba_land = np.zeros((model_lat.size, model_lon.size, 4))
+rgba_land[..., :3] = 0.5  # gray color
+rgba_land[..., 3] = 1 - ocnmask[0, :, :].T  # opaque where land_mask == 0 (i.e., land)
+ax.imshow(rgba_land, origin='lower', extent=extent)
+
+# set up colors for each region
+color_hex_list = ["#6e7cb9", "#7bbcd5", "#d0e2af", "#f5db99", "#e89c81",
+                  "#d2848d", "#2c6184", "#d7b1c5"]
+rgba_list = [mcolors.to_rgba(c, alpha=1) for c in color_hex_list]
+
+# plot each region
+rgba_ocnmask_SPNA = np.zeros((model_lat.size, model_lon.size, 4))
+rgba_ocnmask_SPNA[..., :] =  rgba_list[0]
+rgba_ocnmask_SPNA[..., 3] *= ocnmask_SPNA.T # alpha channel
+ax.imshow(rgba_ocnmask_SPNA, origin='lower', extent=extent)
+
+rgba_ocnmask_SPNP = np.zeros((model_lat.size, model_lon.size, 4))
+rgba_ocnmask_SPNP[..., :] =  rgba_list[1]
+rgba_ocnmask_SPNP[..., 3] = ocnmask_SPNP.T # alpha channel
+ax.imshow(rgba_ocnmask_SPNP, origin='lower', extent=extent)
+
+rgba_ocnmask_STNA = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
+rgba_ocnmask_STNA[..., :] =  rgba_list[2]
+rgba_ocnmask_STNA[..., 3] = ocnmask_STNA.T # alpha channel
+ax.imshow(rgba_ocnmask_STNA, origin='lower', extent=extent)
+
+rgba_ocnmask_STNP = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
+rgba_ocnmask_STNP[..., :] =  rgba_list[3]
+rgba_ocnmask_STNP[..., 3] = ocnmask_STNP.T # alpha channel
+ax.imshow(rgba_ocnmask_STNP, origin='lower', extent=extent)
+
+rgba_ocnmask_IND = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
+rgba_ocnmask_IND[..., :] =  rgba_list[4]
+rgba_ocnmask_IND[..., 3] = ocnmask_IND.T  # alpha channel
+ax.imshow(rgba_ocnmask_IND, origin='lower', extent=extent)
+
+rgba_ocnmask_STSA = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
+rgba_ocnmask_STSA[..., :] =  rgba_list[5]
+rgba_ocnmask_STSA[..., 3] = ocnmask_STSA.T  # alpha channel
+ax.imshow(rgba_ocnmask_STSA, origin='lower', extent=extent)
+
+rgba_ocnmask_STSP = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
+rgba_ocnmask_STSP[..., :] =  rgba_list[6]
+rgba_ocnmask_STSP[..., 3] = ocnmask_STSP.T  # alpha channel
+ax.imshow(rgba_ocnmask_STSP, origin='lower', extent=extent)
+
+rgba_ocnmask_SO = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
+rgba_ocnmask_SO[..., :] =  rgba_list[7]
+rgba_ocnmask_SO[..., 3] = ocnmask_SO.T  # alpha channel
+ax.imshow(rgba_ocnmask_SO, origin='lower', extent=extent)
+
+# create legend
+region_names = ['SPNA', 'SPNP', 'STNA', 'STNP', 'IND', 'STSA', 'STSP', 'SO', 'GLOBAL']
+legend_patches = [
+    mpatches.Patch(color=color_hex_list[i], label=region_names[i])
+    for i in range(8)
+]
+
+ax.legend(
+    handles=legend_patches,
+    loc="upper center",
+    frameon=True,
+    bbox_to_anchor=(0.5, -0.05),
+    ncol=4
+)
 
 #%% set up air-sea gas exchange (Wanninkhof 2014)
 
@@ -514,10 +588,10 @@ for exp_idx in range(0, len(experiment_names)):
         global_attrs=global_attrs
     )
 
-'''
+
 #%% open and plot model output
 
-data = xr.open_dataset(output_path + 'exp15_2025-08-04-GLOBAL.nc')
+data = xr.open_dataset(output_path + 'exp15_2025-08-04-SPNP.nc')
 #test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
 #for x in test:
 #    print(x)
@@ -531,25 +605,57 @@ nt = len(t)
 
 for idx in range(0, nt):
     print(idx)
-    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -6e-5, 6e-5, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
+    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -500, 500, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
 
 #for idx in range(0, nt):
 #    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 97, 0, 5e-5, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 165ºW longitude')
 
 
-#%% calculate kana's "alpha" metric to compare with supplemental figure S2
-# alpha = ∆C_atm / ∆C_CDR
-del_C_atm = np.full((nt), np.nan)
-del_C_CDR = np.full((nt), np.nan)
+#%% calculate metrics to compare with burt results
 
-for idx in range(0, nt):
-    del_C_CDR[idx] = np.nansum(del_q_CDR_DIC_3D * dt1 * idx * rho * model_vols) # [µmol CO2]
-    del_C_atm[idx] = data['delxCO2'].isel(time=idx).values * Ma # [µmol CO2]
-    
-alpha = del_C_atm / del_C_CDR * 100 # unitless
+# DIC figure 4
+fig = plt.figure(figsize=(6,5), dpi=200)
+ax = fig.gca()
 
-print('alpha at t = 5 yr: ' + str(round(alpha[147], 2)) + ' %')
-print('alpha at t = 20 yr: ' + str(round(alpha[162], 2)) + ' %')
-print('alpha at t = 50 yr: ' + str(round(alpha[192], 2)) + ' %')
-print('alpha at t = 100 yr: ' + str(round(alpha[242], 2)) + ' %')"""
-'''
+# broadcast model_vols to convert ∆DIC from per kg to total
+model_vols_broadcast = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat})
+
+#for exp_idx in range(0, len(experiment_names)):
+for exp_idx in range(0, 3):
+    data = xr.open_dataset(output_path + experiment_names[exp_idx])
+    Pg_del_DIC = data['delDIC'] * model_vols_broadcast * rho * 1e-6 * 12.01 * 1e-15 #  µmol kg-1 DIC to Pg C
+    ax.plot(t, Pg_del_DIC.sum(dim=['depth', 'lon', 'lat'], skipna=True), label=region_names[exp_idx])
+
+ax.set_xlabel('Time (yr)')
+ax.set_ylabel('Total ∆DIC Inventory (Pg C)')
+ax.set_xlim([0, 75])
+ax.set_ylim([0, 180])
+ax.legend(
+    loc="upper center",
+    bbox_to_anchor=(0.5, -0.12),
+    ncol=4
+)
+
+# AT figure 5a
+fig = plt.figure(figsize=(6,5), dpi=200)
+ax = fig.gca()
+
+#for exp_idx in range(0, len(experiment_names)):
+for exp_idx in range(0, 3):
+    data = xr.open_dataset(output_path + experiment_names[exp_idx])
+    Pg_del_AT = data['delAT'].isel(depth=0) * model_vols_broadcast.isel(depth=0) * rho * 1e-6 * 1e-15 #  µmol kg-1 AT to Pmol C
+    ax.plot(t, Pg_del_AT.sum(dim=['lon', 'lat'], skipna=True), label=region_names[exp_idx])
+
+ax.set_xlabel('Time (yr)')
+ax.set_ylabel('Total Surface ∆AT Inventory (Pmol)')
+ax.set_xlim([0, 75])
+ax.set_ylim([0, 0.8])
+ax.legend(
+    loc="upper center",
+    bbox_to_anchor=(0.5, -0.12),
+    ncol=4
+)
+
+
+
+
