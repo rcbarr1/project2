@@ -25,7 +25,6 @@ exp15_2025-08-04-STSA.nc
 exp15_2025-08-04-STSP.nc
 exp15_2025-08-04-SO.nc
 
-
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [µatm CO2 (µatm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
 2. d(∆DIC)/dt = TR * ∆DIC + ∆q_air-sea,DIC + ∆q_hard,DIC + ∆q_CDR,DIC --> [µmol DIC (kg seawater)-1 yr-1]
@@ -416,7 +415,7 @@ for exp_idx in range(0, len(experiment_names)):
     #  A = transport matrix (TR) plus any processes with dependence on c 
     #    = source/sink vector (processes not dependent on c)
         
-    # UNITS NOTE: all xCO2 units are yr-1 all AT units are µmol AT kg-1, all DIC units are µmol DIC kg-1
+    # UNITS NOTE: all xCO2 units are mol CO2 (mol air)-1 all AT units are µmol AT kg-1, all DIC units are µmol DIC kg-1
     # see comment at top for more info
     
     # m = # ocean grid cells
@@ -620,8 +619,8 @@ ax = fig.gca()
 # broadcast model_vols to convert ∆DIC from per kg to total
 model_vols_broadcast = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat})
 
-#for exp_idx in range(0, len(experiment_names)):
-for exp_idx in range(0, 3):
+for exp_idx in range(0, len(experiment_names)):
+#for exp_idx in range(0, 3):
     data = xr.open_dataset(output_path + experiment_names[exp_idx])
     Pg_del_DIC = data['delDIC'] * model_vols_broadcast * rho * 1e-6 * 12.01 * 1e-15 #  µmol kg-1 DIC to Pg C
     ax.plot(t, Pg_del_DIC.sum(dim=['depth', 'lon', 'lat'], skipna=True), label=region_names[exp_idx])
@@ -640,8 +639,8 @@ ax.legend(
 fig = plt.figure(figsize=(6,5), dpi=200)
 ax = fig.gca()
 
-#for exp_idx in range(0, len(experiment_names)):
-for exp_idx in range(0, 3):
+for exp_idx in range(0, len(experiment_names)):
+#for exp_idx in range(0, 3):
     data = xr.open_dataset(output_path + experiment_names[exp_idx])
     Pg_del_AT = data['delAT'].isel(depth=0) * model_vols_broadcast.isel(depth=0) * rho * 1e-6 * 1e-15 #  µmol kg-1 AT to Pmol C
     ax.plot(t, Pg_del_AT.sum(dim=['lon', 'lat'], skipna=True), label=region_names[exp_idx])

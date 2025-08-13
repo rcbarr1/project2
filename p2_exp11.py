@@ -30,6 +30,12 @@ exp11_2025-8-6-a.nc
 exp11_2025-8-6-b.nc
 - Same simulation as exp11_2025-8-1-a.nc except only running for 5 years and getting rid of AT factor change to see if I get the same results as kana
 - ALSO using OCIM1 to see if results change
+exp11_2025-8-6-a.nc
+- Same simulation as exp11_2025-8-1-a.nc except only running for 5 years
+- ALSO setting rtol = 1e-7 in fgmres solver
+exp11_2025-8-6-b.nc
+- Same simulation as exp11_2025-8-1-a.nc except only running for 5 years
+- ALSO setting rtol = 1e-7 in fgmres solver AND drop_tol = 1e-7 in spilu decomposition
 
 
 Governing equations (based on my own derivation + COBALT governing equations)
@@ -291,7 +297,7 @@ t3 = np.arange(5, 100, dt3) # use a 1 year time step until the 100th year
 t4 = np.arange(100, 500, dt4) # use a 10 year time step until the 500th year
 t5 = np.arange(500, 1000+dt5, dt5) # use a 100 year time step until the 1000th year
 
-# shortened time stepping to test solvers
+# shortened time stepping to test solvers#
 #t1 = np.arange(0, 30/360, dt1) # use a 1 day time step for the first 30 days
 #t2 = np.arange(30/360, 1, dt2) # use a 1 month time step until the 1st year
 #t3 = np.arange(1, 3, dt3) # use a 1 year time step until the 3rd year
@@ -299,11 +305,11 @@ t5 = np.arange(500, 1000+dt5, dt5) # use a 100 year time step until the 1000th y
 #t5 = np.arange(23, 123+dt5, dt5) # use a 100 year time step until the 1000th year
 
 t = np.concatenate((t1, t2, t3, t4, t5))
-t = np.concatenate((t1, t2)) # for shortened sim
+#t = np.concatenate((t1, t2)) # for shortened sim
 #t = np.concatenate((t1, t2, t3))
 
 #%% run multiple experiments
-experiment_names = ['exp11_2025-8-1-a.nc', 'exp11_2025-8-1-b.nc', 'exp11_2025-8-1-c.nc', 'exp11_2025-8-1-d.nc']
+experiment_names = ['exp11_2025-8-11-a.nc', 'exp11_2025-8-11-b.nc', 'exp11_2025-8-11-c.nc', 'exp11_2025-8-11-d.nc']
 experiment_attrs = ['Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE - location is model_lon[50] model_lat[25]',
                     'Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE',
                     'Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE',
@@ -319,7 +325,7 @@ experiment_lats_idx = [25, 47, 76, 76]
 
 # for shortened sim
 experiment_names = ['exp11_2025-8-6-a.nc']
-experiment_attrs = ['Attempting to repeat Yamamoto et al 2024 experiment - 5 years only - no AT contribution to air-sea gas exchange - instantaneous OAE - location is model_lon[50] model_lat[25]']
+#experiment_attrs = ['Attempting to repeat Yamamoto et al 2024 experiment - 5 years only - rtol=1e-7 and drop_tol=1e-7 - instantaneous OAE - location is model_lon[50] model_lat[25]']
 experiment_lons_idx = [50]
 experiment_lats_idx = [25]
 #%%
@@ -351,7 +357,7 @@ for exp_idx in range(0, len(experiment_names)):
     #  A = transport matrix (TR) plus any processes with dependence on c 
     #    = source/sink vector (processes not dependent on c)
         
-    # UNITS NOTE: all xCO2 units are yr-1 all AT units are µmol AT kg-1, all DIC units are µmol DIC kg-1
+    # UNITS NOTE: all xCO2 units are mol CO2 (mol air)-1 all AT units are µmol AT kg-1, all DIC units are µmol DIC kg-1
     # see comment at top for more info
     
     # m = # ocean grid cells
@@ -595,8 +601,7 @@ for exp_idx in range(0, len(experiment_names)):
 
 
 #%% open and plot model output
-
-data = xr.open_dataset(output_path + 'exp11_2025-8-6-b.nc')
+data = xr.open_dataset(output_path + 'exp11_2025-8-6-a.nc')
 
 #test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
 #for x in test:
@@ -643,3 +648,5 @@ print('alpha at t = 5 yr: ' + str(round(alpha[146], 2)) + ' %')
 #print('alpha at t = 20 yr: ' + str(round(alpha[162], 2)) + ' %')
 #print('alpha at t = 50 yr: ' + str(round(alpha[192], 2)) + ' %')
 #print('alpha at t = 100 yr: ' + str(round(alpha[242], 2)) + ' %')
+
+data.close()

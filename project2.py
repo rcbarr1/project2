@@ -19,8 +19,14 @@ import datetime as dt
 import matplotlib.cm as cm
 from matplotlib import ticker
 from matplotlib.colors import LogNorm
+import matplotlib.colors as mcolors
 from tqdm import tqdm
 import time
+import geopandas as gpd
+import pandas as pd
+from shapely.geometry import Point
+import cartopy.crs as ccrs
+import random
 
 
 def loadmat(filename):
@@ -595,6 +601,60 @@ def regrid_ncep_noaa(data_path, ncep_var, model_lat, model_lon, ocnmask):
     end_time = time.time()
     print('\tregrid complete in ' + str(round(end_time - start_time,3)) + ' s')
 
+def regrid_pH(data_path, data, model_lat, model_lon, ocnmask):
+    '''
+    calculate annual average, regrid data to model grid, inpaint nans, save
+    Preindustrial pH data from Jiang et al. (2019)
+
+    Parameters
+    ----------
+    data_path : path to folder which contains pH data from https://www.ncei.noaa.gov/access/metadata/landing-page/bin/iso?id=gov.noaa.nodc:0206289
+    data : xarray decoded Surface_pH_1770_2000.nc
+    model_lat : array pf model latitudes
+    model_lon : array of model longitudes
+    ocnmask : mask same shape as OCIM grid where 1 marks an ocean cell and 0 marks land
+    '''
+    
+    print('begin regrid of preindustrial pH')
+    start_time = time.time()
+
+    # pull out arrays of depth, latitude, and longitude from WOA
+    data_lon = data.Longitude[0, :].to_numpy()    # ºE
+    data_lat = data.Latitude[:, 0].to_numpy()     # ºN
+    
+    var = data.pH.sel(year=0).mean(dim='month').values # year 1770
+    
+    # create interpolator
+    interp = RegularGridInterpolator((data_lon, data_lat), var.T, bounds_error=False, fill_value=None)
+
+    # transform model_lon for anything < 20 (because GLODAP goes from 20ºE - 380ºE)
+    model_lon[model_lon < 20] += 360
+
+    # create meshgrid for OCIM grid
+    lon, lat = np.meshgrid(model_lon, model_lat, indexing='ij')
+
+    # reshape meshgrid points into a list of coordinates to interpolate to
+    query_points = np.array([lon.ravel(), lat.ravel()]).T
+
+    # perform interpolation (regrid GLODAP data to match OCIM grid)
+    var = interp(query_points)
+
+    # transform results back to model grid shape
+    var = var.reshape(lon.shape)
+
+    # inpaint nans
+    var = inpaint_nans2d(var, mask=ocnmask[0, :, :].astype(bool))
+
+    # transform model_lon and meshgrid back for anything > 360
+    model_lon[model_lon > 360] -= 360
+
+    # save data
+    np.save(data_path + 'pH_1770/pH_1770_AO.npy', var)
+        
+    end_time = time.time()
+    print('\tregrid complete in ' + str(round(end_time - start_time,3)) + ' s')
+
+
 def regrid_cobalt(cobalt_vrbl, model_depth, model_lat, model_lon, ocnmask, data_path):
     '''
     regrid COBALT data to model grid, inpaint nans, save as .npy file
@@ -782,3 +842,115 @@ def plot_longitude3d(lats, depths, variable, longitude, vmin, vmax, cmap, title)
     plt.ylabel('depth (m)')
     plt.title(title)
     plt.xlim([-90, 90]), plt.ylim([5500, 0])
+    
+def build_lme_masks(shp_path, ocnmask, lats, lons):
+    lmes = gpd.read_file(shp_path)
+    if lmes.crs != "EPSG:4326":
+        lmes = lmes.to_crs(epsg=4326)
+
+    # Convert lons for spatial check
+    lons_for_test = ((lons + 180) % 360) - 180
+    lon_grid, lat_grid = np.meshgrid(lons_for_test, lats)
+
+    points = [Point(lon, lat) for lon, lat in zip(lon_grid.ravel(), lat_grid.ravel())]
+    points_gdf = gpd.GeoDataFrame(geometry=points, crs="EPSG:4326")
+
+    lme_id_grid = np.zeros(lon_grid.shape, dtype=int).T
+    lme_id_to_name = {}
+    lme_masks = {}
+
+    for idx, row in lmes.iterrows():
+        lme_id = idx + 1
+        name = row["LME_NAME"]
+        mask_flat = points_gdf.within(row.geometry)
+        mask = mask_flat.to_numpy().reshape(lat_grid.shape).T
+        
+        mask = np.logical_and(mask, ocnmask[0, : , :].astype(bool))
+
+        if np.any(mask):
+            lme_id_grid[mask] = lme_id
+            lme_masks[lme_id] = mask
+            lme_id_to_name[lme_id] = name
+
+    return lme_id_grid, lme_masks, lme_id_to_name
+    
+def plot_lmes(lme_masks, ocnmask, lats, lons):
+    # convert lons to -180 to 180 for plotting
+    lons_shifted = np.where(lons > 180, lons - 360, lons)
+    
+    # create an array to hold lme ids
+    id_grid = np.full((len(lons), len(lats)), np.nan)
+    centers = [] # center of each LME
+
+    # assign each mask a numeric id
+    for idx, (lme_id, mask) in enumerate(lme_masks.items(), start=1):
+        id_grid[mask] = lme_id
+        
+        # calculate geographic center for label
+        if np.any(mask):
+            lat_center = np.mean(lats[np.any(mask, axis=0)])
+            lon_center = np.mean(lons[np.any(mask, axis=1)])
+            if lon_center > 180:
+                lon_center -= 360
+                
+            centers.append((lon_center, lat_center, lme_id))
+
+    # set up plot
+    fig = plt.figure(figsize=(14, 8), dpi=200)
+    ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=0))
+    ax.set_global()
+    
+    # plot land with ocnmask
+    mesh = ax.pcolormesh(
+        lons_shifted, lats, ocnmask[0, :, :].T,
+        transform=ccrs.PlateCarree(),
+        cmap='Greys_r', shading='nearest'
+    )
+
+    # create discrete colormap
+    hsv_colors = [(i / len(lme_masks), 0.75, 0.85) for i in range(len(lme_masks)+4)]
+    rgb_colors = [mcolors.hsv_to_rgb(c) for c in hsv_colors]
+    random.Random(77).shuffle(rgb_colors)
+    cmap = mcolors.ListedColormap(rgb_colors)
+    norm = mcolors.BoundaryNorm(
+        boundaries=np.arange(0.5, len(lme_masks) + 4 + 1.5, 1),
+        ncolors=len(lme_masks)+4
+    )
+
+    # plot each lme
+    mesh = ax.pcolormesh(
+        lons_shifted, lats, id_grid.T,
+        transform=ccrs.PlateCarree(),
+        cmap=cmap, alpha=0.8, norm=norm, shading='nearest'
+    )
+
+    for lon_c, lat_c, idx in centers:
+        if idx == 3:
+            ax.text(2, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 13:
+            ax.text(18, lat_c-1, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 28:
+            ax.text(lon_c+4, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 32:
+            ax.text(-1, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 47:
+            ax.text(-45, lat_c-5, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 52:
+            ax.text(-6, 75, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 53:
+            ax.text(4, lat_c-1, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 59:
+            ax.text(lon_c+7, lat_c-3, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 64:
+            ax.text(lon_c-20, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 65:
+            ax.text(lon_c-5, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        else:
+            ax.text(
+                lon_c, lat_c, str(idx),
+                transform=ccrs.PlateCarree(),
+                fontsize=8, ha='center', va='center',
+                bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+            
+    plt.title("Large Marine Ecosystems (62 out of 66 can be represented on OCIM grid)")
+    plt.show()
