@@ -7,10 +7,12 @@ EXP14: Trying to replicate Wang et al., 2022 results (OAE in Bering Sea)
 - TA flux applied in a single grid cell located in the middle of Unimak Pass
   with a rate of 4 μmol m−2 s−1 for 10 years (or, overall domain-wide TA
   addition rate is 1.67e10 mol yr−1)
+  
+  1.67 × 1010 mol yr−1
 - Simulation is run for only 10 years
 - TA addition coordinates are approx. 54.333724, 195.062015 in Wang model, the
   closest we can get with this model is 55.38, 195 (which is model_lat[73],
-  model_lon[95])
+  model_lon[97])
 - This grid cell has a volume of 2.7422e11 m3 and a mass of 2.8107e14 kg, which
   means we will add TA as a flux of 59.41375 µmol kg-1 yr-1
   (calculation: 1.67e10 / (model_vols[0, 95, 73] * rho) * 1e6)
@@ -18,7 +20,15 @@ EXP14: Trying to replicate Wang et al., 2022 results (OAE in Bering Sea)
 
 exp14_2025-08-04-a.nc
 - Running 10 years, 1 year time steps, with addition of 59.41375 µmol kg-1 yr-1
-  in surface ocean at model_lat[73], model_lon[95]
+  in surface ocean at model_lat[73], model_lon[95] (wrong lon)
+exp14_2025-08-28-a.nc
+- WITH FIXED WIND SPEED & z1 !
+- Running 10 years, 1 year time steps, with addition of 59.41375 µmol kg-1 yr-1
+  in surface ocean at model_lat[73], model_lon[95] (wrong lon)
+exp14_2025-08-29-a.nc
+- WITH FIXED WIND SPEED & z1 !
+- Running 10 years, 1 year time steps, with addition of 59.41375 µmol kg-1 yr-1
+  in surface ocean at model_lat[73], model_lon[97]
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [µatm CO2 (µatm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -92,9 +102,11 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
-# grid cell z-dimension for converting from surface area to volume
-grid_z = model_vols / model_data['area'].to_numpy()
-rho = 1025 # seawater density for volume to mass [kg m-3]
+# seawater density for volume to mass [kg m-3]
+rho = 1025 
+
+# depth of first model layer (need bottom of grid cell, not middle) [m]
+z1 = model_data['wz'].to_numpy()[1, 0, 0]
 
 # to help with conversions
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
@@ -197,7 +209,6 @@ beta_C = DIC/aqueous_CO2 # [unitless]
 beta_A = AT/aqueous_CO2 # [unitless]
 K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
 Patm = 1e6 # atmospheric pressure [µatm]
-z1 = model_depth[0] # depth of first layer of model [m]
 V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
 
 # add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
@@ -217,8 +228,8 @@ gammaC = -1 * k * (1 - f_ice) / z1
 # set up time domain
 dt = 1 # 1 year
 
-# Kana's time stepping
-t = np.arange(0, 11, dt) # 10 years after year 0
+# 10 years after year 0
+t = np.arange(0, 11, dt)
 
 #%% add CDR perturbation
 # Add surface ocean perturbation of -1 µmol kg-1 yr-1 in DIC, no change in AT
@@ -227,7 +238,7 @@ t = np.arange(0, 11, dt) # 10 years after year 0
 # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
 del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
 del_q_CDR_AT_3D[ocnmask == 1] = 0
-del_q_CDR_AT_3D[0, 95, 73] = 1.67e10 / (model_vols[0, 95, 73] * rho) * 1e6 # µmol kg-1 yr-1
+del_q_CDR_AT_3D[0, 97, 73] = 1.67e10 / (model_vols[0, 97, 73] * rho) * 1e6 # µmol kg-1 yr-1
 del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
 
 # ∆q_CDR,DIC (change in DIC due to CDR addition) - final units: [µmol DIC kg-1 yr-1]
@@ -352,7 +363,7 @@ start = time()
 for idx in tqdm(range(1, len(t))):
 #for idx in range(1, len(t)):
     
-    # add starting guess after first time step
+    # add starting estimate after first time step
     if idx > 1:
         c0 = c[:,idx-1]
     else:
@@ -373,7 +384,7 @@ for idx in tqdm(range(1, len(t))):
 stop = time()
 print('time stepping total time: ' + str(stop - start) + ' s')
 
-#%% rebuild 3D concentrations from 1D array used for solving matrix equation
+# rebuild 3D concentrations from 1D array used for solving matrix equation
 
 # partition "x" into xCO2, DIC, and AT
 c_xCO2 = c[0, :]
@@ -398,12 +409,12 @@ for idx in range(0, len(t)):
     c_DIC_3D[idx, :, :, :] = c_DIC_reshaped
     c_AT_3D[idx, :, :, :] = c_AT_reshaped
 
-#%% save model output in netCDF format
-global_attrs = {'description': 'Attempting to replicate Wang et al., 2022 - running 10 years, 1 year time steps, with addition of 59.41375 umol kg-1 yr-1 in surface ocean at model_lat[73], model_lon[95]'}
+# save model output in netCDF format
+global_attrs = {'description': 'Attempting to replicate Wang et al., 2022 - running 10 years, 1 year time steps, with addition of 59.41375 umol kg-1 yr-1 in surface ocean at model_lat[73], model_lon[97] - with fixed wind speed and z1'}
 
 # save model output
 p2.save_model_output(
-    'exp14_2025-08-04-a.nc', 
+    'exp14_2025-08-29-a.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -417,7 +428,7 @@ p2.save_model_output(
 
 #%% open and plot model output
 
-data = xr.open_dataset(output_path + 'exp14_2025-08-04-a.nc')
+data = xr.open_dataset(output_path + 'exp14_2025-08-29-a.nc')
 
 #test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
 #for x in test:
@@ -432,18 +443,26 @@ nt = len(t)
 
 for idx in range(0, nt):
     print(idx)
-    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -6e-4, 6e-4, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
+    p2.plot_surface3d(model_lon, model_lat, data['delAT'].isel(time=idx).values, 0, -8e-2, 8e-2, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
 '''   
 for idx in range(0, nt):
     p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 97, 0, 5e-5, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 165ºW longitude')
 '''
 
-# calculate total DIC sequestered
+#%% calculate total DIC sequestered
 
 del_CO2_sw = np.nansum(data['delDIC'].isel(time=10).values * model_vols * rho) * 1e-6 * 44.0095 / 1000 / 1000 # metric tons CO2 in ocean due to AT addition (µmol -> mol -> g -> kg -> metric ton)
 
 print('\ntotal change in DIC due to OAE by year 10: ' + str(np.round(del_CO2_sw, 10)) + ' metric tons')
- 
+
+# calculate figure 8 metrics
+# NEED TO CONSTRAIN TO BERING SEA FOR COMPARISON
+DIC_metric_tons = data['delDIC'].copy() * xr.DataArray(model_vols, dims=("depth", "lon", "lat"), coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) * rho * 1e-6 # mol DIC at each grid cell at each time
+DIC_metric_tons = DIC_metric_tons.sum(dim=['depth', 'lon', 'lat'], skipna=True) # cumulative moles of DIC increased
+
+AT_metric_tons = data['delAT'].copy() * xr.DataArray(model_vols, dims=("depth", "lon", "lat"), coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) * rho * 1e-6 # mol AT at each grid cell at each time
+AT_metric_tons = AT_metric_tons.sum(dim=['depth', 'lon', 'lat'], skipna=True) # cumulative moles of DIC increased
+
 
 
 

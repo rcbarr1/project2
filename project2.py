@@ -556,8 +556,8 @@ def regrid_ncep_noaa(data_path, ncep_var, model_lat, model_lon, ocnmask):
         data = xr.open_dataset(data_path + 'NCEP_DOE_Reanalysis_II/icec.sfc.mon.ltm.1991-2020.nc')
         var = data.icec.mean(dim='time', skipna=True).values # average across all months, pull out values from NCEP
     elif ncep_var == 'uwnd': # u-wind [m/s]
-        data = xr.open_dataset(data_path + 'NCEP_DOE_Reanalysis_II/uwnd.10m.mon.ltm.1991-2020.nc')
-        var = data.uwnd.mean(dim='time', skipna=True).values # average across all months, pull out values from NCEP
+        data = xr.open_dataset(data_path + 'NCEP_DOE_Reanalysis_II/wspd.10m.mon.mean.nc')
+        var = data.wspd.isel(time=slice(552,924)).mean(dim='time', skipna=True).values # average across all months from 1994-01-01 to 2024-01-01, pull out values from NCEP
     elif ncep_var == 'sst': # sea surface temperature [ºC]
         data = xr.open_dataset(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst.mon.ltm.1991-2020.nc')
         var = data.sst.mean(dim='time', skipna=True).values # average across all months, pull out values from NCEP
@@ -597,6 +597,88 @@ def regrid_ncep_noaa(data_path, ncep_var, model_lat, model_lon, ocnmask):
         np.save(data_path + 'NCEP_DOE_Reanalysis_II/uwnd_AO.npy', var)
     elif ncep_var == 'sst':
         np.save(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_AO.npy', var)
+        
+    end_time = time.time()
+    print('\tregrid complete in ' + str(round(end_time - start_time,3)) + ' s')
+    
+def regrid_ncep_noaa_KANA(data_path, ncep_var, model_lat, model_lon, ocnmask):
+    '''
+    *updated to calculate annual averages after regridding to match Kana's implementation
+    
+    calculate annual average, regrid data to model grid, inpaint nans
+    NCEP/DOE reanalysis II data and NOAA Extended Reconstruction SST V5
+
+    Parameters
+    ----------
+    data_path : path to folder which contains NCEP data from https://psl.noaa.gov/data/gridded/data.ncep.reanalysis2.html or NOAA data from https://psl.noaa.gov/data/gridded/data.noaa.ersst.v5.html
+    ncep_var : variable to regrid (dimensions: depth, longitude, latitude)
+    model_lat : array pf model latitudes
+    model_lon : array of model longitudes
+    ocnmask : mask same shape as ncep_var where 1 marks an ocean cell and 0 marks land
+
+    Returns
+    -------
+    ncep_var : regridded to model grid
+
+    '''
+    # load NCEP data (https://psl.noaa.gov/data/gridded/data.ncep.reanalysis2.html) or NOAA data (https://psl.noaa.gov/data/gridded/data.noaa.ersst.v5.html)
+    if ncep_var == 'icec': # ice concentration
+        data = xr.open_dataset(data_path + 'NCEP_DOE_Reanalysis_II/icec.sfc.mon.ltm.1991-2020.nc')
+        var_all_months = data.icec.values
+        #var = data.icec.mean(dim='time', skipna=True).values # average across all months, pull out values from NCEP
+    elif ncep_var == 'uwnd': # u-wind [m/s]
+        data = xr.open_dataset(data_path + 'NCEP_DOE_Reanalysis_II/wspd.10m.mon.mean.nc')
+        var_all_months = data.wspd.isel(time=slice(516,876)).values
+        #var = data.uwnd.mean(dim='time', skipna=True).values # average across all months, pull out values from NCEP
+    elif ncep_var == 'sst': # sea surface temperature [ºC]
+        data = xr.open_dataset(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst.mon.ltm.1991-2020.nc')
+        var_all_months = data.sst.values
+        #var = data.sst.mean(dim='time', skipna=True).values # average across all months, pull out values from NCEP
+    else:
+        print('NCEP/NOAA data not found.')
+        return
+      
+    print('begin regrid of ' + ncep_var)
+    start_time = time.time()
+           
+    # pull out arrays of depth, latitude, and longitude from NCEP
+    data_lon = data['lon'].to_numpy()     # ºE
+    data_lat = data['lat'].to_numpy()     # ºN
+    
+    var_avg = np.full(ocnmask[0, :, :].shape, np.nan)
+    
+    for month in range(0, var_all_months.shape[0]):
+        var = var_all_months[month, :, :]
+
+        # create interpolator
+        interp = RegularGridInterpolator((data_lon, data_lat), var.T, bounds_error=False, fill_value=None)
+
+        # create meshgrid for OCIM grid
+        lon, lat = np.meshgrid(model_lon, model_lat, indexing='ij')
+    
+        # reshape meshgrid points into a list of coordinates to interpolate to
+        query_points = np.array([lon.ravel(), lat.ravel()]).T
+    
+        # perform interpolation (regrid GLODAP data to match OCIM grid)
+        var = interp(query_points)
+
+        # transform results back to model grid shape
+        var = var.reshape(lon.shape)
+
+        # inpaint nans
+        var = inpaint_nans2d(var, mask=ocnmask[0, :, :].astype(bool))
+        
+        var_avg += var
+        
+    var_avg = var_avg / var_all_months.shape[0]
+
+    # save regridded data
+    if ncep_var == 'icec':
+        np.save(data_path + 'NCEP_DOE_Reanalysis_II/icec_AO_Kana.npy', var)
+    elif ncep_var == 'uwnd':
+        np.save(data_path + 'NCEP_DOE_Reanalysis_II/uwnd_AO_Kana_1991_2020.npy', var)
+    elif ncep_var == 'sst':
+        np.save(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_AO_Kana.npy', var)
         
     end_time = time.time()
     print('\tregrid complete in ' + str(round(end_time - start_time,3)) + ' s')
@@ -829,6 +911,8 @@ def plot_surface3d(lons, lats, variable, depth_level, vmin, vmax, cmap, title, l
     else:
         plt.ylim([-90,90])
         plt.xlim(lon_lims)
+        
+    return fig
 
 def plot_longitude3d(lats, depths, variable, longitude, vmin, vmax, cmap, title):
     fig = plt.figure(figsize=(10,7))

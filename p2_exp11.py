@@ -20,11 +20,11 @@ exp11_2025-7-31-a.nc
 exp11_2025-8-1-a.nc
 - Kana comparison a: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
 exp11_2025-8-1-b.nc
-- Kana comparison b: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
+- Kana comparison b: perturbation of -1 µmol kg-1 yr-1 DIC at (3.9, 261) in top ocean layer for the first 30 days
 exp11_2025-8-1-c.nc
-- Kana comparison c: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
+- Kana comparison c: perturbation of -1 µmol kg-1 yr-1 DIC at (61.3, 185) in top ocean layer for the first 30 days
 exp11_2025-8-1-d.nc
-- Kana comparison d: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
+- Kana comparison d: perturbation of -1 µmol kg-1 yr-1 DIC at (61.3, 333) in top ocean layer for the first 30 days
 exp11_2025-8-6-a.nc
 - Same simulation as exp11_2025-8-1-a.nc except only running for 5 years and getting rid of AT factor change to see if I get the same results as kana
 exp11_2025-8-6-b.nc
@@ -36,7 +36,53 @@ exp11_2025-8-6-a.nc
 exp11_2025-8-6-b.nc
 - Same simulation as exp11_2025-8-1-a.nc except only running for 5 years
 - ALSO setting rtol = 1e-7 in fgmres solver AND drop_tol = 1e-7 in spilu decomposition
-
+exp11_2025-8-28-a.nc
+- WITH FIXED z1 & wind speed
+- Kana comparison a: perturbation of -1 µmol kg-1 yr-1 DIC at (-39.5, 101) in top ocean layer for the first 30 days
+exp11_2025-8-28-b.nc
+- WITH FIXED z1 & wind speed
+- Kana comparison b: perturbation of -1 µmol kg-1 yr-1 DIC at (3.9, 261) in top ocean layer for the first 30 days
+exp11_2025-8-28-c.nc
+- WITH FIXED z1 & wind speed
+- Kana comparison c: perturbation of -1 µmol kg-1 yr-1 DIC at (61.3, 185) in top ocean layer for the first 30 days
+exp11_2025-8-28-d.nc
+- WITH FIXED z1 & wind speed
+- Kana comparison d: perturbation of -1 µmol kg-1 yr-1 DIC at (61.3, 333) in top ocean layer for the first 30 days
+exp11_2025-8-29-OSP.nc
+- To remake figure S5 of Yamamoto et al. (2024)
+- Perturbation of -1 µmol kg-1 yr-1 DIC at ~Ocean Station Papa (49.5, 215) in top ocean layer for the first 30 days
+- model_lat[70], model_lon[107]
+exp11_2025-8-29-PAP.nc
+- To remake figure S5 of Yamamoto et al. (2024)
+- Perturbation of -1 µmol kg-1 yr-1 DIC at ~Porcupine Abyssal Plane Observatory (49.5, 343) in top ocean layer for the first 30 days
+- model_lat[70], model_lon[171]
+exp11_2025-8-29-HOT.nc
+- To remake figure S5 of Yamamoto et al. (2024)
+- Perturbation of -1 µmol kg-1 yr-1 DIC at ~Station ALOHA (21.8, 201) in top ocean layer for the first 30 days
+- model_lat[56], model_lon[100]
+exp11_2025-8-29-BATS.nc
+- To remake figure S5 of Yamamoto et al. (2024)
+- Perturbation of -1 µmol kg-1 yr-1 DIC at ~Bermuda Atlantic Time Series (31.6, 295) in top ocean layer for the first 30 days
+- model_lat[61], model_lon[146]
+exp11_2025-8-29-CTP.nc
+- To remake figure S5 of Yamamoto et al. (2024)
+- Perturbation of -1 µmol kg-1 yr-1 DIC at Central Tropical Pacific (-13.8, 249) in top ocean layer for the first 30 days
+- model_lat[38], model_lon[124]
+exp11_2025-8-29-ETP.nc
+- To remake figure S5 of Yamamoto et al. (2024)
+- Perturbation of -1 µmol kg-1 yr-1 DIC at Eastern Tropical Pacific (-13.8, 199) in top ocean layer for the first 30 days
+- model_lat[38], model_lon[99]
+exp11_2025-8-29-SOTS.nc
+- To remake figure S5 of Yamamoto et al. (2024)
+- Perturbation of -1 µmol kg-1 yr-1 DIC at ~Southern Ocean Time Series (-47.5, 143) in top ocean layer for the first 30 days
+- model_lat[21], model_lon[71]
+exp11_2025-8-29-SOTS-4.nc
+- To remake figure S5 of Yamamoto et al. (2024)
+- Perturbation of -1 µmol kg-1 yr-1 DIC at 4º south of Southern Ocean Time Series (-51.4, 143) in top ocean layer for the first 30 days
+- model_lat[19], model_lon[71]
+exp11_2025-8-29-DAC.nc
+- To remake figure S5 of Yamamoto et al. (2024)
+- Perturbation of -1 ppm yr-1 xCO2 for the first 30 days
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [µatm CO2 (µatm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -130,9 +176,11 @@ model_areas = model_data['area'].to_numpy() # m^2
 #model_areas = np.asfortranarray(model_data['output']['grid']['DXT3d']) * np.asfortranarray(model_data['output']['grid']['DYT3d']) # m^2
 #model_areas = np.transpose(model_areas, axes=(2, 1, 0))
 
-# grid cell z-dimension for converting from surface area to volume
-grid_z = model_vols / model_areas
-rho = 1025 # seawater density for volume to mass [kg m-3]
+# seawater density for volume to mass [kg m-3]
+rho = 1025 
+
+# depth of first model layer (need bottom of grid cell, not middle) [m]
+z1 = model_data['wz'].to_numpy()[1, 0, 0]
 
 # to help with conversions
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
@@ -236,7 +284,6 @@ beta_C = DIC/aqueous_CO2 # [unitless]
 beta_A = AT/aqueous_CO2 # [unitless]
 K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
 Patm = 1e6 # atmospheric pressure [µatm]
-z1 = model_depth[0] # depth of first layer of model [m]
 V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
 
 # add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
@@ -250,6 +297,7 @@ f_ice = p2.flatten(f_ice_3D, ocnmask)
 
 gammax = k * V * (1 - f_ice) / Ma / z1
 gammaC = -1 * k * (1 - f_ice) / z1
+
 
 #%% plot pCO2, Revelle factor, K0, and k
 
@@ -304,37 +352,44 @@ t5 = np.arange(500, 1000+dt5, dt5) # use a 100 year time step until the 1000th y
 #t4 = np.arange(3, 23, dt4) # use a 10 year time step until the 23rd year
 #t5 = np.arange(23, 123+dt5, dt5) # use a 100 year time step until the 1000th year
 
-t = np.concatenate((t1, t2, t3, t4, t5))
+#t = np.concatenate((t1, t2, t3, t4, t5))
 #t = np.concatenate((t1, t2)) # for shortened sim
-#t = np.concatenate((t1, t2, t3))
+t = np.concatenate((t1, t2, t3))
 
 #%% run multiple experiments
-experiment_names = ['exp11_2025-8-11-a.nc', 'exp11_2025-8-11-b.nc', 'exp11_2025-8-11-c.nc', 'exp11_2025-8-11-d.nc']
-experiment_attrs = ['Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE - location is model_lon[50] model_lat[25]',
-                    'Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE',
-                    'Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE',
-                    'Attempting to repeat Yamamoto et al 2024 experiment - instantaneous OAE']
+experiment_names = ['exp11_2025-8-29-OSP.nc', 'exp11_2025-8-29-PAP.nc',
+                    'exp11_2025-8-29-HOT.nc', 'exp11_2025-8-29-BATS.nc',
+                    'exp11_2025-8-29-CTP.nc', 'exp11_2025-8-29-ETP.nc',
+                    'exp11_2025-8-29-SOTS.nc', 'exp11_2025-8-29-SOTS-4.nc']
+experiment_attrs = ['To remake figure S5 of Yamamoto et al. (2024) - Perturbation of -1 µmol kg-1 yr-1 DIC at ~Ocean Station Papa (49.5, 215) in top ocean layer for the first 30 days - model_lat[70], model_lon[107]',
+                    'To remake figure S5 of Yamamoto et al. (2024) - Perturbation of -1 µmol kg-1 yr-1 DIC at ~Porcupine Abyssal Plane Observatory (49.5, 343) in top ocean layer for the first 30 days - model_lat[70], model_lon[171]',
+                    'To remake figure S5 of Yamamoto et al. (2024) - Perturbation of -1 µmol kg-1 yr-1 DIC at ~Station ALOHA (21.8, 201) in top ocean layer for the first 30 days - model_lat[56], model_lon[100]',
+                    'To remake figure S5 of Yamamoto et al. (2024) - Perturbation of -1 µmol kg-1 yr-1 DIC at ~Bermuda Atlantic Time Series (31.6, 295) in top ocean layer for the first 30 days - model_lat[61], model_lon[146]',
+                    'To remake figure S5 of Yamamoto et al. (2024) - Perturbation of -1 µmol kg-1 yr-1 DIC at Central Tropical Pacific (-13.8, 249) in top ocean layer for the first 30 days - model_lat[38], model_lon[124]',
+                    'To remake figure S5 of Yamamoto et al. (2024) - Perturbation of -1 µmol kg-1 yr-1 DIC at Eastern Tropical Pacific (-13.8, 199) in top ocean layer for the first 30 days - model_lat[38], model_lon[99]',
+                    'To remake figure S5 of Yamamoto et al. (2024) - Perturbation of -1 µmol kg-1 yr-1 DIC at ~Southern Ocean Time Series (-47.5, 143) in top ocean layer for the first 30 days - model_lat[21], model_lon[71]',
+                    'To remake figure S5 of Yamamoto et al. (2024) - Perturbation of -1 µmol kg-1 yr-1 DIC at 4º south of Southern Ocean Time Series (-51.4, 143) in top ocean layer for the first 30 days - model_lat[19], model_lon[71]']
 
 # Applying perturbations at (-39.5, 101), which is (model_lat[25], model_lon[50])
 #                           (5.9, -99), which is (model_lat[47], model_lon[130])
 #                           (61.3, -175), which is (model_lat[76], model_lon[92]) 
 #                           (61.3, -27), which is (model_lat[76], model_lon[166])
 
-experiment_lons_idx = [50, 130, 92, 166]
-experiment_lats_idx = [25, 47, 76, 76]
+experiment_lons_idx = [107, 171, 100, 146, 124, 99, 71, 71]
+experiment_lats_idx = [70, 70, 56, 61, 38, 38, 21, 19]
 
 # for shortened sim
-experiment_names = ['exp11_2025-8-6-a.nc']
-#experiment_attrs = ['Attempting to repeat Yamamoto et al 2024 experiment - 5 years only - rtol=1e-7 and drop_tol=1e-7 - instantaneous OAE - location is model_lon[50] model_lat[25]']
-experiment_lons_idx = [50]
-experiment_lats_idx = [25]
+#experiment_names = ['exp11_2025-8-29-DAC.nc']
+#experiment_attrs = ['Attempting to repeat Yamamoto et al 2024 figure S5 - 100 years only - removal of CO2 from atmosphere at 1 ppm yr-1 for first 30 days']
+#experiment_lons_idx = [166]
+#experiment_lats_idx = [76]
 #%%
 for exp_idx in range(0, len(experiment_names)):
     experiment_name = experiment_names[exp_idx]
     experiment_attr = experiment_attrs[exp_idx]
     experiment_lon_idx = experiment_lons_idx[exp_idx]
     experiment_lat_idx = experiment_lats_idx[exp_idx]
-
+    
     # add CDR perturbation
     # Add surface ocean perturbation of -1 µmol kg-1 yr-1 in DIC, no change in AT
     # Goal: compare results with Yamamoto et al., 2024 supplemental figures
@@ -349,6 +404,9 @@ for exp_idx in range(0, len(experiment_names)):
     del_q_CDR_DIC_3D[ocnmask == 1] = 0
     del_q_CDR_DIC_3D[0, experiment_lon_idx, experiment_lat_idx] = -1 # µmol kg-1 yr-1
     del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
+    
+    # ∆q_CDR,xCO2 (change in atmospheric CO2 due to CDR addition) - final units: [µmol CO2 (µmol air)-1 yr-1]
+    #del_q_CDR_xCO2 = -1e-6 # 1 ppm converted to µmol CO2 per µmol air
     
     # construct matricies
     # matrix form:
@@ -389,6 +447,9 @@ for exp_idx in range(0, len(experiment_names)):
     q[1:(m+1),0:30] = np.tile(del_q_CDR_DIC[:, np.newaxis], (1,30))
     
     # for ∆AT, no change
+    
+    # for ∆xCO2, add perturbation for first 30 days
+    #q[0,0:30] += del_q_CDR_xCO2
     
     # dimensions
     # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
@@ -477,12 +538,12 @@ for exp_idx in range(0, len(experiment_names)):
     stop = time()
     print('ilu2 calculations: ' + str(stop - start) + ' s')
     
-    '''
     start = time()
     ilu3 = spilu(LHS3.tocsc(), drop_tol=1e-3, fill_factor=10)
     stop = time()
     print('ilu3 calculations: ' + str(stop - start) + ' s')
     
+    '''
     start = time()
     ilu4 = spilu(LHS4.tocsc(), drop_tol=1e-5, fill_factor=20)
     stop = time()
@@ -496,11 +557,18 @@ for exp_idx in range(0, len(experiment_names)):
     
     M1 = LinearOperator(LHS1.shape, ilu1.solve)
     M2 = LinearOperator(LHS2.shape, ilu2.solve)
-    '''
     M3 = LinearOperator(LHS3.shape, ilu3.solve)
+    '''
     M4 = LinearOperator(LHS4.shape, ilu4.solve)
     M5 = LinearOperator(LHS5.shape, ilu5.solve)
     '''
+    
+    # set up metrics for tracking del_C_CDR and del_C_atm, as defined in Yamamoto et al. (2024)
+    del_C_atm = np.full((nt), np.nan)
+    del_C_CDR = np.full((nt), np.nan) 
+    
+    del_C_atm[0] = 0
+    del_C_CDR[0] = 0
     
     #for idx in tqdm(range(1, len(t))):
     for idx in range(1, len(t)):
@@ -518,7 +586,9 @@ for exp_idx in range(0, len(experiment_names)):
             c[:,idx], info = lgmres(LHS1, RHS, M=M1, x0=c0, rtol = 1e-5, atol=0)
             stop = time()
             print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-       
+            del_C_CDR[idx] = del_C_CDR[idx-1] + np.nansum(p2.flatten(model_vols, ocnmask) * rho * dt1 * q[1:(m+1),idx-1])
+            
+    
         elif (t[idx] > 90/360) & (t[idx] <= 5): # 1 month time step
         #elif (t[idx] > 30/360) & (t[idx] <= 1): # 1 month time step
             RHS = c[:,idx-1] + np.squeeze(dt2*q[:,idx-1])
@@ -526,7 +596,8 @@ for exp_idx in range(0, len(experiment_names)):
             c[:,idx], info = lgmres(LHS2, RHS, M=M2, x0=c0, rtol = 1e-5, atol=0)
             stop = time()
             print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-        '''
+            del_C_CDR[idx] = del_C_CDR[idx-1]
+        
         elif (t[idx] > 5) & (t[idx] <= 100): # 1 year time step
         #elif (t[idx] > 1) & (t[idx] <= 3): # 1 year time step
             start = time()
@@ -534,7 +605,9 @@ for exp_idx in range(0, len(experiment_names)):
             c[:,idx], info = lgmres(LHS3, RHS, M=M3, x0=c0, rtol = 1e-5, atol=0)
             stop = time()
             print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+            del_C_CDR[idx] = del_C_CDR[idx-1]
     
+        '''
         elif (t[idx] > 100) & (t[idx] <= 500): # 10 year time step
         #elif (t[idx] > 3) & (t[idx] <= 23): # 10 year time step
             start = time()
@@ -542,6 +615,7 @@ for exp_idx in range(0, len(experiment_names)):
             c[:,idx], info = lgmres(LHS4, RHS, M=M4, x0=c0, rtol = 1e-5, atol=0)
             stop = time()
             print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+            del_C_CDR[idx] = del_C_CDR[idx-1]
     
         else: # 100 year time step
             start = time()
@@ -549,6 +623,7 @@ for exp_idx in range(0, len(experiment_names)):
             c[:,idx], info = lgmres(LHS5, RHS, M=M5, x0=c0, rtol = 1e-5, atol=0)
             stop = time()
             print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+            del_C_CDR[idx] = del_C_CDR[idx-1]
         '''
             
         if info != 0:
@@ -581,6 +656,8 @@ for exp_idx in range(0, len(experiment_names)):
         
         c_DIC_3D[idx, :, :, :] = c_DIC_reshaped
         c_AT_3D[idx, :, :, :] = c_AT_reshaped
+        
+        del_C_atm[idx] = c_xCO2[idx]* 1e-6 * Ma
     
     # save model output in netCDF format
     global_attrs = {'description': experiment_attr}
@@ -592,21 +669,21 @@ for exp_idx in range(0, len(experiment_names)):
         model_depth, 
         model_lon,
         model_lat, 
-        tracers=[c_xCO2, c_DIC_3D, c_AT_3D], 
-        tracer_dims=[('time',), ('time', 'depth', 'lon', 'lat'), ('time', 'depth', 'lon', 'lat')],
-        tracer_names=['delxCO2', 'delDIC', 'delAT'], 
-        tracer_units=['ppm', 'umol kg-3', 'umol kg-3'],
+        tracers=[c_xCO2, c_DIC_3D, c_AT_3D, del_C_CDR, del_C_atm], 
+        tracer_dims=[('time',), ('time', 'depth', 'lon', 'lat'), ('time', 'depth', 'lon', 'lat'), ('time',), ('time',)],
+        tracer_names=['delxCO2', 'delDIC', 'delAT', 'delC_CDR', 'delC_atm'], 
+        tracer_units=['ppm', 'umol kg-3', 'umol kg-3', 'umol CO2', 'umol CO2'],
         global_attrs=global_attrs
     )
 
 
 #%% open and plot model output
-data = xr.open_dataset(output_path + 'exp11_2025-8-6-a.nc')
+data = xr.open_dataset(output_path + 'exp11_2025-8-29-DAC.nc')
 
 #test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
 #for x in test:
 #    print(x)
-    
+   
 t = data.time
 model_lon = data.lon.data
 model_lat = data.lat.data
@@ -616,7 +693,8 @@ nt = len(t)
 
 for idx in range(0, nt):
     print(idx)
-    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -6e-5, 6e-5, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
+    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -0.05, 0.05, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
+    #p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -6e-5, 6e-5, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
 
 #for idx in range(0, nt):
 #    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 97, 0, 5e-5, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 165ºW longitude')
@@ -626,27 +704,28 @@ for idx in range(0, nt):
 # alpha = ∆C_atm / ∆C_CDR
 
 # forgot to save this out oops, recalculating here
-experiment_del_q_CDRs = []
-for exp_idx in range(0, len(experiment_names)):
-    del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
-    del_q_CDR_DIC_3D[ocnmask == 1] = 0
-    del_q_CDR_DIC_3D[0, experiment_lons_idx[exp_idx], experiment_lats_idx[exp_idx]] = -1 # µmol kg-1 yr-1
-    del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
-    experiment_del_q_CDRs.append(del_q_CDR_DIC)
+#del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
+#del_q_CDR_DIC_3D[ocnmask == 1] = 0
+#del_q_CDR_DIC_3D[0, experiment_lons_idx[0], experiment_lats_idx[0]] = -1 # µmol kg-1 yr-1
+#del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
 
-del_C_atm = np.full((nt), np.nan)
-del_C_CDR = np.full((nt), np.nan)
+delC_atm = data.delC_atm
+delC_CDR = data.delC_CDR
 
-for idx in range(0, nt):
-    del_C_CDR[idx] = np.nansum(del_q_CDR_DIC_3D * dt1 * idx * rho * model_vols) # [µmol CO2]
-    del_C_atm[idx] = data['delxCO2'].isel(time=idx).values * 1e-6 * Ma # [µmol CO2]
+#for idx in range(0, nt):
+#    if idx < 30:
+#        del_C_CDR[idx] = np.nansum(del_q_CDR_DIC_3D * dt1 * idx * rho * model_vols) # [µmol CO2]
+#    if idx >= 30:
+#        del_C_CDR[idx] = del_C_CDR[idx-1]
+#    del_C_atm[idx] = data['delxCO2'].isel(time=idx).values * 1e-6 * Ma # [µmol CO2]
     
-alpha = del_C_atm / del_C_CDR * 100 # unitless
+alpha = delC_atm.values / delC_CDR.values * 100 # unitless
 
-print('alpha at t = 5 yr: ' + str(round(alpha[146], 2)) + ' %')
-#print('alpha at t = 5 yr: ' + str(round(alpha[147], 2)) + ' %')
-#print('alpha at t = 20 yr: ' + str(round(alpha[162], 2)) + ' %')
-#print('alpha at t = 50 yr: ' + str(round(alpha[192], 2)) + ' %')
+#print('alpha at t = 5 yr: ' + str(round(alpha[146], 2)) + ' %')
+print('alpha at t = 5 yr: ' + str(round(alpha[147], 2)) + ' %')
+print('alpha at t = 20 yr: ' + str(round(alpha[162], 2)) + ' %')
+print('alpha at t = 50 yr: ' + str(round(alpha[192], 2)) + ' %')
+print('alpha at t = 100 yr: ' + str(round(alpha[241], 2)) + ' %')
 #print('alpha at t = 100 yr: ' + str(round(alpha[242], 2)) + ' %')
 
 data.close()

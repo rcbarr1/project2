@@ -77,14 +77,17 @@ TR = TR['TR']
 model_data = xr.open_dataset(data_path + 'OCIM2_48L_base/OCIM2_48L_base_data.nc')
 ocnmask = model_data['ocnmask'].to_numpy()
 
-model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
-model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
-model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
+# note: "tracer grid point" is defined as middle of the cell
+model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface defined at tracer grid point
+model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE defined at tracer grid point
+model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN defined at tracer grid point
 model_vols = model_data['vol'].to_numpy() # m^3
 
-# grid cell z-dimension for converting from surface area to volume
-grid_z = model_vols / model_data['area'].to_numpy()
-rho = 1025 # seawater density for volume to mass [kg m-3]
+# seawater density for volume to mass [kg m-3]
+rho = 1025 
+
+# depth of first model layer (need bottom of grid cell, not middle) [m]
+z1 = model_data['wz'].to_numpy()[1, 0, 0]
 
 # to help with conversions
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
@@ -187,7 +190,6 @@ beta_C = DIC/aqueous_CO2 # [unitless]
 beta_A = AT/aqueous_CO2 # [unitless]
 K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
 Patm = 1e6 # atmospheric pressure [µatm]
-z1 = model_depth[0] # depth of first layer of model [m]
 V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
 
 # add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
@@ -205,10 +207,9 @@ gammaC = -1 * k * (1 - f_ice) / z1
 #%% set up time stepping
 
 dt = 1 # 1 year
-t = np.arange(0, 101, dt) # 100 years after year 0
+t = np.arange(0, 101, dt) # 50 years after year 0
 
 #%% add CDR perturbation
-# surface ocean perturbation of 0.25 Pmol AT yr-1 in AT, no change in DIC
 
 # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
 del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
@@ -220,8 +221,11 @@ del_q_CDR_DIC_3D = np.full(ocnmask.shape, np.nan)
 del_q_CDR_DIC_3D[ocnmask == 1] = 0 # no change in DIC
 del_q_CDR_DIC = p2.flatten(del_q_CDR_DIC_3D, ocnmask)
 
-# ∆q_CDR,xCO2 (addition of CO2 to atmosphere in mol CO2 / mol air)
-del_q_CDR_xCO2 = 1e15 / 44.0095 / (Ma*1e-6)
+# ∆q_CDR,xCO2 (addition of CO2 to atmosphere in mol CO2 / mol air) * note, 1e6 g in one metric ton
+#del_q_CDR_xCO2 = 1e15 / 44.0095 / (Ma*1e-6) # 1 Gt
+#del_q_CDR_xCO2 = 1e12 / 44.0095 / (Ma*1e-6) # 1 Mt
+#del_q_CDR_xCO2 = 1e6 / 44.0095 / (Ma*1e-6) # 1 t
+del_q_CDR_xCO2 = -1 / (Ma*1e-6) # 1 mol CO2
 
 # construct matricies
 # matrix form:
@@ -387,11 +391,11 @@ for idx in range(0, len(t)):
     c_AT_3D[idx, :, :, :] = c_AT_reshaped
 
 # save model output in netCDF format
-global_attrs = {'description': 'adding 1 Gt CO2 to atmosphere, calculating change in ppm after 100 years'}
+global_attrs = {'description': 'subtracting 1 mol CO2 from atmosphere, calculating change in ppm after 50 years'}
 
 # save model output
 p2.save_model_output(
-    'exp17_2025-08-12-a.nc', 
+    'exp17_2025-08-13-b.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -408,11 +412,14 @@ data = xr.open_dataset(output_path + 'exp17_2025-08-12-a.nc')
 
 # estimate how much ppm will change
 # assuming 50% taken up by land and ocean
-del_ppm_est = 1e15 / 44.0095 / (Ma*1e-6) * 0.5 * 1e6 # ppm change in atmospheric CO2
+del_ppm_est = 1e15 / 44.0095 / (Ma*1e-6) * 0.5 * 1e6 # estimated ppm change in atmospheric CO2 bc of 1 Gt 
+#del_ppm_est = 1e12 / 44.0095 / (Ma*1e-6) * 0.5 * 1e6 # estimated ppm change in atmospheric CO2 bc of 1 Mt
+#del_ppm_est = 1 / (Ma*1e-6) * 0.5 * 1e6 # estimated ppm change in atmospheric CO2 bc of 1 mol CO2 added
+
 print('estimated change in ppm: ' + str(del_ppm_est))
 
 # how much did ppm actually change by 100 years?
-print('modeled change in ppm: ' + str(data['delxCO2'].isel(time=100)))
+print('modeled change in ppm: ' + str(data['delxCO2'].isel(time=100).values))
 
 
 

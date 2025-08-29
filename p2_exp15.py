@@ -15,15 +15,15 @@ EXP15: Trying to replicate Burt et al., 2021 results
     STSP: subtropical south pacific
     SO: southern ocean
 - model outputs from this experiment are as follows:
-exp15_2025-08-04-GLOBAL.nc
-exp15_2025-08-04-SPNA.nc
-exp15_2025-08-04-SPNP.nc
-exp15_2025-08-04-STNA.nc
-exp15_2025-08-04-STNP.nc
-exp15_2025-08-04-IND.nc
-exp15_2025-08-04-STSA.nc
-exp15_2025-08-04-STSP.nc
-exp15_2025-08-04-SO.nc
+exp15_2025-08-29-GLOBAL.nc
+exp15_2025-08-29-SPNA.nc
+exp15_2025-08-29-SPNP.nc
+exp15_2025-08-29-STNA.nc
+exp15_2025-08-29-STNP.nc
+exp15_2025-08-29-IND.nc
+exp15_2025-08-29-STSA.nc
+exp15_2025-08-29-STSP.nc
+exp15_2025-08-29-SO.nc
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [µatm CO2 (µatm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -81,6 +81,7 @@ from time import time
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
+import matplotlib.animation as animation
 
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -353,15 +354,15 @@ dt = 1 # 1 year
 t = np.arange(0, 76, dt) # 75 years after year 0
 
 #%% run multiple experiments
-experiment_names = ['exp15_2025-08-04-SPNA.nc',
-                    'exp15_2025-08-04-SPNP.nc',
-                    'exp15_2025-08-04-STNA.nc',
-                    'exp15_2025-08-04-STNP.nc',
-                    'exp15_2025-08-04-IND.nc',
-                    'exp15_2025-08-04-STSA.nc',
-                    'exp15_2025-08-04-STSP.nc',
-                    'exp15_2025-08-04-SO.nc',
-                    'exp15_2025-08-04-GLOBAL.nc']
+experiment_names = ['exp15_2025-08-29-SPNA.nc',
+                    'exp15_2025-08-29-SPNP.nc',
+                    'exp15_2025-08-29-STNA.nc',
+                    'exp15_2025-08-29-STNP.nc',
+                    'exp15_2025-08-29-IND.nc',
+                    'exp15_2025-08-29-STSA.nc',
+                    'exp15_2025-08-29-STSP.nc',
+                    'exp15_2025-08-29-SO.nc',
+                    'exp15_2025-08-29-GLOBAL.nc']
                     
 experiment_attrs = ['Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subpolar north atlantic',
                     'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subpolar north pacific',
@@ -387,6 +388,8 @@ for exp_idx in range(0, len(experiment_names)):
     experiment_name = experiment_names[exp_idx]
     experiment_attr = experiment_attrs[exp_idx]
     experiment_mask = experiment_masks[exp_idx]
+    
+    print('now running: ' + experiment_name)
 
     # add CDR perturbation
     # surface ocean perturbation of 0.25 Pmol AT yr-1 in AT, no change in DIC
@@ -587,10 +590,10 @@ for exp_idx in range(0, len(experiment_names)):
         global_attrs=global_attrs
     )
 
-
+'''
 #%% open and plot model output
 
-data = xr.open_dataset(output_path + 'exp15_2025-08-04-SPNP.nc')
+data = xr.open_dataset(output_path + 'exp15_2025-08-04-IND.nc')
 #test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
 #for x in test:
 #    print(x)
@@ -602,13 +605,49 @@ model_depth = data.depth.data
 
 nt = len(t)
 
-for idx in range(0, nt):
-    print(idx)
-    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -500, 500, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
+#for idx in range(0, nt):
+#    print(idx)
+#    fig = p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -50, 550, 'viridis', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
 
 #for idx in range(0, nt):
 #    p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 97, 0, 5e-5, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 165ºW longitude')
 
+# set up figure to be saved as animation
+fig, ax = plt.subplots(figsize=(10,7))
+plt.rc('font', size=8)          # controls default text sizes
+plt.rc('axes', titlesize=16)     # fontsize of the axes title
+plt.rc('axes', labelsize=16)    # fontsize of the x and y labels
+plt.rc('xtick', labelsize=14)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=14)    # fontsize of the tick labels
+plt.rc('legend', fontsize=16)    # legend fontsize
+plt.rc('figure', titlesize=16)  # fontsize of the figure title
+
+# first frame of animation
+cntr = ax.contourf(model_lon, model_lat,
+                   data['delDIC'].isel(time=0).values[0,:,:].T,
+                   levels=np.linspace(-50, 650, 100),
+                   cmap='viridis', vmin=-50, vmax=550)
+cbar = plt.colorbar(cntr, ax=ax,label='Change in Dissolved Inorganic Carbon (µmol kg$^{-1}$)')
+ax.set_xlabel('Longitude (ºE)')
+ax.set_ylabel('Latitude (ºN)')
+title = ax.set_title(f"Indian Ocean Carbon Dioxide Removal at t={np.round(t[idx].values,3)} yr", fontsize=20)
+
+# update function: this updates each frame with the new "axis", which is the subsequent contour plot
+def update_frame(idx):
+    ax.clear()
+    ax.contourf(model_lon, model_lat,
+                data['delDIC'].isel(time=idx).values[0,:,:].T,
+                levels=np.linspace(-50, 650, 100),
+                cmap='viridis', vmin=-50, vmax=550)
+    ax.set_xlabel('Longitude (ºE)')
+    ax.set_ylabel('Latitude (ºN)')
+    ax.set_title(f"Indian Ocean Carbon Dioxide Removal at t={np.round(t[idx].values,3)} yr")
+    return []
+
+# make and save animation
+ani = animation.FuncAnimation(fig, update_frame, frames=nt, interval=100, blit=False)
+writer = animation.writers['ffmpeg'](fps=10)
+ani.save('output_movie.mp4', writer=writer, dpi=200)
 
 #%% calculate metrics to compare with burt results
 
@@ -654,7 +693,6 @@ ax.legend(
     bbox_to_anchor=(0.5, -0.12),
     ncol=4
 )
-
-
+'''
 
 
