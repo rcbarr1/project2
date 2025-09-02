@@ -15,15 +15,15 @@ EXP15: Trying to replicate Burt et al., 2021 results
     STSP: subtropical south pacific
     SO: southern ocean
 - model outputs from this experiment are as follows:
-exp15_2025-08-29-GLOBAL.nc
-exp15_2025-08-29-SPNA.nc
-exp15_2025-08-29-SPNP.nc
-exp15_2025-08-29-STNA.nc
-exp15_2025-08-29-STNP.nc
-exp15_2025-08-29-IND.nc
-exp15_2025-08-29-STSA.nc
-exp15_2025-08-29-STSP.nc
-exp15_2025-08-29-SO.nc
+exp15_2025-08-30-GLOBAL.nc
+exp15_2025-08-30-SPNA.nc
+exp15_2025-08-30-SPNP.nc
+exp15_2025-08-30-STNA.nc
+exp15_2025-08-30-STNP.nc
+exp15_2025-08-30-IND.nc
+exp15_2025-08-30-STSA.nc
+exp15_2025-08-30-STSP.nc
+exp15_2025-08-30-SO.nc
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [µatm CO2 (µatm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -100,9 +100,11 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
-# grid cell z-dimension for converting from surface area to volume
-grid_z = model_vols / model_data['area'].to_numpy()
-rho = 1025 # seawater density for volume to mass [kg m-3]
+# seawater density for volume to mass [kg m-3]
+rho = 1025 
+
+# depth of first model layer (need bottom of grid cell, not middle) [m]
+z1 = model_data['wz'].to_numpy()[1, 0, 0]
 
 # to help with conversions
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
@@ -246,10 +248,10 @@ ax.legend(
 #p2.regrid_woa(data_path, 'P', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded WOA18 data
-S_3D = np.load(data_path + 'WOA18/S_AO.npy')   # salinity [unitless]
-T_3D = np.load(data_path + 'WOA18/T_AO.npy')   # temperature [ºC]
-Si_3D = np.load(data_path + 'WOA18/Si_AO.npy') # silicate [µmol kg-1]
-P_3D = np.load(data_path + 'WOA18/P_AO.npy')   # phosphate [µmol kg-1]
+S_3D = np.load(data_path + 'WOA18/S.npy')   # salinity [unitless]
+T_3D = np.load(data_path + 'WOA18/T.npy')   # temperature [ºC]
+Si_3D = np.load(data_path + 'WOA18/Si.npy') # silicate [µmol kg-1]
+P_3D = np.load(data_path + 'WOA18/P.npy')   # phosphate [µmol kg-1]
 
 # flatten data
 S = p2.flatten(S_3D, ocnmask)
@@ -268,9 +270,9 @@ P = p2.flatten(P_3D, ocnmask)
 #p2.regrid_ncep_noaa(data_path, 'sst', model_lat, model_lon, ocnmask)
 
 # upload regridded NCEP/DOE reanalysis II data
-f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec_AO.npy') # annual mean ice fraction from 0 to 1 in each grid cell
-uwnd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/uwnd_AO.npy') # annual mean of forecast of U-wind at 10 m [m/s]
-sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_AO.npy') # annual mean sea surface temperature [ºC]
+f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec.npy') # annual mean ice fraction from 0 to 1 in each grid cell
+uwnd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/wspd.npy') # annual mean of forecast of wind speed at 10 m [m/s]
+sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst.npy') # annual mean sea surface temperature [ºC]
 
 # calculate Schmidt number using Wanninkhof 2014 parameterization
 vec_schmidt = np.vectorize(p2.schmidt)
@@ -296,8 +298,8 @@ k_2D *= (24*365.25/100) # [m/yr] convert units
 #p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded GLODAP data
-DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy') # dissolved inorganic carbon [µmol kg-1]
-AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')   # total alkalinity [µmol kg-1]
+DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC.npy') # dissolved inorganic carbon [µmol kg-1]
+AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA.npy')   # total alkalinity [µmol kg-1]
 
 # flatten data
 DIC = p2.flatten(DIC_3D, ocnmask)
@@ -333,7 +335,6 @@ beta_C = DIC/aqueous_CO2 # [unitless]
 beta_A = AT/aqueous_CO2 # [unitless]
 K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
 Patm = 1e6 # atmospheric pressure [µatm]
-z1 = model_depth[0] # depth of first layer of model [m]
 V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
 
 # add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
@@ -354,23 +355,23 @@ dt = 1 # 1 year
 t = np.arange(0, 76, dt) # 75 years after year 0
 
 #%% run multiple experiments
-experiment_names = ['exp15_2025-08-29-SPNA.nc',
-                    'exp15_2025-08-29-SPNP.nc',
-                    'exp15_2025-08-29-STNA.nc',
-                    'exp15_2025-08-29-STNP.nc',
-                    'exp15_2025-08-29-IND.nc',
-                    'exp15_2025-08-29-STSA.nc',
-                    'exp15_2025-08-29-STSP.nc',
-                    'exp15_2025-08-29-SO.nc',
-                    'exp15_2025-08-29-GLOBAL.nc']
+experiment_names = ['exp15_2025-09-02-SPNA.nc',
+                    'exp15_2025-09-02-SPNP.nc',
+                    'exp15_2025-09-02-STNA.nc',
+                    'exp15_2025-09-02-STNP.nc',
+                    'exp15_2025-09-02-IND.nc',
+                    'exp15_2025-09-02-STSA.nc',
+                    'exp15_2025-09-02-STSP.nc',
+                    'exp15_2025-09-02-SO.nc',
+                    'exp15_2025-09-02-GLOBAL.nc']
                     
-experiment_attrs = ['Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subpolar north atlantic',
-                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subpolar north pacific',
-                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical north atlantic',
-                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical north pacific',
-                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across indian ocean',
-                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical south atlantic',
-                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical south pacific',
+experiment_attrs = ['Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subpolar north atlantic - new method of assigning perturbation concentrations to each grid cell',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subpolar north pacific - new method of assigning perturbation concentrations to each grid cell',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical north atlantic - new method of assigning perturbation concentrations to each grid cell',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical north pacific - new method of assigning perturbation concentrations to each grid cell',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across indian ocean - new method of assigning perturbation concentrations to each grid cell',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical south atlantic - new method of assigning perturbation concentrations to each grid cell',
+                    'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subtropical south pacific - new method of assigning perturbation concentrations to each grid cell',
                     'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across southern ocean',
                     'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across global ocean']
 
@@ -447,7 +448,6 @@ for exp_idx in range(0, len(experiment_names)):
     # add in source/sink vectors for ∆AT, only add perturbation for time step 0
     
     # for ∆DIC, no change
-    
     
     # for ∆AT, add perturbation annually
     q[(m+1):(2*m+1),:] = np.tile(del_q_CDR_AT[:, np.newaxis], (1,nt))
@@ -590,10 +590,10 @@ for exp_idx in range(0, len(experiment_names)):
         global_attrs=global_attrs
     )
 
-'''
+
 #%% open and plot model output
 
-data = xr.open_dataset(output_path + 'exp15_2025-08-04-IND.nc')
+data = xr.open_dataset(output_path + 'exp15_2025-08-30-IND.nc')
 #test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
 #for x in test:
 #    print(x)
@@ -630,7 +630,7 @@ cntr = ax.contourf(model_lon, model_lat,
 cbar = plt.colorbar(cntr, ax=ax,label='Change in Dissolved Inorganic Carbon (µmol kg$^{-1}$)')
 ax.set_xlabel('Longitude (ºE)')
 ax.set_ylabel('Latitude (ºN)')
-title = ax.set_title(f"Indian Ocean Carbon Dioxide Removal at t={np.round(t[idx].values,3)} yr", fontsize=20)
+title = ax.set_title(f"Indian Ocean Carbon Dioxide Removal at t={np.round(t[0].values,3)} yr", fontsize=20)
 
 # update function: this updates each frame with the new "axis", which is the subsequent contour plot
 def update_frame(idx):
@@ -647,22 +647,35 @@ def update_frame(idx):
 # make and save animation
 ani = animation.FuncAnimation(fig, update_frame, frames=nt, interval=100, blit=False)
 writer = animation.writers['ffmpeg'](fps=10)
-ani.save('output_movie.mp4', writer=writer, dpi=200)
+ani.save('output_movie2.mp4', writer=writer, dpi=200)
 
 #%% calculate metrics to compare with burt results
 
-# DIC figure 4
+experiment_names = ['exp15_2025-08-30-SPNA.nc',
+                    'exp15_2025-08-30-SPNP.nc',
+                    'exp15_2025-08-30-STNA.nc',
+                    'exp15_2025-08-30-STNP.nc',
+                    'exp15_2025-08-30-IND.nc',
+                    'exp15_2025-08-30-STSA.nc',
+                    'exp15_2025-08-30-STSP.nc',
+                    'exp15_2025-08-30-SO.nc',
+                    'exp15_2025-08-30-GLOBAL.nc']
+
+region_names = ['SPNA', 'SPNP', 'STNA', 'STNP', 'IND', 'STSA', 'STSP', 'SO', 'GLOBAL']
+
+#%% DIC figure 4
 fig = plt.figure(figsize=(6,5), dpi=200)
 ax = fig.gca()
 
 # broadcast model_vols to convert ∆DIC from per kg to total
-model_vols_broadcast = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat})
+#model_vols_broadcast = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat})
 
 for exp_idx in range(0, len(experiment_names)):
-#for exp_idx in range(0, 3):
+#for exp_idx in range(0, 1):
     data = xr.open_dataset(output_path + experiment_names[exp_idx])
-    Pg_del_DIC = data['delDIC'] * model_vols_broadcast * rho * 1e-6 * 12.01 * 1e-15 #  µmol kg-1 DIC to Pg C
-    ax.plot(t, Pg_del_DIC.sum(dim=['depth', 'lon', 'lat'], skipna=True), label=region_names[exp_idx])
+    model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆DIC from per kg to total
+    Pg_del_DIC = data['delDIC'] * model_vols_xr * rho * 1e-6 * 12.01 * 1e-15 #  µmol kg-1 DIC to Pg C
+    ax.plot(data.time.values, Pg_del_DIC.sum(dim=['depth', 'lon', 'lat'], skipna=True), label=region_names[exp_idx])
 
 ax.set_xlabel('Time (yr)')
 ax.set_ylabel('Total ∆DIC Inventory (Pg C)')
@@ -674,15 +687,16 @@ ax.legend(
     ncol=4
 )
 
-# AT figure 5a
+#%% AT figure 5a
 fig = plt.figure(figsize=(6,5), dpi=200)
 ax = fig.gca()
 
 for exp_idx in range(0, len(experiment_names)):
-#for exp_idx in range(0, 3):
+#for exp_idx in range(0, 1):
     data = xr.open_dataset(output_path + experiment_names[exp_idx])
-    Pg_del_AT = data['delAT'].isel(depth=0) * model_vols_broadcast.isel(depth=0) * rho * 1e-6 * 1e-15 #  µmol kg-1 AT to Pmol C
-    ax.plot(t, Pg_del_AT.sum(dim=['lon', 'lat'], skipna=True), label=region_names[exp_idx])
+    model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆DIC from per kg to total
+    Pg_del_AT = data['delAT'].isel(depth=0) * model_vols_xr.isel(depth=0) * rho * 1e-6 * 1e-15 #  µmol kg-1 AT to Pmol C
+    ax.plot(data.time.values, Pg_del_AT.sum(dim=['lon', 'lat'], skipna=True), label=region_names[exp_idx])
 
 ax.set_xlabel('Time (yr)')
 ax.set_ylabel('Total Surface ∆AT Inventory (Pmol)')
@@ -693,6 +707,6 @@ ax.legend(
     bbox_to_anchor=(0.5, -0.12),
     ncol=4
 )
-'''
+
 
 

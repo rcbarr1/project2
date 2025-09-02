@@ -122,10 +122,10 @@ sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
 #p2.regrid_woa(data_path, 'P', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded WOA18 data
-S_3D = np.load(data_path + 'WOA18/S_AO.npy')   # salinity [unitless]
-T_3D = np.load(data_path + 'WOA18/T_AO.npy')   # temperature [ºC]
-Si_3D = np.load(data_path + 'WOA18/Si_AO.npy') # silicate [µmol kg-1]
-P_3D = np.load(data_path + 'WOA18/P_AO.npy')   # phosphate [µmol kg-1]
+S_3D = np.load(data_path + 'WOA18/S.npy')   # salinity [unitless]
+T_3D = np.load(data_path + 'WOA18/T.npy')   # temperature [ºC]
+Si_3D = np.load(data_path + 'WOA18/Si.npy') # silicate [µmol kg-1]
+P_3D = np.load(data_path + 'WOA18/P.npy')   # phosphate [µmol kg-1]
 
 # flatten data
 S = p2.flatten(S_3D, ocnmask)
@@ -144,9 +144,9 @@ P = p2.flatten(P_3D, ocnmask)
 #p2.regrid_ncep_noaa(data_path, 'sst', model_lat, model_lon, ocnmask)
 
 # upload regridded NCEP/DOE reanalysis II data
-f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec_AO.npy') # annual mean ice fraction from 0 to 1 in each grid cell
-uwnd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/uwnd_AO.npy') # annual mean of forecast of U-wind at 10 m [m/s]
-sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_AO.npy') # annual mean sea surface temperature [ºC]
+f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec.npy') # annual mean ice fraction from 0 to 1 in each grid cell
+uwnd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/wspd.npy') # annual mean of forecast of U-wind at 10 m [m/s]
+sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst.npy') # annual mean sea surface temperature [ºC]
 
 # calculate Schmidt number using Wanninkhof 2014 parameterization
 vec_schmidt = np.vectorize(p2.schmidt)
@@ -172,8 +172,8 @@ k_2D *= (24*365.25/100) # [m/yr] convert units
 #p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded GLODAP data
-DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy') # dissolved inorganic carbon [µmol kg-1]
-AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')   # total alkalinity [µmol kg-1]
+DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC.npy') # dissolved inorganic carbon [µmol kg-1]
+AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA.npy')   # total alkalinity [µmol kg-1]
 
 # flatten data
 DIC = p2.flatten(DIC_3D, ocnmask)
@@ -455,19 +455,39 @@ del_CO2_sw = np.nansum(data['delDIC'].isel(time=10).values * model_vols * rho) *
 
 print('\ntotal change in DIC due to OAE by year 10: ' + str(np.round(del_CO2_sw, 10)) + ' metric tons')
 
-# calculate figure 8 metrics
-# NEED TO CONSTRAIN TO BERING SEA FOR COMPARISON
+# calculate figure 8 metrics: whole model
 DIC_metric_tons = data['delDIC'].copy() * xr.DataArray(model_vols, dims=("depth", "lon", "lat"), coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) * rho * 1e-6 # mol DIC at each grid cell at each time
 DIC_metric_tons = DIC_metric_tons.sum(dim=['depth', 'lon', 'lat'], skipna=True) # cumulative moles of DIC increased
 
 AT_metric_tons = data['delAT'].copy() * xr.DataArray(model_vols, dims=("depth", "lon", "lat"), coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) * rho * 1e-6 # mol AT at each grid cell at each time
 AT_metric_tons = AT_metric_tons.sum(dim=['depth', 'lon', 'lat'], skipna=True) # cumulative moles of DIC increased
+#%%
+fig = plt.figure(figsize=(5,4))
+ax = fig.gca()
 
+ax.plot(AT_metric_tons, label='TA', c='blue')
+ax.plot(DIC_metric_tons, label='DIC', c='red')
+ax.set_xlabel('Year')
+ax.set_ylabel('Accumulation in Entire Model in mol')
 
+#%% calculate figure 8 metrics: approx. bering sea
+DIC_metric_tons = data['delDIC'].copy() * xr.DataArray(model_vols, dims=("depth", "lon", "lat"), coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) * rho * 1e-6 # mol DIC at each grid cell at each time
+DIC_metric_tons = DIC_metric_tons.isel(lon=slice(90, 105), lat=slice(70, 80))
+DIC_metric_tons = DIC_metric_tons.sum(dim=['depth', 'lon', 'lat'], skipna=True) # cumulative moles of DIC increased
 
+AT_metric_tons = data['delAT'].copy() * xr.DataArray(model_vols, dims=("depth", "lon", "lat"), coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) * rho * 1e-6 # mol AT at each grid cell at each time
+AT_metric_tons = AT_metric_tons.isel(lon=slice(90, 105), lat=slice(70, 80))
+AT_metric_tons = AT_metric_tons.sum(dim=['depth', 'lon', 'lat'], skipna=True) # cumulative moles of DIC increased
+#%%
+fig = plt.figure(figsize=(5,4))
+ax = fig.gca()
 
+ax.plot(AT_metric_tons, label='TA', c='blue')
+ax.plot(DIC_metric_tons, label='DIC', c='red')
+ax.set_xlabel('Year')
+ax.set_ylabel('Accumulation in Bering Sea (ish) in mol')
 
-
+plt.legend()
 
 
 

@@ -197,10 +197,10 @@ sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
 #p2.regrid_woa(data_path, 'P', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded WOA18 data
-S_3D = np.load(data_path + 'WOA18/S_AO.npy')   # salinity [unitless]
-T_3D = np.load(data_path + 'WOA18/T_AO.npy')   # temperature [ºC]
-Si_3D = np.load(data_path + 'WOA18/Si_AO.npy') # silicate [µmol kg-1]
-P_3D = np.load(data_path + 'WOA18/P_AO.npy')   # phosphate [µmol kg-1]
+S_3D = np.load(data_path + 'WOA18/S.npy')   # salinity [unitless]
+T_3D = np.load(data_path + 'WOA18/T.npy')   # temperature [ºC]
+Si_3D = np.load(data_path + 'WOA18/Si.npy') # silicate [µmol kg-1]
+P_3D = np.load(data_path + 'WOA18/P.npy')   # phosphate [µmol kg-1]
 
 # flatten data
 S = p2.flatten(S_3D, ocnmask)
@@ -215,13 +215,13 @@ P = p2.flatten(P_3D, ocnmask)
 
 # regrid NCEP/DOE reanalysis II data
 #p2.regrid_ncep_noaa(data_path, 'icec', model_lat, model_lon, ocnmask)
-#p2.regrid_ncep_noaa(data_path, 'uwnd', model_lat, model_lon, ocnmask)
+#p2.regrid_ncep_noaa(data_path, 'wspd', model_lat, model_lon, ocnmask)
 #p2.regrid_ncep_noaa(data_path, 'sst', model_lat, model_lon, ocnmask)
 
 # upload regridded NCEP/DOE reanalysis II data
-f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec_AO.npy') # annual mean ice fraction from 0 to 1 in each grid cell
-uwnd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/uwnd_AO.npy') # annual mean of forecast of U-wind at 10 m [m/s]
-sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_AO.npy') # annual mean sea surface temperature [ºC]
+f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec.npy') # annual mean ice fraction from 0 to 1 in each grid cell
+wspd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/wspd.npy') # annual mean of forecast of U-wind at 10 m [m/s]
+sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst.npy') # annual mean sea surface temperature [ºC]
 
 # calculate Schmidt number using Wanninkhof 2014 parameterization
 vec_schmidt = np.vectorize(p2.schmidt)
@@ -229,14 +229,14 @@ Sc_2D = vec_schmidt('CO2', sst_2D)
 
 # solve for k (gas transfer velocity) for each ocean cell
 a = 0.251 # from Wanninkhof 2014
-k_2D = a * uwnd_2D**2 * (Sc_2D/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
+k_2D = a * wspd_2D**2 * (Sc_2D/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
 
 #p2.plot_surface2d(model_lon, model_lat, k.T, 0, 20, 'magma', 'Gas transfer velocity (k, cm/hr)')
 
 k_2D *= (24*365.25/100) # [m/yr] convert units
 
-#p2.plot_surface2d(model_lon, model_lat, uwnd_3D.T, -15, 15, 'seismic', 'U-wind at 10 m (m/s)')
-#p2.plot_surface2d(model_lon, model_lat, sst_3D.T, -2, 40, 'magma', 'sst (ºC)')
+#p2.plot_surface2d(model_lon, model_lat, wspd_2D.T, -15, 15, 'seismic', 'U-wind at 10 m (m/s)')
+#p2.plot_surface2d(model_lon, model_lat, sst_2D.T, -2, 40, 'magma', 'sst (ºC)')
 
 # set up linearized CO2 system (Nowicki et al., 2024)
 
@@ -247,8 +247,8 @@ k_2D *= (24*365.25/100) # [m/yr] convert units
 #p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded GLODAP data
-DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO.npy') # dissolved inorganic carbon [µmol kg-1]
-AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO.npy')   # total alkalinity [µmol kg-1]
+DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC.npy') # dissolved inorganic carbon [µmol kg-1]
+AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA.npy')   # total alkalinity [µmol kg-1]
 
 # flatten data
 DIC = p2.flatten(DIC_3D, ocnmask)
@@ -314,7 +314,7 @@ p2.plot_surface3d(model_lon, model_lat, k_3D / (24*365.25/100) * K0_3D / rho / 1
 
 fig = plt.figure(figsize=(6,5), dpi=200)
 ax = fig.gca()
-ax.scatter(uwnd_2D.flatten(), k_2D.flatten() / (24*365.25/100))
+ax.scatter(wspd_2D.flatten(), k_2D.flatten() / (24*365.25/100))
 ax.set_xlabel('annual mean of forecast of U-wind at 10 m [m/s]')
 ax.set_ylabel('gas transfer velocity $k_{660}$ [cm/hr]')
 ax.set_xlim([-20, 20])
@@ -355,7 +355,7 @@ t5 = np.arange(500, 1000+dt5, dt5) # use a 100 year time step until the 1000th y
 #t = np.concatenate((t1, t2, t3, t4, t5))
 #t = np.concatenate((t1, t2)) # for shortened sim
 t = np.concatenate((t1, t2, t3))
-
+dt = np.concatenate((dt1 * np.ones(t1.shape), dt2 * np.ones(t2.shape), dt3 * np.ones(t3.shape)))
 #%% run multiple experiments
 experiment_names = ['exp11_2025-8-29-OSP.nc', 'exp11_2025-8-29-PAP.nc',
                     'exp11_2025-8-29-HOT.nc', 'exp11_2025-8-29-BATS.nc',
@@ -381,8 +381,8 @@ experiment_lats_idx = [70, 70, 56, 61, 38, 38, 21, 19]
 # for shortened sim
 #experiment_names = ['exp11_2025-8-29-DAC.nc']
 #experiment_attrs = ['Attempting to repeat Yamamoto et al 2024 figure S5 - 100 years only - removal of CO2 from atmosphere at 1 ppm yr-1 for first 30 days']
-#experiment_lons_idx = [166]
-#experiment_lats_idx = [76]
+#experiment_lons_idx = [107]
+#experiment_lats_idx = [70]
 #%%
 for exp_idx in range(0, len(experiment_names)):
     experiment_name = experiment_names[exp_idx]
@@ -678,7 +678,7 @@ for exp_idx in range(0, len(experiment_names)):
 
 
 #%% open and plot model output
-data = xr.open_dataset(output_path + 'exp11_2025-8-29-DAC.nc')
+data = xr.open_dataset(output_path + 'exp11_2025-8-29-OSP.nc')
 
 #test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
 #for x in test:
@@ -693,7 +693,7 @@ nt = len(t)
 
 for idx in range(0, nt):
     print(idx)
-    p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -0.05, 0.05, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
+    #p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -0.05, 0.05, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
     #p2.plot_surface3d(model_lon, model_lat, data['delDIC'].isel(time=idx).values, 0, -6e-5, 6e-5, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
 
 #for idx in range(0, nt):
@@ -729,3 +729,55 @@ print('alpha at t = 100 yr: ' + str(round(alpha[241], 2)) + ' %')
 #print('alpha at t = 100 yr: ' + str(round(alpha[242], 2)) + ' %')
 
 data.close()
+
+#%% make plot resembling yamamoto figure s5
+
+# calculate alpha for DAC
+data = xr.open_dataset(output_path + 'exp11_2025-8-29-DAC.nc')
+
+t = data.time
+model_lon = data.lon.data
+model_lat = data.lat.data
+model_depth = data.depth.data
+
+nt = len(t)
+
+delC_CDR_DAC = np.arange(1,nt+1) * Ma * -1e-6 * dt # µmol CO2 removed from atmosphere at each t
+delC_CDR_DAC[30::] = delC_CDR_DAC[29] # no change after day 30
+
+alpha_DAC = data.delC_atm / delC_CDR_DAC * 100
+
+# for each station, calculate relative efficiency
+experiment_names = ['exp11_2025-8-29-OSP.nc', 'exp11_2025-8-29-PAP.nc',
+                    'exp11_2025-8-29-HOT.nc', 'exp11_2025-8-29-BATS.nc',
+                    'exp11_2025-8-29-CTP.nc', 'exp11_2025-8-29-ETP.nc',
+                    'exp11_2025-8-29-SOTS.nc', 'exp11_2025-8-29-SOTS-4.nc']
+
+titles = ['Station Papa', 'PAP', 'HOT', 'BATS', 'Central Tropical Pacific', 'Eastern Tropical Pacific', 'SOTS', '4 deg. S of SOTS']
+alphas = []
+
+for experiment_name in experiment_names: 
+    print(experiment_name)
+    data = xr.open_dataset(output_path + experiment_name)
+    # calculate alpha = change in atmospheric CO2 [µmol CO2] per change in CO2 removed from ocean [µmol CO2]
+    alphas.append(data.delC_atm.values[1::] / data.delC_CDR.values[1::] * 100)
+
+# make figure
+fig, axes = plt.subplots(4, 2, figsize=(7, 8))
+axes = axes.flatten() # flatten to iterate easily
+
+# plot relative efficiencies in each location
+for i, ax in enumerate(axes):
+    ax.plot(data.time.values[1::], alphas[i] / alpha_DAC.values[1::] * 100)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+    ax.set_title(titles[i])
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
