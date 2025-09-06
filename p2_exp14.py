@@ -29,6 +29,10 @@ exp14_2025-08-29-a.nc
 - WITH FIXED WIND SPEED & z1 !
 - Running 10 years, 1 year time steps, with addition of 59.41375 µmol kg-1 yr-1
   in surface ocean at model_lat[73], model_lon[97]
+exp14_2025-09-03-a.nc
+- WITH FIXED WIND SPEED & z1 !
+- Running 10 years, 1 year time steps, with addition of 59.41375 µmol kg-1 yr-1
+  in surface ocean at model_lat[73], model_lon[97] ONLY IN FIRST TIME STEP
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [µatm CO2 (µatm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -284,7 +288,8 @@ q = np.zeros((1 + 2*m, nt))
 # for ∆DIC, no change
 
 # for ∆AT, add perturbation for first 10 years
-q[(m+1):(2*m+1), 0:10] = np.tile(del_q_CDR_AT[:, np.newaxis], (1,10))
+#q[(m+1):(2*m+1), 0:10] = np.tile(del_q_CDR_AT[:, np.newaxis], (1,10))
+q[(m+1):(2*m+1), 0] = del_q_CDR_AT
 
 # dimensions
 # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
@@ -410,11 +415,11 @@ for idx in range(0, len(t)):
     c_AT_3D[idx, :, :, :] = c_AT_reshaped
 
 # save model output in netCDF format
-global_attrs = {'description': 'Attempting to replicate Wang et al., 2022 - running 10 years, 1 year time steps, with addition of 59.41375 umol kg-1 yr-1 in surface ocean at model_lat[73], model_lon[97] - with fixed wind speed and z1'}
+global_attrs = {'description': 'Different version of Wang et al., 2022 where only first year sees perturbation- running 10 years, 1 year time steps, with addition of 59.41375 umol kg-1 yr-1 in surface ocean at model_lat[73], model_lon[97] - with fixed wind speed and z1'}
 
 # save model output
 p2.save_model_output(
-    'exp14_2025-08-29-a.nc', 
+    'exp14_2025-09-03-a.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -444,6 +449,7 @@ nt = len(t)
 for idx in range(0, nt):
     print(idx)
     p2.plot_surface3d(model_lon, model_lat, data['delAT'].isel(time=idx).values, 0, -8e-2, 8e-2, 'RdBu', 'Surface ∆DIC (µmol kg-1) at t=' + str(np.round(t[idx].values,3)) + ' yr')
+
 '''   
 for idx in range(0, nt):
     p2.plot_longitude3d(model_lat, model_depth, data['delDIC'].isel(time=idx).values, 97, 0, 5e-5, 'plasma', ' ∆DIC (µmol kg-1) at t=' +str(t[idx]) + ' along 165ºW longitude')
@@ -488,6 +494,48 @@ ax.set_xlabel('Year')
 ax.set_ylabel('Accumulation in Bering Sea (ish) in mol')
 
 plt.legend()
+
+#%% looking total carbon content over time (mass balance)
+# actually, this doesn't work for this scenario. we need to see if C in the ocean + atmosphere stays constant after mCDR perturbations stop
+
+# calculate total C added to system
+# for this study, no C is added (only NaOH)
+C_tot = np.zeros(nt)
+for idx in range(nt):
+    C_tot[idx] = np.nansum(p2.make_3D(q[1:(m+1), idx], ocnmask) * model_vols * rho * 1e-6) #  µmol kg-1 DIC to mol TA to mol C added
+C_tot = np.cumsum(C_tot)
+
+# open output array
+data = xr.open_dataset(output_path + 'exp14_2025-09-03-a.nc')
+
+# calculate change in carbon stored in ocean 
+model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆DIC from per kg to total
+C_ocean = data['delDIC'] * model_vols_xr * rho * 1e-6 #  µmol kg-1 DIC to mol C
+C_ocean = np.squeeze(np.apply_over_axes(np.nansum, C_ocean, [1, 2, 3])) # sum over depth, lon, lat
+
+# calculate change in carbon stored in air
+C_air = data['delxCO2'].values * 1e-6 * (Ma * 1e-6) # ppm xCO2 (µmol CO2 per mol air) to mol C
+
+print('carbon added by CDR perturbation at each time step (mol C):')
+print(C_tot)
+print('\nchange in carbon stored in ocean at each time step (mol C):')
+print(C_ocean)
+print('\nchange in carbon stored in air at each time step (mol C):')
+print(C_air)
+print('\nsum of change in carbon stored in ocean and air at each time step (mol C):')
+print(C_ocean + C_air)
+
+fig = plt.figure(figsize=(5,4), dpi=200)
+ax = fig.gca()
+
+ax.plot(t, C_ocean, label='C$_{ocean}$')
+ax.plot(t, C_air, label='C$_{air}$')
+ax.plot(t, C_ocean + C_air, label='C$_{ocean}$ + C$_{air}$')
+ax.plot(t, C_tot, label='C$_{CDR}$', c='black', linestyle=':')
+ax.legend()
+ax.set_xlabel('Time (yr)')
+ax.set_ylabel('Change in Carbon in CDR Scenario (mol C)')
+
 
 
 

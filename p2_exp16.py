@@ -103,14 +103,23 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
-# grid cell z-dimension for converting from surface area to volume
-grid_z = model_vols / model_data['area'].to_numpy()
-rho = 1025 # seawater density for volume to mass [kg m-3]
+# seawater density for volume to mass [kg m-3]
+rho = 1025 
+
+# depth of first model layer (need bottom of grid cell, not middle) [m]
+z1 = model_data['wz'].to_numpy()[1, 0, 0]
 
 # to help with conversions
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
 
+#%% set up time stepping
+
+dt = 1 # 1 year
+t = np.arange(0, 101, dt) # 100 years after year 0 (for now)
+nt = len(t)
+
 #%% pulling emissions concentration scenarios
+# accessed from https://greenhousegases.science.unimelb.edu.au/#!/ghg?mode=downloads
 historical = xr.open_dataset(data_path + 'carbon-dioxide/historical/CMIP6GHGConcentrationHistorical_1_2_0/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_CMIP_UoM-CMIP-1-2-0_gr1-GMNHSH_0000-2014.nc', decode_times=False)
 ssp126 = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-IMAGE-ssp126-1-2-1_gr1-GMNHSH_2015-2500.nc') # 2ºC pathway
 ssp245 = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-MESSAGE-GLOBIOM-ssp245-1-2-1_gr1-GMNHSH_2015-2500.nc') # "middle of the road" scenario
@@ -122,20 +131,22 @@ ssp534_OS = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentra
 ssp585 = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-REMIND-MAGPIE-ssp585-1-2-1_gr1-GMNHSH_2015-2500.nc') # high emissions scenario 
 
 # pull out historical times in decimal years
-historical_time = np.asarray(historical['time'].values, dtype=float)
+#historical_time = np.asarray(historical['time'].values, dtype=float)
+#was weird uplaoding from .nc file, so doing this manually (checked .csv files for correct times)
+historical_time = np.arange(0, 2015)
 
 # pull out future time in decimal years
 ssp_time = []
-for t in ssp126.time.values:
+for timestamp in ssp126.time.values:
     # start and end of the year in NoLeap calendar
-    year_start = cftime.DatetimeNoLeap(t.year, 1, 1)
-    year_end   = cftime.DatetimeNoLeap(t.year + 1, 1, 1)
+    year_start = cftime.DatetimeNoLeap(timestamp.year, 1, 1)
+    year_end   = cftime.DatetimeNoLeap(timestamp.year + 1, 1, 1)
     
     # 365 days in NoLeap
     year_length = (year_end - year_start).days
-    fraction = (t - year_start).days / year_length
+    fraction = (timestamp - year_start).days / year_length
     
-    ssp_time.append(t.year + fraction)
+    ssp_time.append(timestamp.year + fraction)
 
 ssp_time = np.array(ssp_time)
 
@@ -150,20 +161,14 @@ ssp460 = ssp460.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol
 ssp534_OS = ssp534_OS.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
 ssp585 = ssp585.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
 
-#%% get preindustrial pH from Jiang et al. (2019)
-# data is https://www.ncei.noaa.gov/access/metadata/landing-page/bin/iso?id=gov.noaa.nodc:0206289
+#%% get masks for each large marine ecosystem (LME)
 
-# get average pH in 1770
-data = xr.open_dataset(data_path + 'pH_1770/Surface_pH_1770_2000.nc')
+lme_id_grid, lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
+p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
 
-# regrid to match OCIM grid
-#p2.regrid_pH(data_path, data, model_lat, model_lon, ocnmask)
-
-# or, open regridded data
-pH_1770 = np.load(data_path + 'pH_1770/pH_1770_AO.npy')   # pH [unitless]
-
-# plot regridded data
-p2.plot_surface2d(model_lon, model_lat, pH_1770.T, 8, 8.25, 'viridis_r', 'Surface pH in Year 1770')
+# to plot single mask
+#lme_mask = {64: lme_masks[64]}
+#plot_lmes(lme_mask, ocnmask, model_lat, model_lon)
 
 #%% getting initial ∆DIC conditions from TRACEv1
 # note, doing set up with Fortran ordering for consistency
@@ -176,43 +181,396 @@ lon, lat, depth = np.meshgrid(model_lon, model_lat, model_depth, indexing='ij')
 output_coordinates = np.array([lon.ravel(order='F'), lat.ravel(order='F'), depth.ravel(order='F'), ]).T
 
 # create required input of dates
-# first simulation year will be 2015 (I think), so do then (also should do 2025 option)
+# first simulation year will be 2015 (I think), so do then 
 dates_2015 = 2015 * np.ones([output_coordinates.shape[0],1])
-dates_2025 = 2025 * np.ones([output_coordinates.shape[0],1])
+#dates_2025 = 2025 * np.ones([output_coordinates.shape[0],1])
 
-# get temperature and salinity predictor measurements from OCIM data
-ptemperature0 = model_data['ptemp'].values.flatten(order='F')
-salinity0 = model_data['salt'].values.flatten(order='F')
+# get temperature and salinity predictor measurements from GLODAP data
+#p2.regrid_glodap(data_path, 'temperature', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_glodap(data_path, 'salinity', model_depth, model_lat, model_lon, ocnmask)
 
-# convert temperature from potential temperature to standard temperature
-pressure0 = gsw.p_from_z(output_coordinates[:,2]*-1, output_coordinates[:,1]) # convert depth [m, positive up] to pressure [dbar] using latitude [-90º to +90º]
-asalinity0 = gsw.SA_from_SP(salinity0, pressure0, output_coordinates[:,0], output_coordinates[:,1])  # convert practical salinity [unitless] to absolute salinity [g/kg] with pressure [dbar], latitude [-90º to +90º], and longitude [-360º to 360º]
-ctemperature0 = gsw.CT_from_pt(asalinity0, ptemperature0) # convert potential temperature [ºC] to conservative temperature [ºC] using absolute salinity [g/kg]
-temperature0 = gsw.t_from_CT(asalinity0, ctemperature0, pressure0) # convert conservative temperature [ºC[ to in-situ temperature [ºC] using absolute salinity [g/kg] and pressure [dbar] (GSW python toolbox does not have direct conversion)
+# or, upload regridded glodap data
+T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy')
+S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy')
 
-predictor_measurements = np.vstack([salinity0, temperature0]).T
+# transpose to match requirements for TRACEv1
+T_3D = T_3D.transpose([1, 2, 0])
+S_3D = S_3D.transpose([1, 2, 0])
+predictor_measurements = np.vstack([S_3D.flatten(order='F'), T_3D.flatten(order='F')]).T
 
 # combine all into .csv file to export for use with TRACEv1 in MATLAB (on the edge of my seat for pyTRACE clearly)
 #trace_data = np.hstack([output_coordinates, dates_2015, predictor_measurements])
 #np.savetxt(data_path + 'TRACEv1/trace_inputs_2015.txt', trace_data, delimiter = ',')
 
-#trace_data = np.hstack([output_coordinates, dates_2025, predictor_measurements])
-#np.savetxt(data_path + 'TRACEv1/trace_inputs_2025.txt', trace_data, delimiter = ',')
+# transpose temperature and salinity back
+T_3D = T_3D.transpose([2, 0, 1])
+S_3D = S_3D.transpose([2, 0, 1])
 
 # load in TRACE data
 Canth_2015 = p2.loadmat(data_path + 'TRACEv1/trace_outputs_2015.mat')
 Canth_2015 = Canth_2015['trace_outputs_2015']
+Canth_2015 = Canth_2015.reshape(len(model_lon), len(model_lat), len(model_depth), order='F')
+Canth_2015 = Canth_2015.transpose([2, 0, 1])
 
-#Canth_2025 = p2.loadmat(data_path + 'TRACEv1/trace_outputs_2025.mat')
-#Canth_2025 = Canth_2025['trace_outputs_2025']
+#p2.plot_surface3d(model_lon, model_lat, Canth_2015, 0, -1, 82, 'viridis', 'anthropogenic carbon')
 
-#%% get masks for each large marine ecosystem (LME)
+#%% calculate preindustrial pH from GLODAP DIC minus Canth to get preindustrial DIC and GLODAP TA, assuming steady state
 
-lme_id_grid, lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
-p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
+# regrid GLODAP data
+#p2.regrid_glodap(data_path, 'TCO2', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_glodap(data_path, 'pHtsinsitutp', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_glodap(data_path, 'temperature', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_glodap(data_path, 'salinity', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_glodap(data_path, 'silicate', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_glodap(data_path, 'PO4', model_depth, model_lat, model_lon, ocnmask)
 
-# to plot single mask
-#lme_mask = {64: lme_masks[64]}
-#plot_lmes(lme_mask, ocnmask, model_lat, model_lon)
+# upload regridded GLODAP data
+DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC.npy') # dissolved inorganic carbon [µmol kg-1]
+AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA.npy')   # total alkalinity [µmol kg-1]
+pH_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/pHtsinsitutp.npy') # pH on total scale at in situ temperature and pressure 
+T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy') # temperature [ºC]
+S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy') # salinity [unitless]
+Si_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/silicate.npy') # silicate [µmol kg-1]
+P_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/PO4.npy') # phosphate [µmol kg-1]
+
+DIC = p2.flatten(DIC_3D, ocnmask)
+AT = p2.flatten(AT_3D, ocnmask)
+pH = p2.flatten(pH_3D, ocnmask)
+T = p2.flatten(T_3D, ocnmask)
+S = p2.flatten(S_3D, ocnmask)
+Si = p2.flatten(Si_3D, ocnmask)
+P = p2.flatten(P_3D, ocnmask)
+
+# calculate preindustrial pH by subtracting anthropogenic carbon
+DIC_preind_3D = DIC_3D - Canth_2015
+DIC_preind = p2.flatten(DIC_preind_3D, ocnmask)
+
+# create "pressure" array by broadcasting depth array
+pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
+pressure = pressure_3D[ocnmask == 1].flatten(order='F')
+
+# calculate preindustrial pH from DIC in 2015 minus Canth in 2015 AND TA in 2015 (assuming steady state)
+
+# is it okay to use modern-day temperatures for this?? probably not, but not
+# sure if there's a TRACE for this and trying to stick with data-based, not
+# model-based
+# pyCO2SYS v2
+co2sys = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
+                   pressure=pressure, total_silicate=Si, total_phosphate=P)
+
+pH_preind = co2sys['pH']
+pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
+#p2.plot_surface3d(model_lon, model_lat, pH_preind_3D, 0, 7.9, 8.4, 'viridis_r', 'Surface pH in Year ~1790 (TRACE)')
+
+delpH = pH - pH_preind
+
+# calculate preindustrial AT using preindustrial DIC & previously calculated preindustrial pH
+# this feels very circular?
+co2sys = pyco2.sys(dic=DIC_preind, pH=pH_preind, salinity=S, temperature=T,
+                   pressure=pressure, total_silicate=Si, total_phosphate=P)
+AT_preind = co2sys['alkalinity']
+AT_preind_3D = p2.make_3D(AT_preind, ocnmask)
+
+# calculate initial AT condition (AT at t = 0 with present-day pH)
+co2sys = pyco2.sys(dic=DIC, pH=pH, salinity=S, temperature=T,
+                   pressure=pressure, total_silicate=Si, total_phosphate=P)
+AT0 = co2sys['alkalinity']
+AT0_3D = p2.make_3D(AT0, ocnmask)
+
+#%% set up air-sea gas exchange (Wanninkhof, 2014)
+
+# regrid NCEP/DOE reanalysis II data
+#p2.regrid_ncep_noaa(data_path, 'icec', model_lat, model_lon, ocnmask)
+#p2.regrid_ncep_noaa(data_path, 'uwnd', model_lat, model_lon, ocnmask)
+#p2.regrid_ncep_noaa(data_path, 'sst', model_lat, model_lon, ocnmask)
+
+# upload regridded NCEP/DOE reanalysis II data
+f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec.npy') # annual mean ice fraction from 0 to 1 in each grid cell
+uwnd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/wspd.npy') # annual mean of forecast of wind speed at 10 m [m/s]
+sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst.npy') # annual mean sea surface temperature [ºC]
+
+# calculate Schmidt number using Wanninkhof 2014 parameterization
+vec_schmidt = np.vectorize(p2.schmidt)
+Sc_2D = vec_schmidt('CO2', sst_2D)
+
+# solve for k (gas transfer velocity) for each ocean cell
+a = 0.251 # from Wanninkhof 2014
+k_2D = a * uwnd_2D**2 * (Sc_2D/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
+
+#p2.plot_surface2d(model_lon, model_lat, k.T, 0, 20, 'magma', 'Gas transfer velocity (k, cm/hr)')
+
+k_2D *= (24*365.25/100) # [m/yr] convert units
+
+#p2.plot_surface2d(model_lon, model_lat, uwnd_3D.T, -15, 15, 'seismic', 'U-wind at 10 m (m/s)')
+#p2.plot_surface2d(model_lon, model_lat, sst_3D.T, -2, 40, 'magma', 'sst (ºC)')
+
+# set up linearized CO2 system (Nowicki et al., 2024)
+
+# upload (or regrid) glodap data for use as initial conditions for marine carbonate system 
+
+# regrid GLODAP data
+#p2.regrid_glodap(data_path, 'TCO2', model_depth, model_lat, model_lon, ocnmask)
+#p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
+
+# use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
+# do this for only ocean grid cells
+# this is PyCO2SYSv2
+co2sys = pyco2.sys(dic=DIC, alkalinity=AT, salinity=S, temperature=T,
+                   pressure=pressure, total_silicate=Si, total_phosphate=P)
+
+# extract key results arrays
+pCO2 = co2sys['pCO2'] # pCO2 [µatm]
+aqueous_CO2 = co2sys['CO2'] # aqueous CO2 [µmol kg-1]
+R_C = co2sys['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
+
+# calculate revelle factor w.r.t. AT [unitless]
+# must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
+co2sys_000001 = pyco2.sys(dic=DIC, alkalinity=AT+0.000001, salinity=S,
+                       temperature=T, pressure=pressure, total_silicate=Si,
+                       total_phosphate=P)
+
+pCO2_000001 = co2sys_000001['pCO2']
+R_A = ((pCO2_000001 - pCO2)/pCO2) / (0.000001/AT)
+
+# calculate Nowicki et al. parameters
+Ma = 1.8e26 # number of micromoles of air in atmosphere [µmol air]
+beta_C = DIC/aqueous_CO2 # [unitless]
+beta_A = AT/aqueous_CO2 # [unitless]
+K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
+Patm = 1e6 # atmospheric pressure [µatm]
+V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
+
+# add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
+k_3D = np.full(ocnmask.shape, np.nan)
+k_3D[0, :, :] = k_2D
+k = p2.flatten(k_3D, ocnmask)
+
+f_ice_3D = np.full(ocnmask.shape, np.nan)
+f_ice_3D[0, :, :] = f_ice_2D
+f_ice = p2.flatten(f_ice_3D, ocnmask)
+
+gammax = k * V * (1 - f_ice) / Ma / z1
+gammaC = -1 * k * (1 - f_ice) / z1
+
+#%% construct matricies A and c
+# matrix form:
+#  dc/dt = A * c + q
+#  c = variable(s) of interest
+#  A = transport matrix (TR) plus any processes with dependence on c 
+#    = source/sink vector (processes not dependent on c)
+    
+# UNITS NOTE: all xCO2 units are mol CO2 (mol air)-1 all AT units are µmol AT kg-1, all DIC units are µmol DIC kg-1
+# see comment at top for more info
+
+# m = # ocean grid cells
+# nt = # time steps
+
+m = TR.shape[0]
+
+# c = [ ∆xCO2 ] --> 1 * nt
+#     [ ∆DIC  ] --> m * nt
+#     [ ∆AT   ] --> m * nt
+
+c = np.zeros((1 + 2*m, nt))
+
+# dimensions
+# A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
+#     [m x 1][m x m][m x m]
+#     [m x 1][m x m][m x m]
+
+# what acts on what
+# A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
+#     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
+#     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
+
+# math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
+# A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
+#     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
+#     [0                        ][0                              ][TR                           ]
+
+# notation for setup
+# A = [A00][A01][A02]
+#     [A10][A11][A12]
+#     [A20][A21][A22]
+
+# to solve for ∆xCO2
+A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
+A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
+A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
+
+# combine into A0 row
+A0_ = np.full(1 + 2*m, np.nan)
+A0_[0] = A00
+A0_[1:(m+1)] = A01
+A0_[(m+1):(2*m+1)] = A02
+
+del A00, A01, A02
+
+# to solve for ∆DIC
+A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) # is csc the most efficient format? come back to this
+A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
+A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
+
+A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
+
+del A10, A11, A12
+
+# to solve for ∆AT
+A20 = np.zeros(m)
+A21 = 0 * TR
+A22 = TR
+
+A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
+
+del A20, A21, A22
+
+# build into one mega-array!!
+A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
+
+del A0_, A1_, A2_
+    
+# perform time stepping using Euler backward
+LHS = sparse.eye(A.shape[0], format="csc") - dt * A
+
+# test condition number of matrix
+est = sparse.linalg.onenormest(LHS)
+print("\nEstimated 1-norm condition number LHS: ", est)
+
+start = time()
+ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
+stop = time()
+print('ilu calculations: ' + str(stop - start) + ' s')
+
+M = LinearOperator(LHS.shape, ilu.solve)
+
+# construct initial q vector (it is going to change every iteration)
+# q = [ 0                                                                           ] --> 1 * nt, q[0]
+#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * nt, q[1:(m+1)]
+#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * nt, q[(m+1):(2*m+1)]
+
+# which translates to...
+# q = [ 0                                      ] --> 1 * nt, q[0]
+#     [ ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC ] --> m * nt, q[1:(m+1)]
+#     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * nt, q[(m+1):(2*m+1)]
+
+q = np.full((1 + 2*m, nt), np.nan)
+q[0,:] = 0 # no perturbation in xCO2 (for now, will likely add emissions scenario)
+q[1:(m+1),:] = 0 # no perturbation in DIC (for now, could do other types of additions besides NaOH)
+
+#%% time stepping simulation forward
+
+for idx in tqdm(range(1,nt)):
+
+    # add CDR perturbation (construct q vector, it is going to change every iteration in this experiment)
+    # for now, assuming NaOH (no change in DIC)
+    # for first time step, use delAT0 calculated above
+    if idx == 0:
+        c_delAT = np.zeros(AT0.shape) # no change in AT yet because simulation has not run yet
+        c_delDIC = np.zeros(AT0.shape) # no change in AT yet because simulation has not run yet
+
+    # calculate AT required to return to preindustrial pH
+    delAT = AT_preind - (AT0 + c_delAT) # preindustrial AT - (initial AT + modeled change in AT)
+    delAT[delAT < 0] = 0 # set all delAT < 0 equal to 0 (no taking out AT, only adding)
+    delAT_3D = p2.make_3D(delAT, ocnmask)
+        
+    # set CDR perturbation equal to this AT (surface only)
+    # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
+    del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
+    del_q_CDR_AT_3D[ocnmask == 1] = 0 # no change in DIC (for now)
+    del_q_CDR_AT_3D[0, :, :] = delAT_3D[0, :, :] # calculated from CO2SYS above, only apply in surface
+    del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
+    
+    # add in source/sink vectors for ∆AT to q vector
+    q[(m+1):(2*m+1),idx-1] = del_q_CDR_AT
+    
+    # add starting guess after first time step
+    if idx > 1:
+        c0 = c[:,idx-1]
+    else:
+        c0=None
+    
+    RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx-1])
+    #start = time()
+    c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
+    #stop = time()
+    #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+   
+    if info != 0:
+        if info > 0:
+            print(f'did not converge in {info} iterations.')
+        else:
+            print('illegal input or breakdown')
+
+    # rebuild 3D concentrations from 1D array used for solving matrix equation
+    
+    # partition "x" into xCO2, DIC, and AT
+    c_delxCO2 = c[0, :]
+    c_delDIC  = c[1:(m+1), :]
+    c_delAT   = c[(m+1):(2*m+1), :]
+    
+    # convert delxCO2 units from unitless [µatm CO2 / µatm air] or [µmol CO2 / µmol air] to ppm
+    c_delxCO2 *= 1e6
+    
+    # reconstruct 3D arrays for DIC and AT
+    c_delDIC_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+    c_delAT_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+    
+    # for each time step, reshape 1D array into 3D array, then save to larger 4D array output (time, depth, longitude, latitude)
+    for idx in range(0, len(t)):
+        c_delDIC_reshaped = np.full(ocnmask.shape, np.nan)
+        c_delAT_reshaped = np.full(ocnmask.shape, np.nan)
+    
+        c_delDIC_reshaped[ocnmask == 1] = np.reshape(c_delDIC[:, idx], (-1,), order='F')
+        c_delAT_reshaped[ocnmask == 1] = np.reshape(c_delAT[:, idx], (-1,), order='F')
+        
+        c_delDIC_3D[idx, :, :, :] = c_delDIC_reshaped
+        c_delAT_3D[idx, :, :, :] = c_delAT_reshaped
+    
+    # save model output in netCDF format
+    global_attrs = {'description': 'attempt at calculating max alkalinity to be added at each time step - global application - calculated with pyCO2sys - recalculating and applying new AT at each time step'}
+    # save model output
+    p2.save_model_output(
+        'exp16_2025-09-05-a.nc', 
+        t, 
+        model_depth, 
+        model_lon,
+        model_lat, 
+        tracers=[c_delxCO2, c_delDIC_3D, c_delAT_3D], 
+        tracer_dims=[('time',), ('time', 'depth', 'lon', 'lat'), ('time', 'depth', 'lon', 'lat')],
+        tracer_names=['delxCO2', 'delDIC', 'delAT'], 
+        tracer_units=['ppm', 'umol kg-3', 'umol kg-3'],
+        global_attrs=global_attrs
+    )
+
+#%% calculate change in surface pH at each time step
+
+data = xr.open_dataset(output_path + 'exp16_2025-09-04-a.nc')
+
+DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
+AT_broadcasted = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
+
+DIC_modeled_3D = data.delDIC + DIC_broadcasted
+AT_modeled_3D = data.delAT + AT_broadcasted
+
+pH_modeled = []
+for idx in range(nt):
+    DIC_modeled = p2.flatten(DIC_modeled_3D.isel(time=idx).values, ocnmask)
+    AT_modeled = p2.flatten(AT_modeled_3D.isel(time=idx).values, ocnmask)
+    
+    co2sys = pyco2.sys(dic=DIC_modeled, alkalinity=AT_modeled, salinity=S, temperature=T,
+                       pressure=pressure, total_silicate=Si, total_phosphate=P)
+    
+    pH_modeled.append(co2sys['pH'])
+    
+    print(np.nanmean(co2sys['pH']))
+    pH_modeled_3D = p2.make_3D(co2sys['pH'], ocnmask)
+    
+    p2.plot_surface3d(data.lon, data.lat, pH_modeled_3D, 0, 7, 9, 'viridis', 'pH')
+
+
+
+
+
 
 
