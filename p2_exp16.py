@@ -107,6 +107,9 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
+# number of surface ocean grid cells
+ns = np.sum(ocnmask[0, :, :]==1)
+
 # seawater density for volume to mass [kg m-3]
 rho = 1025 
 
@@ -119,7 +122,8 @@ sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
 #%% set up time stepping
 
 dt = 1 # 1 year
-t = np.arange(0, 101, dt) # 100 years after year 0 (for now)
+t = np.arange(0, 1001, dt) # 1000 years after year 0 (for now)
+t = np.arange(0, 5, dt) # 100 years after year 0 (for now)
 nt = len(t)
 
 #%% pulling emissions concentration scenarios
@@ -264,24 +268,21 @@ co2sys = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
                    pressure=pressure, total_silicate=Si, total_phosphate=P)
 
 pH_preind = co2sys['pH']
+avg_pH_preind = np.nanmean(pH_preind)
+
 pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
-avg_preind_pH = np.nanmean(pH_preind)
 #p2.plot_surface3d(model_lon, model_lat, pH_preind_3D, 0, 7.9, 8.4, 'viridis_r', 'Surface pH in Year ~1790 (TRACE)')
 
-delpH = pH - pH_preind
+# calculate AT needed to offset pH drop using present-day DIC & previously calculated preindustrial pH
+#co2sys = pyco2.sys(dic=DIC, pH=pH_preind, salinity=S, temperature=T,
+#                   pressure=pressure, total_silicate=Si, total_phosphate=P)
+#AT_to_offset = co2sys['alkalinity']
+#AT_to_offset_3D = p2.make_3D(AT_to_offset, ocnmask)
 
-# calculate preindustrial AT using preindustrial DIC & previously calculated preindustrial pH
-# this feels very circular?
-co2sys = pyco2.sys(dic=DIC_preind, pH=pH_preind, salinity=S, temperature=T,
-                   pressure=pressure, total_silicate=Si, total_phosphate=P)
-AT_preind = co2sys['alkalinity']
-AT_preind_3D = p2.make_3D(AT_preind, ocnmask)
+#p2.plot_surface2d(model_lon, model_lat, AT_to_offset_3D[0, :, :].T, 2000, 2500, 'viridis_r', 'AT needed to offset pH calculated from TRACE only')
+#p2.plot_surface2d(model_lon, model_lat, AT_3D[0, :, :].T, 2000, 2500, 'viridis_r', '2015 AT from GLODAP')
 
-# calculate initial AT condition (AT at t = 0 with present-day pH)
-co2sys = pyco2.sys(dic=DIC, pH=pH, salinity=S, temperature=T,
-                   pressure=pressure, total_silicate=Si, total_phosphate=P)
-AT0 = co2sys['alkalinity']
-AT0_3D = p2.make_3D(AT0, ocnmask)
+#p2.plot_surface2d(model_lon, model_lat, AT_to_offset_3D[0, :, :].T - AT_3D[0, :, :].T, -100, 100, 'RdBu', 'Change in AT needed to offset pH decline (with TRACE only)')
 
 #%% set up air-sea gas exchange (Wanninkhof, 2014)
 
@@ -371,6 +372,47 @@ q[1:(m+1),:] = 0 # no perturbation in DIC (for now, could do other types of addi
 
 for idx in tqdm(range(0,nt)):
     
+    # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
+    if idx >= 1:
+        # add CDR perturbation (construct q vector, it is going to change every iteration in this experiment)
+        # for now, assuming NaOH (no change in DIC)
+        
+        # calculate AT required to return to preindustrial pH
+        # using current DIC (initial DIC + modeled change in DIC) and preindustrial pH
+        co2sys = pyco2.sys(dic=DIC + c[1:(m+1), idx-1], pH=pH_preind, salinity=S, temperature=T,
+                           pressure=pressure, total_silicate=Si, total_phosphate=P)
+        AT_to_offset = co2sys['alkalinity']
+        
+        delAT = AT_to_offset - (AT + c[(m+1):(2*m+1), idx-1]) # preindustrial AT - (initial AT + modeled change in AT)
+        delAT[delAT < 0] = 0 # set all delAT < 0 equal to 0 (no taking out AT, only adding)
+    
+        # set CDR perturbation equal to this AT (surface only)
+        # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
+        del_q_CDR_AT = np.zeros(m)
+        del_q_CDR_AT[0:ns] = delAT[0:ns] # calculated from CO2SYS above, only apply in surface
+        
+        # add in source/sink vectors for ∆AT to q vector
+        q[(m+1):(2*m+1),idx-1] = del_q_CDR_AT
+        
+        # add starting guess after first time step
+        if idx > 1:
+            c0 = c[:,idx-1]
+        else:
+            c0=None
+    
+        # calculate right hand side and perform time stepping
+        RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx-1])
+        #start = time()
+        c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
+        #stop = time()
+        #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+       
+        if info != 0:
+            if info > 0:
+                print(f'did not converge in {info} iterations.')
+            else:
+                print('illegal input or breakdown')
+                
     # recalculate carbonate system every 25 years
     if idx%25 == 0:
         #AT and DIC are equal to initial AT and DIC + whatever the change in AT and DIC are
@@ -399,11 +441,11 @@ for idx in tqdm(range(0,nt)):
         
         # see if average pH has exceeded preindustrial average pH
         avg_pH = np.nanmean(co2sys['pH'])
-        if avg_pH > avg_preind_pH:
+        if avg_pH > avg_pH_preind:
             print('\n\naverage pH exceeded average preindustrial pH at time step ' + str(idx))
             break
         else:
-            print('\n\naverage pH at time step ' + str(idx) + ' = ' + str(round(avg_pH,4)))
+            print('\n\naverage pH at time step ' + str(idx) + ' = ' + str(round(avg_pH,8)))
     
         # calculate rest of Nowicki et al. parameters
         beta_C = DIC/aqueous_CO2 # [unitless]
@@ -483,45 +525,6 @@ for idx in tqdm(range(0,nt)):
         print('ilu calculations: ' + str(stop - start) + ' s\n')
     
         M = LinearOperator(LHS.shape, ilu.solve)
-    
-    # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
-    if idx >= 1:
-        # add CDR perturbation (construct q vector, it is going to change every iteration in this experiment)
-        # for now, assuming NaOH (no change in DIC)
-        
-        # calculate AT required to return to preindustrial pH
-        delAT = AT_preind - (AT0 + c[(m+1):(2*m+1), idx-1]) # preindustrial AT - (initial AT + modeled change in AT)
-        delAT[delAT < 0] = 0 # set all delAT < 0 equal to 0 (no taking out AT, only adding)
-        delAT_3D = p2.make_3D(delAT, ocnmask)
-    
-        # set CDR perturbation equal to this AT (surface only)
-        # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
-        del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
-        del_q_CDR_AT_3D[ocnmask == 1] = 0 # no change in DIC (for now)
-        del_q_CDR_AT_3D[0, :, :] = delAT_3D[0, :, :] # calculated from CO2SYS above, only apply in surface
-        del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
-        
-        # add in source/sink vectors for ∆AT to q vector
-        q[(m+1):(2*m+1),idx-1] = del_q_CDR_AT
-        
-        # add starting guess after first time step
-        if idx > 1:
-            c0 = c[:,idx-1]
-        else:
-            c0=None
-    
-        # calculate right hand side and perform time stepping
-        RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx-1])
-        #start = time()
-        c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
-        #stop = time()
-        #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-       
-        if info != 0:
-            if info > 0:
-                print(f'did not converge in {info} iterations.')
-            else:
-                print('illegal input or breakdown')
 
 # rebuild 3D concentrations from 1D array used for solving matrix equation
     
@@ -567,10 +570,10 @@ for idx in range(0, len(t)):
     q_delAT_3D[idx, :, :, :] = q_delAT_reshaped
 
 # save model output in netCDF format
-global_attrs = {'description': 'attempt at calculating max alkalinity to be added at each time step - global application - calculated with pyCO2sys recalculating carbonate system every 2 years - recalculating and applying new AT at each time step'}
+global_attrs = {'description': 'attempt at calculating max alkalinity to be added at each time step - corrected AT application calculation - global application - calculated with pyCO2sys recalculating carbonate system every 25 years - recalculating and applying new AT at each time step'}
 # save model output
 p2.save_model_output(
-    'exp16_2025-09-08-b.nc', 
+    'exp16_2025-09-09-b.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -583,8 +586,10 @@ p2.save_model_output(
 )
 
 #%% open and analyze outputs
-#%% calculate change in surface pH at each time step
-data = xr.open_dataset(output_path + 'exp16_2025-09-05-b.nc')
+# calculate change in surface pH at each time step
+data = xr.open_dataset(output_path + 'exp16_2025-09-09-b.nc')
+t = data['time'].values
+nt = len(t)
 
 DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
 AT_broadcasted = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
@@ -594,24 +599,35 @@ AT_modeled_3D = data.delAT + AT_broadcasted
 
 pH_modeled = []
 avg_pH_modeled = np.zeros(nt)
+avg_pH_modeled_surf = np.zeros(nt)
+
 for idx in range(nt):
     DIC_modeled = p2.flatten(DIC_modeled_3D.isel(time=idx).values, ocnmask)
     AT_modeled = p2.flatten(AT_modeled_3D.isel(time=idx).values, ocnmask)
-    
+        
     co2sys = pyco2.sys(dic=DIC_modeled, alkalinity=AT_modeled, salinity=S, temperature=T,
                        pressure=pressure, total_silicate=Si, total_phosphate=P)
     
     pH_modeled.append(co2sys['pH'])
     avg_pH_modeled[idx] = np.nanmean(co2sys['pH'])
-    
-    #print(np.nanmean(co2sys['pH']))
-    #pH_modeled_3D = p2.make_3D(co2sys['pH'], ocnmask)
-    
-    #p2.plot_surface3d(data.lon, data.lat, pH_modeled_3D, 0, 7, 9, 'viridis', 'pH')
+    avg_pH_modeled_surf[idx] = np.nanmean(co2sys['pH'][0:ns])
 
-#%% make figure of annual alkalinity change each year vs. average surface pH
-avg_delAT = data['delAT'].mean(dim=['depth', 'lon', 'lat'], skipna=True).values
+    #print(np.nanmean(co2sys['pH']))
+    pH_modeled_3D = p2.make_3D(co2sys['pH'], ocnmask)
+    print(np.nanmean(pH_modeled_3D[0,:,:]))
+    p2.plot_surface3d(data.lon, data.lat, pH_preind_3D - pH_modeled_3D, 0, -0.5, 0.5, 'RdBu', 'pH difference from preindustrial at year ' + str(data['time'].isel(time=idx).values))
+
+for idx in range(nt-1):
+    p2.plot_surface3d(data.lon, data.lat, data['AT_added'].isel(time=idx).values, 0, 0, 100, 'viridis', 'AT (µmol kg-1) added at year ' + str(data['time'].isel(time=idx).values))
+
+
+#%% make figure of annual alkalinity change each year vs. average ocean pH
 years = np.arange(start=2015, stop=2015 + nt)
+model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
+
+AT_added = data['AT_added'] * model_vols_xr * rho * 1e-6
+AT_added = AT_added.sum(dim=['depth', 'lon', 'lat'], skipna=True).values
+AT_added = np.cumsum(AT_added)
 
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
@@ -620,21 +636,45 @@ ax.plot(years, avg_pH_modeled, label='pH under max OAE')
 ax.axhline(np.nanmean(pH_preind), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
 
 # set up secondary axis "years"
-year_to_delAT = interp1d(years, avg_delAT, kind='linear', fill_value="extrapolate")
-delAT_to_year = interp1d(avg_delAT, years, kind='linear', fill_value="extrapolate")
-secax = ax.secondary_xaxis('top', functions=(year_to_delAT, delAT_to_year))
-secax.set_xlabel('amount of AT added (µmol kg-1)')
+year_to_AT = interp1d(years, AT_added, kind='linear', fill_value="extrapolate")
+AT_to_year = interp1d(AT_added, years, kind='linear', fill_value="extrapolate")
+secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
+secax.set_xlabel('total amount of AT added (mol)')
 
 
 ax.set_ylabel('average ocean pH')
 ax.set_xlabel('year')
-ax.set_xlim([years[0], years[-1]])
+ax.set_xlim([2015, 2040])
 ax.set_ylim([7.9, 8])
 plt.legend(loc = 'lower right')
 plt.show()
 
+#%% same thing, but for surface ocean
+years = np.arange(start=2015, stop=2015 + nt)
 
-#%% add line showing annual alkalinity ADDED to see if it's the same as delAT output (i.e. does all of AT added become delAT?)
+AT_added = data['AT_added'] * model_vols_xr * rho * 1e-6
+AT_added = AT_added.sum(dim=['depth', 'lon', 'lat'], skipna=True).values
+AT_added = np.cumsum(AT_added)
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.plot(years, avg_pH_modeled_surf, label='pH under max OAE')
+ax.axhline(np.nanmean(pH_preind[0:ns]), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
+
+# set up secondary axis "years"
+year_to_AT = interp1d(years, AT_added, kind='linear', fill_value="extrapolate")
+AT_to_year = interp1d(AT_added, years, kind='linear', fill_value="extrapolate")
+secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
+secax.set_xlabel('total amount of AT added (mol)')
+
+
+ax.set_ylabel('average surface ocean pH')
+ax.set_xlabel('year')
+ax.set_xlim([2015, 2040])
+ax.set_ylim([8, 8.3])
+plt.legend(loc = 'lower right')
+plt.show()
 
 
 
