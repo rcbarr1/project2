@@ -10,7 +10,7 @@ Created on Tue Oct  8 11:15:51 2024
 
 import scipy.io as spio
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator, LinearNDInterpolator
 from scipy.ndimage import convolve
 import matplotlib.pyplot as plt
 import xarray as xr
@@ -27,6 +27,7 @@ import pandas as pd
 from shapely.geometry import Point
 import cartopy.crs as ccrs
 import random
+import PyCO2SYS as pyco2
 
 
 def loadmat(filename):
@@ -171,6 +172,78 @@ def make_3D(e_flat, ocnmask):
     
     return e_3D
 
+def find_MLD(model_lon, model_lat, ocnmask, MLD_da, latm, lonm, type_flag):
+    """
+    Reads in the Holte et al. monthly mixed layer climatology and interpolates
+    it. Currently set up to interpolate the maximum or average monthly mixed
+    layer depth, but it could be rewritten to allow minimum MLD. Interpolates
+    to OCIM grid. Lots of interpolation in sea ice regions, but this doesn't
+    matter a ton because we account for sea ice in air-sea gas exchange
+    calculations.
+    
+    Keyword arguments:
+        model_lon = longitudes of interest
+        model_lat = latitudes of interest
+        MLD_da = mixed layer depth from density algorithm from Holte et al.
+                (should be mld_da_max or mld_da_mean)
+        latm = from Holte et al.
+        lonm = from Holte et al.
+        type_flag = 0 for maximum monthly max MLD, 1 for mean monthly mean MLD
+        
+    Returns:
+        max_MLDs = maximum mixed layer depths at lons & lats
+    """
+    
+    # extracting the maximum values along the first dimension
+    # this is taking the maximum MLD across the monthly climatologies
+    # --> whichever month had the largest MLD
+    if type_flag == 0:
+        MLDs = np.nanmax(MLD_da, axis=0)
+    elif type_flag == 1:
+        MLDs = np.nanmean(MLD_da, axis=0)
+    else:
+        print('ERROR: type_flag should be specified as 0 or 1')
+    
+    # transform lons to 0 to 360
+    lonm[lonm<=0] += 360
+
+    # reorder everything along the lon axis to have in ascending order
+    lonm_1d = lonm[:,0]
+    sort_idx = np.argsort(lonm_1d)
+
+    lonm_1d = lonm_1d[sort_idx]
+    lonm = lonm[sort_idx, :]
+    MLDs = MLDs[sort_idx, :]
+
+    # padding lonm and latm arrays
+    lonm = np.vstack([lonm[-1, :] - 360, lonm, lonm[0, :] + 360])
+    latm = np.vstack([latm[-1, :], latm, latm[0, :]])
+    MLDs = np.vstack([MLDs[-1, :], MLDs, MLDs[0, :]])
+
+    latm = np.hstack([latm[:, 0:1] - 1, latm, latm[:, -1:] + 1])
+    lonm = np.hstack([lonm[:, 0:1], lonm, lonm[:, -1:]])
+    MLDs = np.hstack([MLDs[:, 0:1], MLDs, MLDs[:, -1:]])
+
+    # create interpolator
+    interp = RegularGridInterpolator((lonm[:,0], latm[0,:]), MLDs, bounds_error=False, fill_value=None)
+
+    # create meshgrid for OCIM grid
+    lon, lat = np.meshgrid(model_lon, model_lat, indexing='ij')
+
+    # reshape meshgrid points into a list of coordinates to interpolate to
+    query_points = np.array([lon.ravel(), lat.ravel()]).T
+
+    # perform interpolation (regrid WOA data to match OCIM grid)
+    var = interp(query_points)
+
+    # transform results back to model grid shape
+    var = var.reshape(lon.shape)
+
+    # inpaint nans
+    interp_MLDs = inpaint_nans2d(var, mask=ocnmask[0,:,:].astype(bool))
+
+    return interp_MLDs
+    
 def inpaint_nans3d_OLD(array_3d, mask=None, iterations=100):
     '''
     adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
@@ -775,8 +848,82 @@ def schmidt(gas, temperature):
     Sc = a + (b * temperature) + (c * temperature**2) + (d * temperature**3) + (e * temperature**4)
     
     return Sc
+
+def calculate_AT_to_add(pH_preind, DIC, AT, T, S, pressure, Si, P, low=0, high=200, tol=1e-6, maxiter=50):
+    '''
+    Calculate the amount of alkalinity to add to the surface ocean in order to
+    reach preindustrial pH in the surface. This alkalinity will be between "low" and "high", which right now is 0 and 200 µmol kg-1
+
+    Parameters
+    ----------
+    pH : Array of floats.
+        Preindustrial pH values at each ocean grid cell [unitless]
+    DIC : Array of floats.
+        Present-day dissolved inorganic carbon values at each ocean grid cell
+        [µmol kg-1]
+    AT : Array of floats.
+        Present-day alkalinity values at each ocean grid cell [µmol kg-1]
+    T : Array of floats.
+        Present-day temperature values at each ocean grid cell [ºC]
+    S : Array of floats.
+        Present-day salinity values at each ocean grid cell [unitless]
+    pressure : Array of floats.
+        Present-day pressure values at each ocean grid cell [dbar]
+    Si : Array of floats.
+        Present-day total silicate values at each ocean grid cell [µmol kg-1]
+    P : Array of floats.
+        Present-day total phosphate values at each ocean grid cell [µmol kg-1].
+    low : Float.
+        Initial lower bound for output (AT_to_offset)
+    high : Float.
+        Initial upper bound for output (AT_to_offset)
+    tol : Float.
+        Tolerance for convergence [µmol kg-1]
+    maxiter: Int.
+        Maximum numer of iterations
+
+    Returns
+    -------
+    AT_to_offset: Array of floats.
+        Amount of AT to apply at each present-day ocean grid cell in order to
+        reach preindustrial pH in the surface ocean [µmol kg-1]
+    '''
     
-   
+    # initialize arrays representing low and high guesses
+    low_arr = np.full_like(AT, low, dtype=float)
+    high_arr = np.full_like(AT, high, dtype=float)
+    
+    # iterate through solve
+    for it in range(maxiter):
+        mid_arr = 0.5 * (low_arr + high_arr)
+
+        # compute pH for midpoints (vectorized pyCO2SYS call)
+        co2sys = pyco2.sys(dic=DIC, alkalinity=AT+mid_arr, salinity=S,
+                          temperature=T, pressure=pressure, total_silicate=Si,
+                          total_phosphate=P)
+
+        f_mid = co2sys['pH'] - pH_preind
+
+        # evaluate sign at low bound
+        co2sys_low = pyco2.sys(dic=DIC, alkalinity=AT+low_arr, salinity=S,
+                          temperature=T, pressure=pressure, total_silicate=Si,
+                          total_phosphate=P)
+
+        f_low = co2sys_low['pH'] - pH_preind
+
+        # update brackets
+        same_sign = (f_mid * f_low) > 0
+        low_arr[same_sign] = mid_arr[same_sign]
+        high_arr[~same_sign] = mid_arr[~same_sign]
+
+        # check convergence
+        if np.all((high_arr - low_arr) < tol):
+            break
+    
+    #print('total number of iterations to AT offset: ' + str(it))
+    AT_to_offset = 0.5 * (low_arr + high_arr)
+    return AT_to_offset
+
 def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
     
     # mask out zero values 

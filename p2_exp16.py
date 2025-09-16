@@ -107,14 +107,16 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
-# number of surface ocean grid cells
-ns = np.sum(ocnmask[0, :, :]==1)
+ns = np.sum(ocnmask[0, :, :]==1) # number of surface ocean grid cells
+ns2 = np.sum(ocnmask[0:2, :, :]==1) # number of ocean grid cells in top two layers of ocean
+ns3 = np.sum(ocnmask[0:3, :, :]==1) # number of ocean grid cells in top three layers of ocean
 
 # seawater density for volume to mass [kg m-3]
 rho = 1025 
 
 # depth of first model layer (need bottom of grid cell, not middle) [m]
-z1 = model_data['wz'].to_numpy()[1, 0, 0]
+grid_cell_height = model_data['wz'].to_numpy()
+z1 = grid_cell_height[1, 0, 0]
 
 # to help with conversions
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
@@ -177,6 +179,25 @@ lme_id_grid, lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LM
 # to plot single mask
 #lme_mask = {64: lme_masks[64]}
 #plot_lmes(lme_mask, ocnmask, model_lat, model_lon)
+
+#%% calculate mixed layer depth at each lat/lon following Holte et al. montly
+# climatology, then create mask of ocean cells that are at or below the mixed
+# layer depth
+
+# to use dynamic mixed layer depth
+monthly_clim = p2.loadmat(data_path + 'monthlyclim.mat')
+MLD_da_max = monthly_clim['mld_da_max']
+MLD_da_mean = monthly_clim['mld_da_mean']
+latm = monthly_clim['latm']
+lonm = monthly_clim['lonm']
+
+maxMLDs = p2.find_MLD(model_lon, model_lat, ocnmask, MLD_da_max, latm, lonm, 0)
+
+#p2.plot_surface2d(model_lon, model_lat, maxMLDs.T, 0, 399, 'viridis_r', 'maximum annual mixed layer depth')
+
+# create 3D mask where for each grid cell, mask is set to 1 if the depth in the
+# grid cell depths array is less than the mixed layer depth for that column
+MLDmask = (grid_cell_height < maxMLDs[None, :, :]).astype(int) 
 
 #%% getting initial ∆DIC conditions from TRACEv1
 # note, doing set up with Fortran ordering for consistency
@@ -372,47 +393,6 @@ q[1:(m+1),:] = 0 # no perturbation in DIC (for now, could do other types of addi
 
 for idx in tqdm(range(0,nt)):
     
-    # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
-    if idx >= 1:
-        # add CDR perturbation (construct q vector, it is going to change every iteration in this experiment)
-        # for now, assuming NaOH (no change in DIC)
-        
-        # calculate AT required to return to preindustrial pH
-        # using current DIC (initial DIC + modeled change in DIC) and preindustrial pH
-        co2sys = pyco2.sys(dic=DIC + c[1:(m+1), idx-1], pH=pH_preind, salinity=S, temperature=T,
-                           pressure=pressure, total_silicate=Si, total_phosphate=P)
-        AT_to_offset = co2sys['alkalinity']
-        
-        delAT = AT_to_offset - (AT + c[(m+1):(2*m+1), idx-1]) # preindustrial AT - (initial AT + modeled change in AT)
-        delAT[delAT < 0] = 0 # set all delAT < 0 equal to 0 (no taking out AT, only adding)
-    
-        # set CDR perturbation equal to this AT (surface only)
-        # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
-        del_q_CDR_AT = np.zeros(m)
-        del_q_CDR_AT[0:ns] = delAT[0:ns] # calculated from CO2SYS above, only apply in surface
-        
-        # add in source/sink vectors for ∆AT to q vector
-        q[(m+1):(2*m+1),idx-1] = del_q_CDR_AT
-        
-        # add starting guess after first time step
-        if idx > 1:
-            c0 = c[:,idx-1]
-        else:
-            c0=None
-    
-        # calculate right hand side and perform time stepping
-        RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx-1])
-        #start = time()
-        c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
-        #stop = time()
-        #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-       
-        if info != 0:
-            if info > 0:
-                print(f'did not converge in {info} iterations.')
-            else:
-                print('illegal input or breakdown')
-                
     # recalculate carbonate system every 25 years
     if idx%25 == 0:
         #AT and DIC are equal to initial AT and DIC + whatever the change in AT and DIC are
@@ -525,6 +505,52 @@ for idx in tqdm(range(0,nt)):
         print('ilu calculations: ' + str(stop - start) + ' s\n')
     
         M = LinearOperator(LHS.shape, ilu.solve)
+    
+    # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
+    if idx >= 1:
+        # add CDR perturbation (construct q vector, it is going to change every iteration in this experiment)
+        # for now, assuming NaOH (no change in DIC)
+        
+        # calculate AT required to return to preindustrial pH
+        # using DIC at previous time step (initial DIC + modeled change in DIC) and preindustrial pH
+        DIC_new = DIC + c[1:(m+1), idx-1]
+        AT_new = AT + c[(m+1):(2*m+1), idx-1]
+        AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, low=0, high=200, tol=1e-6, maxiter=50)
+        AT_to_offset_3D = p2.make_3D(AT_to_offset, ocnmask)
+
+        # make sure there are no negative values
+        if len(AT_to_offset[AT_to_offset<0]) != 0:
+            print('error: AT offset is negative')
+            break
+
+        # set CDR perturbation equal to this AT in mixed layer
+        # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
+        #del_q_CDR_AT = np.zeros(m)
+        #del_q_CDR_AT[0:ns3] = AT_to_offset[0:ns3] # calculated from CO2SYS above, only apply in surface
+        
+        del_q_CDR_AT = p2.flatten(AT_to_offset_3D * MLDmask, ocnmask)
+    
+        # add in source/sink vectors for ∆AT to q vector
+        q[(m+1):(2*m+1), idx] = del_q_CDR_AT
+        
+        # add starting guess after first time step
+        if idx > 1:
+            c0 = c[:,idx-1]
+        else:
+            c0=None
+    
+        # calculate right hand side and perform time stepping
+        RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx])
+        #start = time()
+        c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
+        #stop = time()
+        #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+       
+        if info != 0:
+            if info > 0:
+                print(f'did not converge in {info} iterations.')
+            else:
+                print('illegal input or breakdown')
 
 # rebuild 3D concentrations from 1D array used for solving matrix equation
     
@@ -573,7 +599,7 @@ for idx in range(0, len(t)):
 global_attrs = {'description': 'attempt at calculating max alkalinity to be added at each time step - corrected AT application calculation - global application - calculated with pyCO2sys recalculating carbonate system every 25 years - recalculating and applying new AT at each time step'}
 # save model output
 p2.save_model_output(
-    'exp16_2025-09-09-b.nc', 
+    'exp16_2025-09-16-c.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -587,7 +613,7 @@ p2.save_model_output(
 
 #%% open and analyze outputs
 # calculate change in surface pH at each time step
-data = xr.open_dataset(output_path + 'exp16_2025-09-09-b.nc')
+data = xr.open_dataset(output_path + 'exp16_2025-09-16-c.nc')
 t = data['time'].values
 nt = len(t)
 
@@ -596,6 +622,9 @@ AT_broadcasted = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"dept
 
 DIC_modeled_3D = data.delDIC + DIC_broadcasted
 AT_modeled_3D = data.delAT + AT_broadcasted
+
+#DIC_modeled_3D = data.DIC_added + DIC_broadcasted
+#AT_modeled_3D = data.AT_added + AT_broadcasted
 
 pH_modeled = []
 avg_pH_modeled = np.zeros(nt)
@@ -675,6 +704,8 @@ ax.set_xlim([2015, 2040])
 ax.set_ylim([8, 8.3])
 plt.legend(loc = 'lower right')
 plt.show()
+
+#%% at each time step, does AT_added + delAT + GLODAP AT equal preindustrial AT?
 
 
 
