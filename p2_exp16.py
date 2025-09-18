@@ -107,9 +107,9 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
-ns = np.sum(ocnmask[0, :, :]==1) # number of surface ocean grid cells
-ns2 = np.sum(ocnmask[0:2, :, :]==1) # number of ocean grid cells in top two layers of ocean
-ns3 = np.sum(ocnmask[0:3, :, :]==1) # number of ocean grid cells in top three layers of ocean
+ns10 = np.sum(ocnmask[0, :, :]==1) # number of surface ocean grid cells (~10 m)
+ns30 = np.sum(ocnmask[0:2, :, :]==1) # number of ocean grid cells in top two layers of ocean (~30 m)
+ns50 = np.sum(ocnmask[0:3, :, :]==1) # number of ocean grid cells in top three layers of ocean (~50 m)
 
 # seawater density for volume to mass [kg m-3]
 rho = 1025 
@@ -125,7 +125,7 @@ sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
 
 dt = 1 # 1 year
 t = np.arange(0, 1001, dt) # 1000 years after year 0 (for now)
-t = np.arange(0, 5, dt) # 100 years after year 0 (for now)
+t = np.arange(0, 8, dt) # 7 years after year 0 (for now)
 nt = len(t)
 
 #%% pulling emissions concentration scenarios
@@ -171,14 +171,26 @@ ssp460 = ssp460.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol
 ssp534_OS = ssp534_OS.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
 ssp585 = ssp585.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
 
+# above is cumulative change in xCO2 in atmosphere, calculate ∆q_xCO2 (perturbation at each time step)
+q_historical = np.diff(historical, prepend=0) # [mol CO2 (mol air)-1]
+q_ssp126 = np.diff(ssp126, prepend=0) # [mol CO2 (mol air)-1]
+q_ssp245 = np.diff(ssp245, prepend=0) # [mol CO2 (mol air)-1]
+q_ssp370 = np.diff(ssp370, prepend=0) # [mol CO2 (mol air)-1]
+q_ssp370_NTCF = np.diff(ssp370_NTCF, prepend=0) # [mol CO2 (mol air)-1]
+q_ssp434 = np.diff(ssp434, prepend=0) # [mol CO2 (mol air)-1]
+q_ssp460 = np.diff(ssp460, prepend=0) # [mol CO2 (mol air)-1]
+q_ssp534_OS = np.diff(ssp534_OS, prepend=0) # [mol CO2 (mol air)-1]
+q_ssp585 = np.diff(ssp585, prepend=0) # [mol CO2 (mol air)-1]
+
 #%% get masks for each large marine ecosystem (LME)
 
 lme_id_grid, lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
 #p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
 
 # to plot single mask
-#lme_mask = {64: lme_masks[64]}
-#plot_lmes(lme_mask, ocnmask, model_lat, model_lon)
+#idx = 58
+#lme_mask = {idx: lme_masks[idx]}
+#p2.plot_lmes(lme_mask, ocnmask, model_lat, model_lon)
 
 #%% calculate mixed layer depth at each lat/lon following Holte et al. montly
 # climatology, then create mask of ocean cells that are at or below the mixed
@@ -193,7 +205,7 @@ lonm = monthly_clim['lonm']
 
 maxMLDs = p2.find_MLD(model_lon, model_lat, ocnmask, MLD_da_max, latm, lonm, 0)
 
-#p2.plot_surface2d(model_lon, model_lat, maxMLDs.T, 0, 399, 'viridis_r', 'maximum annual mixed layer depth')
+p2.plot_surface2d(model_lon, model_lat, maxMLDs.T, 0, 399, 'viridis_r', 'maximum annual mixed layer depth')
 
 # create 3D mask where for each grid cell, mask is set to 1 if the depth in the
 # grid cell depths array is less than the mixed layer depth for that column
@@ -526,12 +538,16 @@ for idx in tqdm(range(0,nt)):
         # set CDR perturbation equal to this AT in mixed layer
         # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
         #del_q_CDR_AT = np.zeros(m)
-        #del_q_CDR_AT[0:ns3] = AT_to_offset[0:ns3] # calculated from CO2SYS above, only apply in surface
+        #del_q_CDR_AT[0:ns50] = AT_to_offset[0:ns50] # calculated from CO2SYS above, only apply in surface
         
-        del_q_CDR_AT = p2.flatten(AT_to_offset_3D * MLDmask, ocnmask)
+        del_q_CDR_AT = p2.flatten(AT_to_offset_3D * MLDmask, ocnmask) # apply in maximum annual mixed layer depth
     
         # add in source/sink vectors for ∆AT to q vector
         q[(m+1):(2*m+1), idx] = del_q_CDR_AT
+        
+        # add in emissions scenario (∆xCO2) to q vector as well
+        # start with SSP2-4.5
+        #q[0,idx] = q_ssp245[idx] # [mol CO2 (mol air)-1]
         
         # add starting guess after first time step
         if idx > 1:
@@ -596,10 +612,10 @@ for idx in range(0, len(t)):
     q_delAT_3D[idx, :, :, :] = q_delAT_reshaped
 
 # save model output in netCDF format
-global_attrs = {'description': 'attempt at calculating max alkalinity to be added at each time step - corrected AT application calculation - global application - calculated with pyCO2sys recalculating carbonate system every 25 years - recalculating and applying new AT at each time step'}
+global_attrs = {'description': 'attempt at calculating max alkalinity to be added at each time step - with ssp245 emissions scenario - global application - calculated with pyCO2sys recalculating carbonate system every 25 years - recalculating and applying new AT at each time step'}
 # save model output
 p2.save_model_output(
-    'exp16_2025-09-16-c.nc', 
+    'exp16_2025-09-17-c.nc', 
     t, 
     model_depth, 
     model_lon,
@@ -613,7 +629,7 @@ p2.save_model_output(
 
 #%% open and analyze outputs
 # calculate change in surface pH at each time step
-data = xr.open_dataset(output_path + 'exp16_2025-09-16-c.nc')
+data = xr.open_dataset(output_path + 'exp16_2025-09-17-c.nc')
 t = data['time'].values
 nt = len(t)
 
@@ -639,7 +655,7 @@ for idx in range(nt):
     
     pH_modeled.append(co2sys['pH'])
     avg_pH_modeled[idx] = np.nanmean(co2sys['pH'])
-    avg_pH_modeled_surf[idx] = np.nanmean(co2sys['pH'][0:ns])
+    avg_pH_modeled_surf[idx] = np.nanmean(co2sys['pH'][0:ns10])
 
     #print(np.nanmean(co2sys['pH']))
     pH_modeled_3D = p2.make_3D(co2sys['pH'], ocnmask)
@@ -689,7 +705,7 @@ fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
 ax.plot(years, avg_pH_modeled_surf, label='pH under max OAE')
-ax.axhline(np.nanmean(pH_preind[0:ns]), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
+ax.axhline(np.nanmean(pH_preind[0:ns10]), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
 
 # set up secondary axis "years"
 year_to_AT = interp1d(years, AT_added, kind='linear', fill_value="extrapolate")

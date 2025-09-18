@@ -888,10 +888,22 @@ def calculate_AT_to_add(pH_preind, DIC, AT, T, S, pressure, Si, P, low=0, high=2
         Amount of AT to apply at each present-day ocean grid cell in order to
         reach preindustrial pH in the surface ocean [µmol kg-1]
     '''
+    # check which grid cells have pH < pH_preind
+    co2sys_init = pyco2.sys(dic=DIC, alkalinity=AT, salinity=S,
+                            temperature=T, pressure=pressure, 
+                            total_silicate=Si, total_phosphate=P)
+    pH_init = co2sys_init['pH']
     
+    # mask for grid cells that will have AT added
+    gets_AT = pH_init < pH_preind
+
     # initialize arrays representing low and high guesses
     low_arr = np.full_like(AT, low, dtype=float)
     high_arr = np.full_like(AT, high, dtype=float)
+    
+    # set bounds to 0 where no AT should be added
+    low_arr[~gets_AT] = 0.0
+    high_arr[~gets_AT] = 0.0
     
     # iterate through solve
     for it in range(maxiter):
@@ -913,11 +925,11 @@ def calculate_AT_to_add(pH_preind, DIC, AT, T, S, pressure, Si, P, low=0, high=2
 
         # update brackets
         same_sign = (f_mid * f_low) > 0
-        low_arr[same_sign] = mid_arr[same_sign]
-        high_arr[~same_sign] = mid_arr[~same_sign]
+        low_arr[same_sign & gets_AT] = mid_arr[same_sign & gets_AT]
+        high_arr[~same_sign & gets_AT] = mid_arr[~same_sign & gets_AT]
 
         # check convergence
-        if np.all((high_arr - low_arr) < tol):
+        if np.all((high_arr - low_arr)[gets_AT] < tol):
             break
     
     #print('total number of iterations to AT offset: ' + str(it))
@@ -1010,17 +1022,115 @@ def build_lme_masks(shp_path, ocnmask, lats, lons):
     lme_masks = {}
 
     for idx, row in lmes.iterrows():
-        lme_id = idx + 1
+        lme_id = row["LME_NUMBER"]
         name = row["LME_NAME"]
         mask_flat = points_gdf.within(row.geometry)
         mask = mask_flat.to_numpy().reshape(lat_grid.shape).T
         
         mask = np.logical_and(mask, ocnmask[0, : , :].astype(bool))
-
+        
+        # manually mask out point (177,76) from LME 22 (because it overlaps with LME 60)
+        if lme_id == 22:
+            mask[177,76] = False
+            
+        # manually mask in holes in regions created with grid conversion
+        if lme_id == 3:
+            mask[119,63] = True
+        elif lme_id == 9:
+            mask[152:154,69] = True
+        elif lme_id == 11:
+            mask[131,53] = True
+        elif lme_id == 12:
+            mask[138,56] = True
+        elif lme_id == 13:
+            mask[141,39] = True
+            mask[144,36] = True
+            mask[144,31] = True
+        elif lme_id == 17:
+            mask[152,48] = True
+        elif lme_id == 18:
+            mask[146,80] = True
+            mask[148,79] = True
+            mask[153,81] = True
+            mask[154,77] = True
+        elif lme_id == 20:
+            mask[7,84] = True
+            mask[9,85] = True
+            mask[30,86] = True
+        elif lme_id == 25:
+            mask[175,65] = True
+            mask[176,67] = True
+        elif lme_id == 26:
+            mask[176,64] = True
+            mask[177:180,63:65] = True
+            mask[0:7,63:65] = True
+            mask[5,62] = True
+        elif lme_id == 27:
+            mask[173,59] = True
+        elif lme_id == 28:
+            mask[0,48] = True
+        elif lme_id == 32:
+            mask[25,51] = True
+        elif lme_id == 34:
+            mask[47,53] = True
+        elif lme_id == 36:
+            mask[52,50] = True
+        elif lme_id == 37:
+            mask[60,48] = True
+        elif lme_id == 39:
+            mask[65,39] = True
+        elif lme_id == 43:
+            mask[69,27] = True
+        elif lme_id == 45:
+            mask[57,34] = True
+        elif lme_id == 54:
+            mask[89,81] = True
+            mask[95,77] = True
+            mask[101,81] = True
+        elif lme_id == 58:
+            mask[47,85:87] = True
+            mask[45,86] = True
+            mask[32,80] = True
+            mask[33,81] = True
+        elif lme_id == 59:
+            mask[169,78] = True
+        elif lme_id == 61:
+            mask[0,9] = True
+            mask[1:15,10] = True
+            mask[16,11] = True
+            mask[17,10] = True
+            mask[20:25,11] = True
+            mask[25:29,12] = True
+            mask[29,11] = True
+            mask[34,10] = True
+            mask[38,10] = True
+            mask[41,11] = True
+            mask[42:46,12] = True
+            mask[51:72,12] = True
+            mask[72:79,11] = True
+            mask[81:84,10] = True
+            mask[84,8] = True
+            mask[81,6] = True
+            mask[102,6] = True
+            mask[104:107,7] = True
+            mask[110:129,8] = True
+            mask[168,8] = True
+            mask[170:176,9] = True
+            mask[176:179,10] = True
+        elif lme_id == 66:
+            mask[123:125,83] = True
+            mask[127,85] = True
+            mask[133:137,86] = True
+            mask[142,85] = True
+            mask[144,84] = True
+            mask[144,87] = True
+            mask[157,87] = True
+            
         if np.any(mask):
             lme_id_grid[mask] = lme_id
             lme_masks[lme_id] = mask
             lme_id_to_name[lme_id] = name
+    
 
     return lme_id_grid, lme_masks, lme_id_to_name
     
@@ -1034,7 +1144,7 @@ def plot_lmes(lme_masks, ocnmask, lats, lons):
 
     # assign each mask a numeric id
     for idx, (lme_id, mask) in enumerate(lme_masks.items(), start=1):
-        id_grid[mask] = lme_id
+        id_grid[mask] = int(lme_id)
         
         # calculate geographic center for label
         if np.any(mask):
@@ -1043,7 +1153,7 @@ def plot_lmes(lme_masks, ocnmask, lats, lons):
             if lon_center > 180:
                 lon_center -= 360
                 
-            centers.append((lon_center, lat_center, lme_id))
+            centers.append((lon_center, lat_center, int(lme_id)))
 
     # set up plot
     fig = plt.figure(figsize=(14, 8), dpi=200)
@@ -1060,7 +1170,7 @@ def plot_lmes(lme_masks, ocnmask, lats, lons):
     # create discrete colormap
     hsv_colors = [(i / len(lme_masks), 0.75, 0.85) for i in range(len(lme_masks)+4)]
     rgb_colors = [mcolors.hsv_to_rgb(c) for c in hsv_colors]
-    random.Random(77).shuffle(rgb_colors)
+    random.Random(48).shuffle(rgb_colors)
     cmap = mcolors.ListedColormap(rgb_colors)
     norm = mcolors.BoundaryNorm(
         boundaries=np.arange(0.5, len(lme_masks) + 4 + 1.5, 1),
@@ -1073,34 +1183,52 @@ def plot_lmes(lme_masks, ocnmask, lats, lons):
         transform=ccrs.PlateCarree(),
         cmap=cmap, alpha=0.8, norm=norm, shading='nearest'
     )
-
+    
     for lon_c, lat_c, idx in centers:
-        if idx == 3:
-            ax.text(2, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
-        elif idx == 13:
-            ax.text(18, lat_c-1, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
-        elif idx == 28:
-            ax.text(lon_c+4, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
-        elif idx == 32:
-            ax.text(-1, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
-        elif idx == 47:
-            ax.text(-45, lat_c-5, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
-        elif idx == 52:
-            ax.text(-6, 75, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
-        elif idx == 53:
-            ax.text(4, lat_c-1, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
-        elif idx == 59:
-            ax.text(lon_c+7, lat_c-3, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
-        elif idx == 64:
-            ax.text(lon_c-20, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
-        elif idx == 65:
+        if idx == 2:
+            ax.text(lon_c, lat_c+2, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 3:
+            ax.text(lon_c-1, lat_c-2, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 11:
+            ax.text(lon_c+1, lat_c+2, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 19:
+            ax.text(-6, lat_c+5, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 21:
+            ax.text(3, lat_c-2, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 22:
+            ax.text(3, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 26:
+            ax.text(18, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 27:
             ax.text(lon_c-5, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 28:
+            ax.text(353, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 29:
+            ax.text(lon_c-4, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 30:
+            ax.text(lon_c+5, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 39:
+            ax.text(lon_c, lat_c+3, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 46:
+            ax.text(lon_c-4, lat_c+2, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 49:
+            ax.text(lon_c+5, lat_c, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 51:
+            ax.text(lon_c+2, lat_c-2, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 61:
+            ax.text(310, lat_c-3, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 64:
+            ax.text(174, lat_c+1, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 65:
+            ax.text(lon_c+6, lat_c-4, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+        elif idx == 66:
+            ax.text(lon_c-18, lat_c-1, str(idx), transform=ccrs.PlateCarree(), fontsize=8, ha='center', va='center', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
         else:
-            ax.text(
-                lon_c, lat_c, str(idx),
-                transform=ccrs.PlateCarree(),
-                fontsize=8, ha='center', va='center',
-                bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
+            ax.text(lon_c, lat_c, str(idx),
+                    transform=ccrs.PlateCarree(),
+                    fontsize=8, ha='center', va='center',
+                    bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1))
             
     plt.title("Large Marine Ecosystems (62 out of 66 can be represented on OCIM grid)")
+    #plt.xlim([-190, 190])
     plt.show()
