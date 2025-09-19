@@ -80,7 +80,6 @@ Naming convention for saving model runs (see .txt file for explanation of experi
 """
 import project2 as p2
 import xarray as xr
-import cftime
 import numpy as np
 import PyCO2SYS as pyco2
 from scipy import sparse
@@ -90,10 +89,11 @@ from time import time
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
+# load model architecture
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
 
-#%% load transport matrix (OCIM2-48L, from Holzer et al., 2021)
+# load transport matrix (OCIM2-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
 TR = p2.loadmat(data_path + 'OCIM2_48L_base/OCIM2_48L_base_transport.mat')
 TR = TR['TR']
@@ -107,109 +107,82 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
-ns10 = np.sum(ocnmask[0, :, :]==1) # number of surface ocean grid cells (~10 m)
-ns30 = np.sum(ocnmask[0:2, :, :]==1) # number of ocean grid cells in top two layers of ocean (~30 m)
-ns50 = np.sum(ocnmask[0:3, :, :]==1) # number of ocean grid cells in top three layers of ocean (~50 m)
-
-# seawater density for volume to mass [kg m-3]
-rho = 1025 
-
 # depth of first model layer (need bottom of grid cell, not middle) [m]
 grid_cell_height = model_data['wz'].to_numpy()
 z1 = grid_cell_height[1, 0, 0]
+ns = int(np.nansum(ocnmask[0,:,:]))
 
-# to help with conversions
-sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
+#%% SET EXPERIMENTAL VARIABLES
+# - length of time of experiment/time stepping
+# - depth of addition
+# - location of addition
+# - emissions scenarios
+# - experiment names
+# in this experiment, amount of addition is set as the maximum amount of AT
+# that can be added to a grid cell before exceeding preindustrial pH, so it is
+# not treated as a variable
 
-#%% set up time stepping
-
+# TIME
 dt = 1 # 1 year
-t = np.arange(0, 1001, dt) # 1000 years after year 0 (for now)
-t = np.arange(0, 8, dt) # 7 years after year 0 (for now)
+t = np.arange(0, 200, dt) # 1000 years after year 0 (for now)
 nt = len(t)
 
-#%% pulling emissions concentration scenarios
-# accessed from https://greenhousegases.science.unimelb.edu.au/#!/ghg?mode=downloads
-historical = xr.open_dataset(data_path + 'carbon-dioxide/historical/CMIP6GHGConcentrationHistorical_1_2_0/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_CMIP_UoM-CMIP-1-2-0_gr1-GMNHSH_0000-2014.nc', decode_times=False)
-ssp126 = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-IMAGE-ssp126-1-2-1_gr1-GMNHSH_2015-2500.nc') # 2ºC pathway
-ssp245 = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-MESSAGE-GLOBIOM-ssp245-1-2-1_gr1-GMNHSH_2015-2500.nc') # "middle of the road" scenario
-ssp370 = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-AIM-ssp370-1-2-1_gr1-GMNHSH_2015-2500.nc') # medium-high with "regional rivalry"
-ssp370_NTCF = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-AIM-ssp370-1-2-1_gr1-GMNHSH_2015-2500.nc')# same as SSP3-7.0, but with reduced near-term climate forcers (i.e. methane)
-ssp434 = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-GCAM4-ssp434-1-2-1_gr1-GMNHSH_2015-2500.nc') # moderate mitigation
-ssp460 = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-GCAM4-ssp460-1-2-1_gr1-GMNHSH_2015-2500.nc') # "inequality" dominated world
-ssp534_OS = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-REMIND-MAGPIE-ssp534-over-1-2-1_gr1-GMNHSH_2015-2500.nc')# "overshoot scenario", follows SSP5-8.5, then steep emissions cuts and negative emissions
-ssp585 = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-REMIND-MAGPIE-ssp585-1-2-1_gr1-GMNHSH_2015-2500.nc') # high emissions scenario 
+# DEPTHS OF ADDITION
 
-# pull out historical times in decimal years
-#historical_time = np.asarray(historical['time'].values, dtype=float)
-#was weird uplaoding from .nc file, so doing this manually (checked .csv files for correct times)
-historical_time = np.arange(0, 2015)
-
-# pull out future time in decimal years
-ssp_time = []
-for timestamp in ssp126.time.values:
-    # start and end of the year in NoLeap calendar
-    year_start = cftime.DatetimeNoLeap(timestamp.year, 1, 1)
-    year_end   = cftime.DatetimeNoLeap(timestamp.year + 1, 1, 1)
-    
-    # 365 days in NoLeap
-    year_length = (year_end - year_start).days
-    fraction = (timestamp - year_start).days / year_length
-    
-    ssp_time.append(timestamp.year + fraction)
-
-ssp_time = np.array(ssp_time)
-
-# pull out emissions over time, convert to xCO2 [mol CO2 (mol air)-1] from ppm
-historical = historical.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
-ssp126 = ssp126.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
-ssp245 = ssp245.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
-ssp370 = ssp370.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
-ssp370_NTCF = ssp370_NTCF.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
-ssp434 = ssp434.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
-ssp460 = ssp460.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
-ssp534_OS = ssp534_OS.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
-ssp585 = ssp585.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
-
-# above is cumulative change in xCO2 in atmosphere, calculate ∆q_xCO2 (perturbation at each time step)
-q_historical = np.diff(historical, prepend=0) # [mol CO2 (mol air)-1]
-q_ssp126 = np.diff(ssp126, prepend=0) # [mol CO2 (mol air)-1]
-q_ssp245 = np.diff(ssp245, prepend=0) # [mol CO2 (mol air)-1]
-q_ssp370 = np.diff(ssp370, prepend=0) # [mol CO2 (mol air)-1]
-q_ssp370_NTCF = np.diff(ssp370_NTCF, prepend=0) # [mol CO2 (mol air)-1]
-q_ssp434 = np.diff(ssp434, prepend=0) # [mol CO2 (mol air)-1]
-q_ssp460 = np.diff(ssp460, prepend=0) # [mol CO2 (mol air)-1]
-q_ssp534_OS = np.diff(ssp534_OS, prepend=0) # [mol CO2 (mol air)-1]
-q_ssp585 = np.diff(ssp585, prepend=0) # [mol CO2 (mol air)-1]
-
-#%% get masks for each large marine ecosystem (LME)
-
-lme_id_grid, lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
-#p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
-
-# to plot single mask
-#idx = 58
-#lme_mask = {idx: lme_masks[idx]}
-#p2.plot_lmes(lme_mask, ocnmask, model_lat, model_lon)
-
-#%% calculate mixed layer depth at each lat/lon following Holte et al. montly
+# to do addition in mixed layer...
+# calculate mixed layer depth at each lat/lon following Holte et al. montly
 # climatology, then create mask of ocean cells that are at or below the mixed
 # layer depth
-
-# to use dynamic mixed layer depth
 monthly_clim = p2.loadmat(data_path + 'monthlyclim.mat')
 MLD_da_max = monthly_clim['mld_da_max']
 MLD_da_mean = monthly_clim['mld_da_mean']
 latm = monthly_clim['latm']
 lonm = monthly_clim['lonm']
-
 maxMLDs = p2.find_MLD(model_lon, model_lat, ocnmask, MLD_da_max, latm, lonm, 0)
-
-p2.plot_surface2d(model_lon, model_lat, maxMLDs.T, 0, 399, 'viridis_r', 'maximum annual mixed layer depth')
-
 # create 3D mask where for each grid cell, mask is set to 1 if the depth in the
 # grid cell depths array is less than the mixed layer depth for that column
-MLDmask = (grid_cell_height < maxMLDs[None, :, :]).astype(int) 
+MLDmask = (grid_cell_height < maxMLDs[None, :, :]).astype(int)
+q_AT_depths = MLDmask
+
+# to do addition in first (or first two, or first three, etc.) model layer(s)
+#q_AT_depths = ocnmask.copy()
+#q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
+#q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
+#q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
+
+# to do all lat/lons
+q_AT_latlons = ocnmask[0,:,:].copy()
+
+# to constrain lat/lon of addition to LME(s)
+# get masks for each large marine ecosystem (LME)
+#lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
+#p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
+#lme_idx = [22,52] # subset of LMEs
+#lme_idx = list(lme_masks.keys()) # all LMES
+#q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
+
+# COMBINE DEPTH + LAT/LON OF ADDITION
+q_AT_locations_mask = q_AT_depths * q_AT_latlons
+
+# EMISSIONS SCENARIOS
+# no emissions scenario
+#q_emissions = np.zeros(nt)
+
+# with emissions scenario
+scenarios = ['ssp126', 'ssp245', 'ssp370', 'ssp434', 'ssp585']
+
+# EXPERIMENT NAMES AND DESCRIPTIONS
+experiment_names = ['exp16_2025-09-19-ssp126-MLD-all_lat_lon.nc',
+                 'exp16_2025-09-19-ssp245-MLD-all_lat_lon.nc',
+                 'exp16_2025-09-19-ssp370-MLD-all_lat_lon.nc',
+                 'exp16_2025-09-19-ssp434-MLD-all_lat_lon.nc',
+                 'exp16_2025-09-19-ssp585-MLD-all_lat_lon.nc',]
+
+experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp1-2.6',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp2-4.5',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp3-7.0',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp4-3.4',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp5-8.5',]
 
 #%% getting initial ∆DIC conditions from TRACEv1
 # note, doing set up with Fortran ordering for consistency
@@ -304,29 +277,17 @@ pH_preind = co2sys['pH']
 avg_pH_preind = np.nanmean(pH_preind)
 
 pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
-#p2.plot_surface3d(model_lon, model_lat, pH_preind_3D, 0, 7.9, 8.4, 'viridis_r', 'Surface pH in Year ~1790 (TRACE)')
-
-# calculate AT needed to offset pH drop using present-day DIC & previously calculated preindustrial pH
-#co2sys = pyco2.sys(dic=DIC, pH=pH_preind, salinity=S, temperature=T,
-#                   pressure=pressure, total_silicate=Si, total_phosphate=P)
-#AT_to_offset = co2sys['alkalinity']
-#AT_to_offset_3D = p2.make_3D(AT_to_offset, ocnmask)
-
-#p2.plot_surface2d(model_lon, model_lat, AT_to_offset_3D[0, :, :].T, 2000, 2500, 'viridis_r', 'AT needed to offset pH calculated from TRACE only')
-#p2.plot_surface2d(model_lon, model_lat, AT_3D[0, :, :].T, 2000, 2500, 'viridis_r', '2015 AT from GLODAP')
-
-#p2.plot_surface2d(model_lon, model_lat, AT_to_offset_3D[0, :, :].T - AT_3D[0, :, :].T, -100, 100, 'RdBu', 'Change in AT needed to offset pH decline (with TRACE only)')
 
 #%% set up air-sea gas exchange (Wanninkhof, 2014)
 
 # regrid NCEP/DOE reanalysis II data
 #p2.regrid_ncep_noaa(data_path, 'icec', model_lat, model_lon, ocnmask)
-#p2.regrid_ncep_noaa(data_path, 'uwnd', model_lat, model_lon, ocnmask)
+#p2.regrid_ncep_noaa(data_path, 'wspd', model_lat, model_lon, ocnmask)
 #p2.regrid_ncep_noaa(data_path, 'sst', model_lat, model_lon, ocnmask)
 
 # upload regridded NCEP/DOE reanalysis II data
 f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec.npy') # annual mean ice fraction from 0 to 1 in each grid cell
-uwnd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/wspd.npy') # annual mean of forecast of wind speed at 10 m [m/s]
+wspd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/wspd.npy') # annual mean of forecast of wind speed at 10 m [m/s]
 sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst.npy') # annual mean sea surface temperature [ºC]
 
 # calculate Schmidt number using Wanninkhof 2014 parameterization
@@ -335,14 +296,9 @@ Sc_2D = vec_schmidt('CO2', sst_2D)
 
 # solve for k (gas transfer velocity) for each ocean cell
 a = 0.251 # from Wanninkhof 2014
-k_2D = a * uwnd_2D**2 * (Sc_2D/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
-
-#p2.plot_surface2d(model_lon, model_lat, k.T, 0, 20, 'magma', 'Gas transfer velocity (k, cm/hr)')
+k_2D = a * wspd_2D**2 * (Sc_2D/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
 
 k_2D *= (24*365.25/100) # [m/yr] convert units
-
-#p2.plot_surface2d(model_lon, model_lat, uwnd_3D.T, -15, 15, 'seismic', 'U-wind at 10 m (m/s)')
-#p2.plot_surface2d(model_lon, model_lat, sst_3D.T, -2, 40, 'magma', 'sst (ºC)')
 
 # set up linearized CO2 system (Nowicki et al., 2024)
 
@@ -366,270 +322,289 @@ f_ice = p2.flatten(f_ice_3D, ocnmask)
 gammax = k * V * (1 - f_ice) / Ma / z1
 gammaC = -1 * k * (1 - f_ice) / z1
 
-#%% construct matrix C
-# matrix form:
-#  dc/dt = A * c + q
-#  c = variable(s) of interest
-#  A = transport matrix (TR) plus any processes with dependence on c 
-#    = source/sink vector (processes not dependent on c)
+#%% loop through multiple experiments
+t = np.arange(0, 8, dt) # 7 years after year 0 (for now)
+experiment_names = ['exp16_2025-09-18-b.nc']
+experiment_attrs = ['test run of AT addition in all grid cells in max annual mixed layer with ssp2-4.5']
+scenarios = ['ssp245']
+
+for exp_idx in range(len(experiment_names)):
     
-# UNITS NOTE: all xCO2 units are mol CO2 (mol air)-1 all AT units are µmol AT kg-1, all DIC units are µmol DIC kg-1
-# see comment at top for more info
+    print('\nnow running experiment ' + experiment_names[exp_idx] + '\n')
 
-# m = # ocean grid cells
-# nt = # time steps
+    # set up emissions scenario
+    _, _, emissions_annual = p2.get_emissions_scenario(data_path, scenarios[exp_idx])
+    q_emissions = emissions_annual[2015:nt+2015]
 
-m = TR.shape[0]
-
-# c = [ ∆xCO2 ] --> 1 * nt
-#     [ ∆DIC  ] --> m * nt
-#     [ ∆AT   ] --> m * nt
-
-c = np.zeros((1 + 2*m, nt))
-
-#%% construct initial q vector (it is going to change every iteration)
-# q = [ 0                                                                           ] --> 1 * nt, q[0]
-#     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * nt, q[1:(m+1)]
-#     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * nt, q[(m+1):(2*m+1)]
-
-# which translates to...
-# q = [ 0                                      ] --> 1 * nt, q[0]
-#     [ ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC ] --> m * nt, q[1:(m+1)]
-#     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * nt, q[(m+1):(2*m+1)]
-
-q = np.zeros((1 + 2*m, nt))
-q[0,:] = 0 # no perturbation in xCO2 (for now, will likely add emissions scenario)
-q[1:(m+1),:] = 0 # no perturbation in DIC (for now, could do other types of additions besides NaOH)
-
-#%% time stepping simulation forward
-
-for idx in tqdm(range(0,nt)):
+    #%% construct matrix C
+    # matrix form:
+    #  dc/dt = A * c + q
+    #  c = variable(s) of interest
+    #  A = transport matrix (TR) plus any processes with dependence on c 
+    #    = source/sink vector (processes not dependent on c)
+        
+    # UNITS NOTE: all xCO2 units are mol CO2 (mol air)-1 all AT units are µmol AT kg-1, all DIC units are µmol DIC kg-1
+    # see comment at top for more info
     
-    # recalculate carbonate system every 25 years
-    if idx%25 == 0:
-        #AT and DIC are equal to initial AT and DIC + whatever the change in AT and DIC are
+    # m = # ocean grid cells
+    # nt = # time steps
+    
+    m = TR.shape[0]
+    
+    # c = [ ∆xCO2 ] --> 1 * nt
+    #     [ ∆DIC  ] --> m * nt
+    #     [ ∆AT   ] --> m * nt
+    
+    c = np.zeros((1 + 2*m, nt))
+    
+    #%% construct initial q vector (it is going to change every iteration)
+    # q = [ 0                                                                           ] --> 1 * nt, q[0]
+    #     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * nt, q[1:(m+1)]
+    #     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * nt, q[(m+1):(2*m+1)]
+    
+    # which translates to...
+    # q = [ 0                                      ] --> 1 * nt, q[0]
+    #     [ ∆q_CDR,DIC + ∆q_diss,DIC - ∆q_prod,DIC ] --> m * nt, q[1:(m+1)]
+    #     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * nt, q[(m+1):(2*m+1)]
+    
+    q = np.zeros((1 + 2*m, nt))
+    
+    #%% time stepping simulation forward
+    
+    # set initial baseline to evaluate if co2sys recalculation is needed
+    AT_at_last_calc = AT.copy()
+    DIC_at_last_calc = DIC.copy()
+    
+    for idx in tqdm(range(0,nt)):
+        # AT and DIC are equal to initial AT and DIC + whatever the change in AT and DIC are
         AT_current = AT + c[(m+1):(2*m+1), idx]
         DIC_current = DIC + c[1:(m+1), idx]
         
-        # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
-        # do this for only ocean grid cells
-        # this is PyCO2SYSv2
-        co2sys = pyco2.sys(dic=DIC_current, alkalinity=AT_current, salinity=S, temperature=T,
-                           pressure=pressure, total_silicate=Si, total_phosphate=P)
+        # recalculate carbonate system every time >5% of grid cells see change in AT or DIC >5% since last recalculation
+        frac_AT = np.mean(np.abs(AT_current - AT_at_last_calc) > 0.05 * np.abs(AT_at_last_calc)) # calculate fraction of grid cells with change in AT above 10%
+        frac_DIC = np.mean(np.abs(DIC_current - DIC_at_last_calc) > 0.05 * np.abs(DIC_at_last_calc)) # calculate fraction of grid cells with change in DIC above 10%
+        print('\nfraction of cells with change in AT >5%: ' + str(frac_AT))
+        print('fraction of cells with change in DIC >5%: ' + str(frac_DIC))
     
-        # extract key results arrays
-        pCO2 = co2sys['pCO2'] # pCO2 [µatm]
-        aqueous_CO2 = co2sys['CO2'] # aqueous CO2 [µmol kg-1]
-        R_C = co2sys['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
-    
-        # calculate revelle factor w.r.t. AT [unitless]
-        # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
-        co2sys_000001 = pyco2.sys(dic=DIC_current, alkalinity=AT_current+0.000001, salinity=S,
-                               temperature=T, pressure=pressure, total_silicate=Si,
-                               total_phosphate=P)
-    
-        pCO2_000001 = co2sys_000001['pCO2']
-        R_A = ((pCO2_000001 - pCO2)/pCO2) / (0.000001/AT)
+        if idx == 0 or frac_AT > 0.05 or frac_DIC > 0.05:
+            AT_at_last_calc = AT_current.copy()
+            AT_at_last_calc = DIC_current.copy()
+            # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
+            # do this for only ocean grid cells
+            # this is PyCO2SYSv2
+            co2sys = pyco2.sys(dic=DIC_current, alkalinity=AT_current, salinity=S, temperature=T,
+                               pressure=pressure, total_silicate=Si, total_phosphate=P)
         
-        # see if average pH has exceeded preindustrial average pH
-        avg_pH = np.nanmean(co2sys['pH'])
-        if avg_pH > avg_pH_preind:
-            print('\n\naverage pH exceeded average preindustrial pH at time step ' + str(idx))
-            break
-        else:
-            print('\n\naverage pH at time step ' + str(idx) + ' = ' + str(round(avg_pH,8)))
-    
-        # calculate rest of Nowicki et al. parameters
-        beta_C = DIC/aqueous_CO2 # [unitless]
-        beta_A = AT/aqueous_CO2 # [unitless]
-        K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
+            # extract key results arrays
+            pCO2 = co2sys['pCO2'] # pCO2 [µatm]
+            aqueous_CO2 = co2sys['CO2'] # aqueous CO2 [µmol kg-1]
+            R_C = co2sys['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
         
-        print('carbonate system recalculated (year ' + str(idx) + ')')
-    
-        # calculate "A" matrix based on new carbonate system
-    
-        # dimensions
-        # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
-        #     [m x 1][m x m][m x m]
-        #     [m x 1][m x m][m x m]
-    
-        # what acts on what
-        # A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
-        #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
-        #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
-    
-        # math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
-        # A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
-        #     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
-        #     [0                        ][0                              ][TR                           ]
-    
-        # notation for setup
-        # A = [A00][A01][A02]
-        #     [A10][A11][A12]
-        #     [A20][A21][A22]
-    
-        # to solve for ∆xCO2
-        A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
-        A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
-        A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
-    
-        # combine into A0 row
-        A0_ = np.full(1 + 2*m, np.nan)
-        A0_[0] = A00
-        A0_[1:(m+1)] = A01
-        A0_[(m+1):(2*m+1)] = A02
-    
-        del A00, A01, A02
-    
-        # to solve for ∆DIC
-        A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) # is csc the most efficient format? come back to this
-        A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
-        A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
-    
-        A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
-    
-        del A10, A11, A12
-    
-        # to solve for ∆AT
-        A20 = np.zeros(m)
-        A21 = 0 * TR
-        A22 = TR
-    
-        A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
-    
-        del A20, A21, A22
-    
-        # build into one mega-array!!
-        A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
-    
-        del A0_, A1_, A2_
+            # calculate revelle factor w.r.t. AT [unitless]
+            # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
+            co2sys_000001 = pyco2.sys(dic=DIC_current, alkalinity=AT_current+0.000001, salinity=S,
+                                   temperature=T, pressure=pressure, total_silicate=Si,
+                                   total_phosphate=P)
+        
+            pCO2_000001 = co2sys_000001['pCO2']
+            R_A = ((pCO2_000001 - pCO2)/pCO2) / (0.000001/AT)
             
-        # perform time stepping using Euler backward
-        LHS = sparse.eye(A.shape[0], format="csc") - dt * A
-    
-        # test condition number of matrix
-        est = sparse.linalg.onenormest(LHS)
-        print('estimated 1-norm condition number LHS: ' + str(round(est,1)))
-    
-        start = time()
-        ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
-        stop = time()
-        print('ilu calculations: ' + str(stop - start) + ' s\n')
-    
-        M = LinearOperator(LHS.shape, ilu.solve)
-    
-    # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
-    if idx >= 1:
-        # add CDR perturbation (construct q vector, it is going to change every iteration in this experiment)
-        # for now, assuming NaOH (no change in DIC)
-        
-        # calculate AT required to return to preindustrial pH
-        # using DIC at previous time step (initial DIC + modeled change in DIC) and preindustrial pH
-        DIC_new = DIC + c[1:(m+1), idx-1]
-        AT_new = AT + c[(m+1):(2*m+1), idx-1]
-        AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, low=0, high=200, tol=1e-6, maxiter=50)
-        AT_to_offset_3D = p2.make_3D(AT_to_offset, ocnmask)
-
-        # make sure there are no negative values
-        if len(AT_to_offset[AT_to_offset<0]) != 0:
-            print('error: AT offset is negative')
-            break
-
-        # set CDR perturbation equal to this AT in mixed layer
-        # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
-        #del_q_CDR_AT = np.zeros(m)
-        #del_q_CDR_AT[0:ns50] = AT_to_offset[0:ns50] # calculated from CO2SYS above, only apply in surface
-        
-        del_q_CDR_AT = p2.flatten(AT_to_offset_3D * MLDmask, ocnmask) # apply in maximum annual mixed layer depth
-    
-        # add in source/sink vectors for ∆AT to q vector
-        q[(m+1):(2*m+1), idx] = del_q_CDR_AT
-        
-        # add in emissions scenario (∆xCO2) to q vector as well
-        # start with SSP2-4.5
-        #q[0,idx] = q_ssp245[idx] # [mol CO2 (mol air)-1]
-        
-        # add starting guess after first time step
-        if idx > 1:
-            c0 = c[:,idx-1]
-        else:
-            c0=None
-    
-        # calculate right hand side and perform time stepping
-        RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx])
-        #start = time()
-        c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
-        #stop = time()
-        #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-       
-        if info != 0:
-            if info > 0:
-                print(f'did not converge in {info} iterations.')
+            # see if average pH has exceeded preindustrial average pH
+            avg_pH = np.nanmean(co2sys['pH'])
+            if avg_pH > avg_pH_preind:
+                print('average pH exceeded average preindustrial pH at time step ' + str(idx))
+                break
             else:
-                print('illegal input or breakdown')
-
-# rebuild 3D concentrations from 1D array used for solving matrix equation
+                print('average pH at time step ' + str(idx) + ' = ' + str(round(avg_pH,8)))
+        
+            # calculate rest of Nowicki et al. parameters
+            rho = 1025 # seawater density for volume to mass [kg m-3]
+            beta_C = DIC/aqueous_CO2 # [unitless]
+            beta_A = AT/aqueous_CO2 # [unitless]
+            K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
+            
+            print('carbonate system recalculated (year ' + str(idx) + ')')
+        
+            # calculate "A" matrix based on new carbonate system
+        
+            # dimensions
+            # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
+            #     [m x 1][m x m][m x m]
+            #     [m x 1][m x m][m x m]
+        
+            # what acts on what
+            # A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
+            #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
+            #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
+        
+            # math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
+            # A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
+            #     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
+            #     [0                        ][0                              ][TR                           ]
+        
+            # notation for setup
+            # A = [A00][A01][A02]
+            #     [A10][A11][A12]
+            #     [A20][A21][A22]
+        
+            # to solve for ∆xCO2
+            A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
+            A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
+            A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
+        
+            # combine into A0 row
+            A0_ = np.full(1 + 2*m, np.nan)
+            A0_[0] = A00
+            A0_[1:(m+1)] = A01
+            A0_[(m+1):(2*m+1)] = A02
+        
+            del A00, A01, A02
+        
+            # to solve for ∆DIC
+            A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) # is csc the most efficient format? come back to this
+            A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
+            A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
+        
+            A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
+        
+            del A10, A11, A12
+        
+            # to solve for ∆AT
+            A20 = np.zeros(m)
+            A21 = 0 * TR
+            A22 = TR
+        
+            A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
+        
+            del A20, A21, A22
+        
+            # build into one mega-array!!
+            A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
+        
+            del A0_, A1_, A2_
+                
+            # perform time stepping using Euler backward
+            LHS = sparse.eye(A.shape[0], format="csc") - dt * A
+        
+            # test condition number of matrix
+            est = sparse.linalg.onenormest(LHS)
+            print('estimated 1-norm condition number LHS: ' + str(round(est,1)))
+        
+            start = time()
+            ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
+            stop = time()
+            print('ilu calculations: ' + str(stop - start) + ' s\n')
+        
+            M = LinearOperator(LHS.shape, ilu.solve)
+        
+        # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
+        if idx >= 1:
+            # add CDR perturbation (construct q vector, it is going to change every iteration in this experiment)
+            # for now, assuming NaOH (no change in DIC)
+            
+            # calculate AT required to return to preindustrial pH
+            # using DIC at previous time step (initial DIC + modeled change in DIC) and preindustrial pH
+            DIC_new = DIC + c[1:(m+1), idx-1]
+            AT_new = AT + c[(m+1):(2*m+1), idx-1]
+            AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, low=0, high=200, tol=1e-6, maxiter=50)
+            AT_to_offset_3D = p2.make_3D(AT_to_offset, ocnmask)
     
-# partition "c" into xCO2, DIC, and AT
-c_delxCO2 = c[0, :]
-c_delDIC  = c[1:(m+1), :]
-c_delAT   = c[(m+1):(2*m+1), :]
-
-# partition "q" into xCO2, DIC, and AT
-q_delxCO2 = q[0, :]
-q_delDIC  = q[1:(m+1), :]
-q_delAT   = q[(m+1):(2*m+1), :]
-
-# convert delxCO2 units from unitless [µatm CO2 / µatm air] or [µmol CO2 / µmol air] to ppm
-c_delxCO2 *= 1e6
-q_delxCO2 *= 1e6
-
-# reconstruct 3D arrays for DIC and AT
-c_delDIC_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
-c_delAT_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
-
-q_delDIC_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
-q_delAT_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
-
-# for each time step, reshape 1D array into 3D array, then save to larger 4D array output (time, depth, longitude, latitude)
-for idx in range(0, len(t)):
-    c_delDIC_reshaped = np.full(ocnmask.shape, np.nan)
-    c_delAT_reshaped = np.full(ocnmask.shape, np.nan)
+            # make sure there are no negative values
+            if len(AT_to_offset[AT_to_offset<0]) != 0:
+                print('error: AT offset is negative')
+                break
     
-    q_delDIC_reshaped = np.full(ocnmask.shape, np.nan)
-    q_delAT_reshaped = np.full(ocnmask.shape, np.nan)
-
-    c_delDIC_reshaped[ocnmask == 1] = np.reshape(c_delDIC[:, idx], (-1,), order='F')
-    c_delAT_reshaped[ocnmask == 1] = np.reshape(c_delAT[:, idx], (-1,), order='F')
+            # set CDR perturbation equal to this AT in mixed layer
+            # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
+            del_q_CDR_AT = p2.flatten(AT_to_offset_3D * q_AT_locations_mask, ocnmask) # apply in maximum annual mixed layer depth
+        
+            # add in source/sink vectors for ∆AT to q vector
+            q[(m+1):(2*m+1), idx] = del_q_CDR_AT
+            
+            # add in emissions scenario (∆xCO2) to q vector as well
+            q[0,idx] = q_emissions[idx] # [mol CO2 (mol air)-1]
+            
+            # add starting guess after first time step
+            if idx > 1:
+                c0 = c[:,idx-1]
+            else:
+                c0=None
+        
+            # calculate right hand side and perform time stepping
+            RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx])
+            #start = time()
+            c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
+            #stop = time()
+            #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+           
+            if info != 0:
+                if info > 0:
+                    print(f'did not converge in {info} iterations.')
+                else:
+                    print('illegal input or breakdown')
     
-    q_delDIC_reshaped[ocnmask == 1] = np.reshape(q_delDIC[:, idx], (-1,), order='F')
-    q_delAT_reshaped[ocnmask == 1] = np.reshape(q_delAT[:, idx], (-1,), order='F')
+    # rebuild 3D concentrations from 1D array used for solving matrix equation
+        
+    # partition "c" into xCO2, DIC, and AT
+    c_delxCO2 = c[0, :]
+    c_delDIC  = c[1:(m+1), :]
+    c_delAT   = c[(m+1):(2*m+1), :]
     
-    c_delDIC_3D[idx, :, :, :] = c_delDIC_reshaped
-    c_delAT_3D[idx, :, :, :] = c_delAT_reshaped
+    # partition "q" into xCO2, DIC, and AT
+    q_delxCO2 = q[0, :]
+    q_delDIC  = q[1:(m+1), :]
+    q_delAT   = q[(m+1):(2*m+1), :]
     
-    q_delDIC_3D[idx, :, :, :] = q_delDIC_reshaped
-    q_delAT_3D[idx, :, :, :] = q_delAT_reshaped
-
-# save model output in netCDF format
-global_attrs = {'description': 'attempt at calculating max alkalinity to be added at each time step - with ssp245 emissions scenario - global application - calculated with pyCO2sys recalculating carbonate system every 25 years - recalculating and applying new AT at each time step'}
-# save model output
-p2.save_model_output(
-    'exp16_2025-09-17-c.nc', 
-    t, 
-    model_depth, 
-    model_lon,
-    model_lat, 
-    tracers=[c_delxCO2, c_delDIC_3D, c_delAT_3D, q_delxCO2, q_delDIC_3D, q_delAT_3D,], 
-    tracer_dims=[('time',), ('time', 'depth', 'lon', 'lat'), ('time', 'depth', 'lon', 'lat'), ('time',), ('time', 'depth', 'lon', 'lat'), ('time', 'depth', 'lon', 'lat')],
-    tracer_names=['delxCO2', 'delDIC', 'delAT', 'xCO2_added', 'DIC_added', 'AT_added'], 
-    tracer_units=['ppm', 'umol kg-3', 'umol kg-3', 'ppm', 'umol kg-3', 'umol kg-3'],
-    global_attrs=global_attrs
-)
+    # convert delxCO2 units from unitless [µatm CO2 / µatm air] or [µmol CO2 / µmol air] to ppm
+    c_delxCO2 *= 1e6
+    q_delxCO2 *= 1e6
+    
+    # reconstruct 3D arrays for DIC and AT
+    c_delDIC_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+    c_delAT_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+    
+    q_delDIC_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+    q_delAT_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
+    
+    # for each time step, reshape 1D array into 3D array, then save to larger 4D array output (time, depth, longitude, latitude)
+    for idx in range(0, len(t)):
+        c_delDIC_reshaped = np.full(ocnmask.shape, np.nan)
+        c_delAT_reshaped = np.full(ocnmask.shape, np.nan)
+        
+        q_delDIC_reshaped = np.full(ocnmask.shape, np.nan)
+        q_delAT_reshaped = np.full(ocnmask.shape, np.nan)
+    
+        c_delDIC_reshaped[ocnmask == 1] = np.reshape(c_delDIC[:, idx], (-1,), order='F')
+        c_delAT_reshaped[ocnmask == 1] = np.reshape(c_delAT[:, idx], (-1,), order='F')
+        
+        q_delDIC_reshaped[ocnmask == 1] = np.reshape(q_delDIC[:, idx], (-1,), order='F')
+        q_delAT_reshaped[ocnmask == 1] = np.reshape(q_delAT[:, idx], (-1,), order='F')
+        
+        c_delDIC_3D[idx, :, :, :] = c_delDIC_reshaped
+        c_delAT_3D[idx, :, :, :] = c_delAT_reshaped
+        
+        q_delDIC_3D[idx, :, :, :] = q_delDIC_reshaped
+        q_delAT_3D[idx, :, :, :] = q_delAT_reshaped
+    
+    # save model output in netCDF format
+    global_attrs = {experiment_attrs[exp_idx]}
+    # save model output
+    p2.save_model_output(
+        experiment_names[exp_idx], 
+        t, 
+        model_depth, 
+        model_lon,
+        model_lat, 
+        tracers=[c_delxCO2, c_delDIC_3D, c_delAT_3D, q_delxCO2, q_delDIC_3D, q_delAT_3D,], 
+        tracer_dims=[('time',), ('time', 'depth', 'lon', 'lat'), ('time', 'depth', 'lon', 'lat'), ('time',), ('time', 'depth', 'lon', 'lat'), ('time', 'depth', 'lon', 'lat')],
+        tracer_names=['delxCO2', 'delDIC', 'delAT', 'xCO2_added', 'DIC_added', 'AT_added'], 
+        tracer_units=['ppm', 'umol kg-3', 'umol kg-3', 'ppm', 'umol kg-3', 'umol kg-3'],
+        global_attrs=global_attrs
+    )
 
 #%% open and analyze outputs
 # calculate change in surface pH at each time step
-data = xr.open_dataset(output_path + 'exp16_2025-09-17-c.nc')
+data = xr.open_dataset(output_path + 'exp16_2025-09-18-a.nc')
 t = data['time'].values
 nt = len(t)
 
@@ -655,7 +630,7 @@ for idx in range(nt):
     
     pH_modeled.append(co2sys['pH'])
     avg_pH_modeled[idx] = np.nanmean(co2sys['pH'])
-    avg_pH_modeled_surf[idx] = np.nanmean(co2sys['pH'][0:ns10])
+    avg_pH_modeled_surf[idx] = np.nanmean(co2sys['pH'][0:ns])
 
     #print(np.nanmean(co2sys['pH']))
     pH_modeled_3D = p2.make_3D(co2sys['pH'], ocnmask)
@@ -705,7 +680,7 @@ fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
 ax.plot(years, avg_pH_modeled_surf, label='pH under max OAE')
-ax.axhline(np.nanmean(pH_preind[0:ns10]), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
+ax.axhline(np.nanmean(pH_preind[0:ns]), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
 
 # set up secondary axis "years"
 year_to_AT = interp1d(years, AT_added, kind='linear', fill_value="extrapolate")
@@ -720,8 +695,6 @@ ax.set_xlim([2015, 2040])
 ax.set_ylim([8, 8.3])
 plt.legend(loc = 'lower right')
 plt.show()
-
-#%% at each time step, does AT_added + delAT + GLODAP AT equal preindustrial AT?
 
 
 
