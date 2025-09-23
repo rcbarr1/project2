@@ -29,6 +29,8 @@ import cartopy.crs as ccrs
 import random
 import PyCO2SYS as pyco2
 import cftime
+import matplotlib.animation as animation
+
 
 
 def loadmat(filename):
@@ -942,8 +944,8 @@ def get_emissions_scenario(data_path, scenario_name):
     Calculates cumulative and annual CO2 emissions over the historical record
     and a selected shared socioeconomic pathway (SSP). Returns time in units of
     years and emissions in units of mol CO2 (mol air-1). Scenarios available
-    are 'ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434', 'ssp460',
-    'ssp534_OS', and 'ssp585'. Data is from 
+    are 'none', 'ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434',
+    'ssp460', 'ssp534_OS', and 'ssp585'. Data is from 
     https://greenhousegases.science.unimelb.edu.au/#!/ghg?mode=downloads
     
     Parameters
@@ -952,8 +954,8 @@ def get_emissions_scenario(data_path, scenario_name):
         path to folder where emissions data is stored
     scenario_name: String
         name of historical or future emissions scenario of interest
-        ('ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434', 'ssp460',
-         'ssp534_OS', 'ssp585')
+        ('none', 'ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434',
+         'ssp460', 'ssp534_OS', 'ssp585')
         
     Returns
     ----------
@@ -964,10 +966,13 @@ def get_emissions_scenario(data_path, scenario_name):
     emissions_annual: 1-D array of floats
         annual amount of emissions in mol CO2 (mol air)-1 since year 0 CE
     """
-    
+    none_flag = 0
     # accessed from https://greenhousegases.science.unimelb.edu.au/#!/ghg?mode=downloads
     historical_data = xr.open_dataset(data_path + 'carbon-dioxide/historical/CMIP6GHGConcentrationHistorical_1_2_0/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_CMIP_UoM-CMIP-1-2-0_gr1-GMNHSH_0000-2014.nc', decode_times=False)
-    if scenario_name =='ssp126':
+    if scenario_name == 'none':
+        ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-IMAGE-ssp126-1-2-1_gr1-GMNHSH_2015-2500.nc') # 2ºC pathway
+        none_flag = 1
+    elif scenario_name =='ssp126':
         ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-IMAGE-ssp126-1-2-1_gr1-GMNHSH_2015-2500.nc') # 2ºC pathway
     elif scenario_name == 'ssp245':
         ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-MESSAGE-GLOBIOM-ssp245-1-2-1_gr1-GMNHSH_2015-2500.nc') # "middle of the road" scenario
@@ -984,7 +989,7 @@ def get_emissions_scenario(data_path, scenario_name):
     elif scenario_name == 'ssp585':
         ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-REMIND-MAGPIE-ssp585-1-2-1_gr1-GMNHSH_2015-2500.nc') # high emissions scenario 
     else:
-        raise ValueError("Emissions scenario must be one of the following strings: 'ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434', 'ssp460', 'ssp534_OS', 'ssp585'.")
+        raise ValueError("Emissions scenario must be one of the following strings: 'none', 'ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434', 'ssp460', 'ssp534_OS', 'ssp585'.")
     
     # pull out time stamps and emissions data
     
@@ -1022,6 +1027,10 @@ def get_emissions_scenario(data_path, scenario_name):
     
     # above is cumulative change in xCO2 in atmosphere, calculate ∆q_xCO2 (perturbation at each time step)
     emissions_annual = np.diff(emissions_cumulative, prepend=0) # [mol CO2 (mol air)-1]
+
+    if none_flag == 1:
+        emissions_cumulative *= 0
+        emissions_annual *= 0
 
     return time, emissions_cumulative, emissions_annual
 
@@ -1321,3 +1330,135 @@ def plot_lmes(lme_masks, ocnmask, lats, lons):
     plt.title("Large Marine Ecosystems (62 out of 66 can be represented on OCIM grid)")
     #plt.xlim([-190, 190])
     plt.show()
+
+def make_surf_animation(variable, colorbar_label, model_lon, model_lat, t, nt, vmin, vmax, cmap, filename):
+    fig, ax = plt.subplots(figsize=(10,7))
+    
+    # first frame of animation
+    cntr = ax.contourf(model_lon, model_lat,
+                       variable.isel(time=0).values[0,:,:].T,
+                       levels=np.linspace(vmin, vmax, 100),
+                       cmap=cmap, vmin=vmin, vmax=vmax)
+    cbar = plt.colorbar(cntr, ax=ax,label=colorbar_label)
+    ax.set_xlabel('Longitude (ºE)')
+    ax.set_ylabel('Latitude (ºN)')
+    title = ax.set_title('t = ' + str(np.round(t[0],3)) + ' yr')
+
+    # update function: this updates each frame with the new "axis", which is the subsequent contour plot
+    def update_frame(idx):
+        ax.clear()
+        ax.contourf(model_lon, model_lat,
+                    variable.isel(time=idx).values[0,:,:].T,
+                    levels=np.linspace(vmin, vmax, 100),
+                    cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.set_xlabel('Longitude (ºE)')
+        ax.set_ylabel('Latitude (ºN)')
+        ax.set_title('t = ' + str(np.round(t[idx],3)) + ' yr')
+        return []
+    
+    # make and save animation
+    ani = animation.FuncAnimation(fig, update_frame, frames=nt, interval=100, blit=False)
+    writer = animation.writers['ffmpeg'](fps=10)
+    ani.save(filename, writer=writer, dpi=200)
+    
+def make_surf_animation_pH(pH, colorbar_label, model_lon, model_lat, t, nt, ocnmask, vmin, vmax, cmap, filename):
+    fig, ax = plt.subplots(figsize=(10,7))
+    
+    # first frame of animation
+    pH_3D = make_3D(pH[0], ocnmask)
+    
+    cntr = ax.contourf(model_lon, model_lat,
+                       pH_3D[0,:,:].T,
+                       levels=np.linspace(vmin, vmax, 100),
+                       cmap=cmap, vmin=vmin, vmax=vmax)
+    cbar = plt.colorbar(cntr, ax=ax,label=colorbar_label)
+    ax.set_xlabel('Longitude (ºE)')
+    ax.set_ylabel('Latitude (ºN)')
+    title = ax.set_title('t = ' + str(np.round(t[0],3)) + ' yr')
+
+    # update function: this updates each frame with the new "axis", which is the subsequent contour plot
+    def update_frame(idx):
+        ax.clear()
+        pH_3D = make_3D(pH[idx], ocnmask)
+        ax.contourf(model_lon, model_lat,
+                    pH_3D[0,:,:].T,
+                    levels=np.linspace(vmin, vmax, 100),
+                    cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.set_xlabel('Longitude (ºE)')
+        ax.set_ylabel('Latitude (ºN)')
+        ax.set_title('t = ' + str(np.round(t[idx],3)) + ' yr')
+        return []
+    
+    # make and save animation
+    ani = animation.FuncAnimation(fig, update_frame, frames=nt, interval=100, blit=False)
+    writer = animation.writers['ffmpeg'](fps=10)
+    ani.save(filename, writer=writer, dpi=200)
+    
+    
+def make_section_animation(variable, colorbar_label, model_depth, model_lat, t, nt, vmin, vmax, cmap, filename):
+    fig, ax = plt.subplots(figsize=(10,7))
+    
+    # first frame of animation
+    cntr = ax.contourf(model_lat, model_depth,
+                       variable.isel(time=0).values[:,90,:],
+                       levels=np.linspace(vmin, vmax, 100),
+                       cmap=cmap, vmin=vmin, vmax=vmax)
+    cbar = plt.colorbar(cntr, ax=ax,label=colorbar_label)
+    ax.invert_yaxis()
+    ax.set_xlabel('Latitude (ºN)')
+    ax.set_ylabel('Depth (m)')
+    title = ax.set_title('t = ' + str(np.round(t[0],3)) + ' yr at 181ºE')
+
+    
+    # update function: this updates each frame with the new "axis", which is the subsequent contour plot
+    def update_frame(idx):
+        ax.clear()
+        ax.contourf(model_lat, model_depth,
+                    variable.isel(time=idx).values[:,90,:],
+                    levels=np.linspace(vmin, vmax, 100),
+                    cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.invert_yaxis()
+        ax.set_xlabel('Latitude (ºN)')
+        ax.set_ylabel('Depth (m)')
+        ax.set_title('t = ' + str(np.round(t[idx],3)) + ' yr at 181 ºE')
+        return []
+    
+    # make and save animation
+    ani = animation.FuncAnimation(fig, update_frame, frames=nt, interval=100, blit=False)
+    writer = animation.writers['ffmpeg'](fps=10)
+    ani.save(filename, writer=writer, dpi=200)
+    
+def make_section_animation_pH(pH, colorbar_label, model_depth, model_lat, t, nt, ocnmask, vmin, vmax, cmap, filename):
+    fig, ax = plt.subplots(figsize=(10,7))
+    
+    # first frame of animation
+    pH_3D = make_3D(pH[0], ocnmask)
+    cntr = ax.contourf(model_lat, model_depth,
+                       pH_3D[:,90,:],
+                       levels=np.linspace(vmin, vmax, 100),
+                       cmap=cmap, vmin=vmin, vmax=vmax)
+    cbar = plt.colorbar(cntr, ax=ax,label=colorbar_label)
+    ax.invert_yaxis()
+    ax.set_xlabel('Latitude (ºN)')
+    ax.set_ylabel('Depth (m)')
+    title = ax.set_title('t = ' + str(np.round(t[0],3)) + ' yr at 181ºE')
+
+    
+    # update function: this updates each frame with the new "axis", which is the subsequent contour plot
+    def update_frame(idx):
+        pH_3D = make_3D(pH[idx], ocnmask)
+        ax.clear()
+        ax.contourf(model_lat, model_depth,
+                    pH_3D[:,90,:],
+                    levels=np.linspace(vmin, vmax, 100),
+                    cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.invert_yaxis()
+        ax.set_xlabel('Latitude (ºN)')
+        ax.set_ylabel('Depth (m)')
+        ax.set_title('t = ' + str(np.round(t[idx],3)) + ' yr at 181 ºE')
+        return []
+    
+    # make and save animation
+    ani = animation.FuncAnimation(fig, update_frame, frames=nt, interval=100, blit=False)
+    writer = animation.writers['ffmpeg'](fps=10)
+    ani.save(filename, writer=writer, dpi=200)

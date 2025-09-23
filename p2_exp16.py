@@ -89,6 +89,7 @@ from time import time
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
+
 # load model architecture
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
@@ -169,20 +170,22 @@ q_AT_locations_mask = q_AT_depths * q_AT_latlons
 #q_emissions = np.zeros(nt)
 
 # with emissions scenario
-scenarios = ['ssp126', 'ssp245', 'ssp370', 'ssp434', 'ssp585']
+scenarios = ['ssp126', 'ssp245', 'ssp370', 'ssp434', 'ssp585', 'none']
 
 # EXPERIMENT NAMES AND DESCRIPTIONS
-experiment_names = ['exp16_2025-09-19-ssp126-MLD-all_lat_lon.nc',
-                 'exp16_2025-09-19-ssp245-MLD-all_lat_lon.nc',
-                 'exp16_2025-09-19-ssp370-MLD-all_lat_lon.nc',
-                 'exp16_2025-09-19-ssp434-MLD-all_lat_lon.nc',
-                 'exp16_2025-09-19-ssp585-MLD-all_lat_lon.nc',]
+experiment_names = ['exp16_2025-09-20-ssp126-MLD-all_lat_lon.nc',
+                    'exp16_2025-09-20-ssp245-MLD-all_lat_lon.nc',
+                    'exp16_2025-09-20-ssp370-MLD-all_lat_lon.nc',
+                    'exp16_2025-09-20-ssp434-MLD-all_lat_lon.nc',
+                    'exp16_2025-09-20-ssp585-MLD-all_lat_lon.nc',
+                    'exp16_2025-09-20-no_emissions-MLD-all_lat_lon.nc']
 
 experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp1-2.6',
                     'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp2-4.5',
                     'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp3-7.0',
                     'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp4-3.4',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp5-8.5',]
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp5-8.5',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface with no emissions scenario']
 
 #%% getting initial ∆DIC conditions from TRACEv1
 # note, doing set up with Fortran ordering for consistency
@@ -323,12 +326,9 @@ gammax = k * V * (1 - f_ice) / Ma / z1
 gammaC = -1 * k * (1 - f_ice) / z1
 
 #%% loop through multiple experiments
-t = np.arange(0, 8, dt) # 7 years after year 0 (for now)
-experiment_names = ['exp16_2025-09-18-b.nc']
-experiment_attrs = ['test run of AT addition in all grid cells in max annual mixed layer with ssp2-4.5']
-scenarios = ['ssp245']
 
-for exp_idx in range(len(experiment_names)):
+#for exp_idx in range(len(experiment_names)):
+for exp_idx in range(0,1):
     
     print('\nnow running experiment ' + experiment_names[exp_idx] + '\n')
 
@@ -336,7 +336,7 @@ for exp_idx in range(len(experiment_names)):
     _, _, emissions_annual = p2.get_emissions_scenario(data_path, scenarios[exp_idx])
     q_emissions = emissions_annual[2015:nt+2015]
 
-    #%% construct matrix C
+    # construct matrix C
     # matrix form:
     #  dc/dt = A * c + q
     #  c = variable(s) of interest
@@ -357,7 +357,7 @@ for exp_idx in range(len(experiment_names)):
     
     c = np.zeros((1 + 2*m, nt))
     
-    #%% construct initial q vector (it is going to change every iteration)
+    # construct initial q vector (it is going to change every iteration)
     # q = [ 0                                                                           ] --> 1 * nt, q[0]
     #     [ ∆q_CDR,DIC + ∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc      ] --> m * nt, q[1:(m+1)]
     #     [ ∆q_CDR,AT + 2 * (∆q_diss,arag + ∆q_diss,calc - ∆q_prod,arag - ∆q_prod,calc) ] --> m * nt, q[(m+1):(2*m+1)]
@@ -369,26 +369,29 @@ for exp_idx in range(len(experiment_names)):
     
     q = np.zeros((1 + 2*m, nt))
     
-    #%% time stepping simulation forward
+    # time stepping simulation forward
     
     # set initial baseline to evaluate if co2sys recalculation is needed
     AT_at_last_calc = AT.copy()
     DIC_at_last_calc = DIC.copy()
-    
+    AT_current = AT.copy()
+    DIC_current = DIC.copy()
+  
     for idx in tqdm(range(0,nt)):
-        # AT and DIC are equal to initial AT and DIC + whatever the change in AT and DIC are
-        AT_current = AT + c[(m+1):(2*m+1), idx]
-        DIC_current = DIC + c[1:(m+1), idx]
+        if idx > 0:
+            # AT and DIC are equal to initial AT and DIC + whatever the change in AT and DIC seen in previous time step are
+            AT_current = AT + c[(m+1):(2*m+1), idx-1]
+            DIC_current = DIC + c[1:(m+1), idx-1]
         
         # recalculate carbonate system every time >5% of grid cells see change in AT or DIC >5% since last recalculation
         frac_AT = np.mean(np.abs(AT_current - AT_at_last_calc) > 0.05 * np.abs(AT_at_last_calc)) # calculate fraction of grid cells with change in AT above 10%
         frac_DIC = np.mean(np.abs(DIC_current - DIC_at_last_calc) > 0.05 * np.abs(DIC_at_last_calc)) # calculate fraction of grid cells with change in DIC above 10%
         print('\nfraction of cells with change in AT >5%: ' + str(frac_AT))
         print('fraction of cells with change in DIC >5%: ' + str(frac_DIC))
-    
+ 
         if idx == 0 or frac_AT > 0.05 or frac_DIC > 0.05:
             AT_at_last_calc = AT_current.copy()
-            AT_at_last_calc = DIC_current.copy()
+            DIC_at_last_calc = DIC_current.copy()
             # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
             # do this for only ocean grid cells
             # this is PyCO2SYSv2
@@ -408,7 +411,7 @@ for exp_idx in range(len(experiment_names)):
         
             pCO2_000001 = co2sys_000001['pCO2']
             R_A = ((pCO2_000001 - pCO2)/pCO2) / (0.000001/AT)
-            
+         
             # see if average pH has exceeded preindustrial average pH
             avg_pH = np.nanmean(co2sys['pH'])
             if avg_pH > avg_pH_preind:
@@ -587,7 +590,7 @@ for exp_idx in range(len(experiment_names)):
         q_delAT_3D[idx, :, :, :] = q_delAT_reshaped
     
     # save model output in netCDF format
-    global_attrs = {experiment_attrs[exp_idx]}
+    global_attrs = {'description': experiment_attrs[exp_idx]}
     # save model output
     p2.save_model_output(
         experiment_names[exp_idx], 
@@ -604,7 +607,7 @@ for exp_idx in range(len(experiment_names)):
 
 #%% open and analyze outputs
 # calculate change in surface pH at each time step
-data = xr.open_dataset(output_path + 'exp16_2025-09-18-a.nc')
+data = xr.open_dataset(output_path + 'exp16_2025-09-20-ssp126-MLD-all_lat_lon.nc')
 t = data['time'].values
 nt = len(t)
 
@@ -618,27 +621,44 @@ AT_modeled_3D = data.delAT + AT_broadcasted
 #AT_modeled_3D = data.AT_added + AT_broadcasted
 
 pH_modeled = []
+del_pH_modeled = []
+del_pH_preind_modeled = []
 avg_pH_modeled = np.zeros(nt)
 avg_pH_modeled_surf = np.zeros(nt)
 
+avg_AT_modeled = np.zeros(nt)
+avg_AT_modeled_surf = np.zeros(nt)
+
+avg_DIC_modeled = np.zeros(nt)
+avg_DIC_modeled_surf = np.zeros(nt)
+
 for idx in range(nt):
     DIC_modeled = p2.flatten(DIC_modeled_3D.isel(time=idx).values, ocnmask)
-    AT_modeled = p2.flatten(AT_modeled_3D.isel(time=idx).values, ocnmask)
-        
+    AT_modeled = p2.flatten(AT_modeled_3D.isel(time=idx).values, ocnmask)        
     co2sys = pyco2.sys(dic=DIC_modeled, alkalinity=AT_modeled, salinity=S, temperature=T,
                        pressure=pressure, total_silicate=Si, total_phosphate=P)
     
     pH_modeled.append(co2sys['pH'])
+    del_pH_modeled.append(co2sys['pH'] - pH_preind)
+    del_pH_preind_modeled.append(co2sys['pH'] - pH_preind)
+    
     avg_pH_modeled[idx] = np.nanmean(co2sys['pH'])
     avg_pH_modeled_surf[idx] = np.nanmean(co2sys['pH'][0:ns])
-
+    
+    avg_AT_modeled[idx] = np.nanmean(AT_modeled)
+    avg_AT_modeled_surf[idx] = np.nanmean(AT_modeled[0:ns])
+    
+    avg_DIC_modeled[idx] = np.nanmean(DIC_modeled)
+    avg_DIC_modeled_surf[idx] = np.nanmean(DIC_modeled[0:ns])
+    
     #print(np.nanmean(co2sys['pH']))
     pH_modeled_3D = p2.make_3D(co2sys['pH'], ocnmask)
-    print(np.nanmean(pH_modeled_3D[0,:,:]))
-    p2.plot_surface3d(data.lon, data.lat, pH_preind_3D - pH_modeled_3D, 0, -0.5, 0.5, 'RdBu', 'pH difference from preindustrial at year ' + str(data['time'].isel(time=idx).values))
+    #print(np.nanmean(pH_modeled_3D[0,:,:]))
+    #print(np.nanmax(pH_modeled_3D[0,:,:]))
+    #p2.plot_surface3d(data.lon, data.lat, pH_preind_3D - pH_modeled_3D, 0, -0.5, 0.5, 'RdBu', 'pH difference from preindustrial at year ' + str(data['time'].isel(time=idx).values))
 
-for idx in range(nt-1):
-    p2.plot_surface3d(data.lon, data.lat, data['AT_added'].isel(time=idx).values, 0, 0, 100, 'viridis', 'AT (µmol kg-1) added at year ' + str(data['time'].isel(time=idx).values))
+#for idx in range(nt-1):
+#    p2.plot_surface3d(data.lon, data.lat, data['AT_added'].isel(time=idx).values, 0, 0, 100, 'viridis', 'AT (µmol kg-1) added at year ' + str(data['time'].isel(time=idx).values))
 
 
 #%% make figure of annual alkalinity change each year vs. average ocean pH
@@ -647,54 +667,223 @@ model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"
 
 AT_added = data['AT_added'] * model_vols_xr * rho * 1e-6
 AT_added = AT_added.sum(dim=['depth', 'lon', 'lat'], skipna=True).values
-AT_added = np.cumsum(AT_added)
+AT_added_cum = np.cumsum(AT_added)
 
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
-ax.plot(years, avg_pH_modeled, label='pH under max OAE')
+ax.plot(years[0:185], avg_pH_modeled[0:185], label='pH under max OAE')
 ax.axhline(np.nanmean(pH_preind), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
 
 # set up secondary axis "years"
-year_to_AT = interp1d(years, AT_added, kind='linear', fill_value="extrapolate")
-AT_to_year = interp1d(AT_added, years, kind='linear', fill_value="extrapolate")
+year_to_AT = interp1d(years, AT_added_cum, kind='linear', fill_value="extrapolate")
+AT_to_year = interp1d(AT_added_cum, years, kind='linear', fill_value="extrapolate")
 secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
 secax.set_xlabel('total amount of AT added (mol)')
 
 
 ax.set_ylabel('average ocean pH')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2040])
+ax.set_xlim([2015, 2215])
 ax.set_ylim([7.9, 8])
 plt.legend(loc = 'lower right')
 plt.show()
 
-#%% same thing, but for surface ocean
-years = np.arange(start=2015, stop=2015 + nt)
-
-AT_added = data['AT_added'] * model_vols_xr * rho * 1e-6
-AT_added = AT_added.sum(dim=['depth', 'lon', 'lat'], skipna=True).values
-AT_added = np.cumsum(AT_added)
+# same thing, but for surface ocean
 
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
-ax.plot(years, avg_pH_modeled_surf, label='pH under max OAE')
+ax.plot(years[0:185], avg_pH_modeled_surf[0:185], label='pH under max OAE')
 ax.axhline(np.nanmean(pH_preind[0:ns]), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
 
-# set up secondary axis "years"
-year_to_AT = interp1d(years, AT_added, kind='linear', fill_value="extrapolate")
-AT_to_year = interp1d(AT_added, years, kind='linear', fill_value="extrapolate")
 secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
 secax.set_xlabel('total amount of AT added (mol)')
 
-
 ax.set_ylabel('average surface ocean pH')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2040])
+ax.set_xlim([2015, 2215])
 ax.set_ylim([8, 8.3])
 plt.legend(loc = 'lower right')
 plt.show()
+
+#%% plot DIC over time
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.plot(years[0:185], avg_DIC_modeled_surf[0:185], label='DIC under max OAE')
+ax.axhline(np.nanmean(DIC_preind[0:ns]), c='black', linestyle='--', label='preindustrial DIC') # add line showing preindustrial surface DIC
+
+secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
+secax.set_xlabel('total amount of AT added (mol)')
+
+ax.set_ylabel('average surface ocean DIC')
+ax.set_xlabel('year')
+ax.set_xlim([2015, 2215])
+ax.set_ylim([1950, 2250])
+plt.legend(loc = 'upper right')
+plt.show()
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.plot(years[0:185], avg_DIC_modeled[0:185], label='DIC under max OAE')
+ax.axhline(np.nanmean(DIC_preind), c='black', linestyle='--', label='preindustrial DIC') # add line showing preindustrial surface DIC
+
+secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
+secax.set_xlabel('total amount of AT added (mol)')
+
+ax.set_ylabel('average ocean DIC')
+ax.set_xlabel('year')
+ax.set_xlim([2015, 2215])
+ax.set_ylim([1950, 2250])
+plt.legend(loc = 'lower right')
+plt.show()
+
+#%% plot AT over time
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.plot(years[0:185], avg_AT_modeled_surf[0:185], label='AT under max OAE')
+ax.axhline(np.nanmean(AT[0:ns]), c='black', linestyle='--', label='glodap AT') # add line showing preindustrial surface DIC
+
+secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
+secax.set_xlabel('total amount of AT added (mol)')
+
+ax.set_ylabel('average surface ocean AT')
+ax.set_xlabel('year')
+ax.set_xlim([2015, 2215])
+ax.set_ylim([2200, 2500])
+plt.legend(loc = 'lower right')
+plt.show()
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.plot(years[0:185], avg_AT_modeled[0:185], label='AT under max OAE')
+ax.axhline(np.nanmean(AT), c='black', linestyle='--', label='glodap AT') # add line showing preindustrial surface DIC
+
+secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
+secax.set_xlabel('total amount of AT added (mol)')
+
+ax.set_ylabel('average ocean AT')
+ax.set_xlabel('year')
+ax.set_xlim([2015, 2215])
+ax.set_ylim([2200, 2500])
+plt.legend(loc = 'lower right')
+plt.show()
+
+#%% plot atmospheric CO2 over time
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.plot(years[0:185], data['delxCO2'].values[0:185] + 400, label='atmospheric CO2 under max OAE')
+ax.axhline(280, c='black', linestyle='--', label='preindustrial atmospheric CO2') # add line showing preindustrial surface pH
+
+secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
+secax.set_xlabel('total amount of AT added (mol)')
+
+ax.set_ylabel('average atmospheric CO2 (ppm)')
+ax.set_xlabel('year')
+ax.set_xlim([2015, 2215])
+ax.set_ylim([250, 450])
+plt.legend(loc = 'upper right')
+plt.show()
+
+
+#%% plot AT added over time
+
+years = np.arange(start=2015, stop=2015 + nt)
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.plot(years[0:185], AT_added[0:185], label='AT added')
+ax.plot(years[0:185], AT_added_cum[0:185], label='cumulative AT added')
+
+ax.set_ylabel('AT (mol)')
+ax.set_xlabel('year')
+ax.set_xlim([2015, 2215])
+#ax.set_ylim([250, 450])
+plt.legend(loc = 'upper left')
+plt.show()
+
+#%% make clip of AT being added to surface over time
+
+#%% make clip of surface AT over time
+colorbar_label = 'Change in Total Alkalinity (µmol kg$^{-1}$)'
+p2.make_surf_animation(data['delAT'], colorbar_label, model_lon, model_lat, t, nt, -300, 300, 'RdBu', 'surface_delAT.mp4')
+
+colorbar_label = 'Total Alkalinity (µmol kg$^{-1}$)'
+p2.make_surf_animation(data['delAT'] + p2.make_3D(AT,ocnmask), colorbar_label, model_lon, model_lat, t, 185, 2100, 2700, 'viridis', 'surface_AT.mp4')
+
+#%% make clip of surface DIC over time
+colorbar_label = 'Change in Dissolved Inorganic Carbon (µmol kg$^{-1}$)'
+p2.make_surf_animation(data['delDIC'], colorbar_label, model_lon, model_lat, t, 185, -300, 300, 'RdBu', 'surface_delDIC.mp4')
+
+colorbar_label = 'Dissolved Inorganic Carbon (µmol kg$^{-1}$)'
+p2.make_surf_animation(data['delDIC'] + p2.make_3D(DIC,ocnmask), colorbar_label, model_lon, model_lat, t, 185, 1850, 2350, 'viridis', 'surface_DIC.mp4')
+
+#%% make clip of surface pH over time
+colorbar_label = 'pH'
+p2.make_surf_animation_pH(pH_modeled, colorbar_label, model_lon, model_lat, t, 185, ocnmask, 7.5, 8.5, 'viridis', 'surface_pH.mp4')
+#
+colorbar_label = 'deviation in pH from preindustrial'
+p2.make_surf_animation_pH(del_pH_preind_modeled, colorbar_label, model_lon, model_lat, t, 185, ocnmask, -0.5, 0.5, 'RdBu', 'surface_delpH_preind.mp4')
+
+#%% make clip of change in section of AT over time
+colorbar_label = 'Change in Total Alkalinity (µmol kg$^{-1}$)'
+p2.make_section_animation(data['delAT'], colorbar_label, model_depth, model_lat, t, 185, -300, 300, 'RdBu', 'section_delAT.mp4')
+
+#%% make clip of change in section of DIC over time
+colorbar_label = 'Change in Dissolved Inorganic Carbon (µmol kg$^{-1}$)'
+p2.make_section_animation(data['delDIC'], colorbar_label, model_depth, model_lat, t, 185, -300, 300, 'RdBu', 'section_delDIC.mp4')
+
+#%% make clip of change in section of pH over time
+colorbar_label = 'pH'
+p2.make_section_animation_pH(pH_modeled, pH_preind, colorbar_label, model_depth, model_lat, t, 185, ocnmask, 7.5, 8.5, 'viridis', 'section_pH.mp4')
+#%%
+colorbar_label = 'deviation in pH from preindustrial'
+p2.make_section_animation_pH(del_pH_preind_modeled, colorbar_label, model_depth, model_lat, t, 185, ocnmask, -0.5, 0.5, 'RdBu', 'section_delpH_preind.mp4')
+
+#%% testing thresholding for co2sys calcs
+c = np.zeros((1 + 2*m, nt))
+
+for idx in range(nt):
+    c[0, idx] = data['delxCO2'].isel(time=idx).values
+    c[1:(m+1), idx] = p2.flatten(data['delDIC'].isel(time=idx).values, ocnmask)
+    c[(m+1):(2*m+1), idx] = p2.flatten(data['delAT'].isel(time=idx).values, ocnmask)
+
+# set initial baseline to evaluate if co2sys recalculation is needed
+AT_at_last_calc = AT.copy()
+DIC_at_last_calc = DIC.copy()
+AT_current = AT.copy()
+DIC_current = DIC.copy()
+  
+for idx in range(0,186):
+    if idx > 0:
+        # AT and DIC are equal to initial AT and DIC + whatever the change in AT and DIC seen in previous time step are
+        AT_current = AT + c[(m+1):(2*m+1), idx-1]
+        DIC_current = DIC + c[1:(m+1), idx-1]
+    
+    # recalculate carbonate system every time >5% of grid cells see change in AT or DIC >5% since last recalculation
+    frac_AT = np.mean(np.abs(AT_current - AT_at_last_calc) > 0.05 * np.abs(AT_at_last_calc)) # calculate fraction of grid cells with change in AT above 10%
+    frac_DIC = np.mean(np.abs(DIC_current - DIC_at_last_calc) > 0.05 * np.abs(DIC_at_last_calc)) # calculate fraction of grid cells with change in DIC above 10%
+    #print('\n idx = ' + str(idx))
+    #print('fraction of cells with change in AT >5%: ' + str(frac_AT))
+    #print('fraction of cells with change in DIC >5%: ' + str(frac_DIC))
+ 
+    if idx == 0 or frac_AT > 0.05 or frac_DIC > 0.05:
+        AT_at_last_calc = AT_current.copy()
+        DIC_at_last_calc = DIC_current.copy()
+        print('carbonate system (re)calculated at year: ' + str(idx+2015))
+
+
+
+
 
 
 
