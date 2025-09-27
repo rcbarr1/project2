@@ -109,8 +109,8 @@ model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
 # depth of first model layer (need bottom of grid cell, not middle) [m]
-grid_cell_height = model_data['wz'].to_numpy()
-z1 = grid_cell_height[1, 0, 0]
+grid_cell_depth = model_data['wz'].to_numpy()
+z1 = grid_cell_depth[1, 0, 0]
 ns = int(np.nansum(ocnmask[0,:,:]))
 
 #%% SET EXPERIMENTAL VARIABLES
@@ -124,26 +124,69 @@ ns = int(np.nansum(ocnmask[0,:,:]))
 # not treated as a variable
 
 # TIME
-dt = 1 # 1 year
-t = np.arange(0, 200, dt) # 1000 years after year 0 (for now)
-nt = len(t)
+#nyears = 5
+#dt = 1 # 1 year
+#t = np.arange(0, nyears, dt) # 200 years after year 0 (for now)
+#nt = len(t)
+
+#nyears = 2
+#dt = 1/360 # 1 day
+#t = np.arange(0, nyears, dt) # 5 years after year 0 (for now)
+#nt = len(t)
+
+dt0 = 1/8640 # 1 hour
+dt1 = 1/360 # 1 day
+dt2 = 1/12 # 1 month
+dt3 = 1 # 1 year
+
+# just year time steps
+exp0_t = np.arange(0,3,dt3)
+
+# an experiment with dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year
+t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
+t2 = np.arange(1, 2+dt2, dt2) # use a 1 month time step until the 2nd year
+exp1_t = np.concatenate((t1, t2))
+
+# another experiment with dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year
+t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
+t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
+exp2_t = np.concatenate((t1, t3))
+
+# another with dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
+t1 = np.arange(0, 1/12, dt1) # use a 1 day time step for the first month
+t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
+t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
+exp3_t = np.concatenate((t1, t2, t3))
+
+# another with dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
+t0 = np.arange(0, 1/360, dt0) # use a 1 day time step for the first month
+t1 = np.arange(1/360, 1/12, dt1) # use a 1 day time step for the first month
+t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
+t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
+exp4_t = np.concatenate((t0, t1, t2, t3))
+
+exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
 
 # DEPTHS OF ADDITION
 
 # to do addition in mixed layer...
-# calculate mixed layer depth at each lat/lon following Holte et al. montly
-# climatology, then create mask of ocean cells that are at or below the mixed
-# layer depth
-monthly_clim = p2.loadmat(data_path + 'monthlyclim.mat')
-MLD_da_max = monthly_clim['mld_da_max']
-MLD_da_mean = monthly_clim['mld_da_mean']
-latm = monthly_clim['latm']
-lonm = monthly_clim['lonm']
-maxMLDs = p2.find_MLD(model_lon, model_lat, ocnmask, MLD_da_max, latm, lonm, 0)
+# pull mixed layer depth at each lat/lon from OCIM model data, then create mask
+# of ocean cells that are at or below the mixed layer depth
+mld = model_data.mld.values # [m]
 # create 3D mask where for each grid cell, mask is set to 1 if the depth in the
 # grid cell depths array is less than the mixed layer depth for that column
-MLDmask = (grid_cell_height < maxMLDs[None, :, :]).astype(int)
-q_AT_depths = MLDmask
+# note: this does miss cells where the MLD is close but does not reach the
+# depth of the next grid cell below (i.e. MLD = 40 m, grid cell depths are at
+# 30 m and 42 m, see lon_idx, lat_idx = 20, 30). I am intentionally leaving
+# this for now to ensure what enters the ocean stays mostly within the mixed
+# layer, but the code could be changed to a different method if needed.exp2_t
+
+mldmask = (grid_cell_depth < mld[None, :, :]).astype(int)
+q_AT_depths = mldmask
+
+plot_mlds = mldmask.sum(axis=0)
+
+p2.plot_surface2d(model_lon, model_lat, plot_mlds, 0, 30, 'viridis', 'how many depth layers deep does mld go')
 
 # to do addition in first (or first two, or first three, etc.) model layer(s)
 #q_AT_depths = ocnmask.copy()
@@ -170,22 +213,36 @@ q_AT_locations_mask = q_AT_depths * q_AT_latlons
 #q_emissions = np.zeros(nt)
 
 # with emissions scenario
-scenarios = ['ssp126', 'ssp245', 'ssp370', 'ssp434', 'ssp585', 'none']
+#scenarios = ['ssp126', 'ssp245', 'ssp370', 'ssp434', 'ssp585', 'none']
+scenarios = ['none', 'none', 'none', 'none', 'none']
 
 # EXPERIMENT NAMES AND DESCRIPTIONS
-experiment_names = ['exp16_2025-09-20-ssp126-MLD-all_lat_lon.nc',
-                    'exp16_2025-09-20-ssp245-MLD-all_lat_lon.nc',
-                    'exp16_2025-09-20-ssp370-MLD-all_lat_lon.nc',
-                    'exp16_2025-09-20-ssp434-MLD-all_lat_lon.nc',
-                    'exp16_2025-09-20-ssp585-MLD-all_lat_lon.nc',
-                    'exp16_2025-09-20-no_emissions-MLD-all_lat_lon.nc']
 
-experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp1-2.6',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp2-4.5',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp3-7.0',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp4-3.4',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp5-8.5',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface with no emissions scenario']
+#experiment_names = ['exp16_2025-09-20-ssp126-MLD-all_lat_lon.nc',
+#                    'exp16_2025-09-20-ssp245-MLD-all_lat_lon.nc',
+#                    'exp16_2025-09-20-ssp370-MLD-all_lat_lon.nc',
+#                    'exp16_2025-09-20-ssp434-MLD-all_lat_lon.nc',
+#                    'exp16_2025-09-20-ssp585-MLD-all_lat_lon.nc',
+#                    'exp16_2025-09-20-no_emissions-MLD-all_lat_lon.nc']
+
+#experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp1-2.6',
+#                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp2-4.5',
+#                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp3-7.0',
+#                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp4-3.4',
+#                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp5-8.5',
+#                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface with no emissions scenario']
+
+experiment_names = ['exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping4.nc',]
+
+experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for two years',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
 
 #%% getting initial ∆DIC conditions from TRACEv1
 # note, doing set up with Fortran ordering for consistency
@@ -327,14 +384,57 @@ gammaC = -1 * k * (1 - f_ice) / z1
 
 #%% loop through multiple experiments
 
-#for exp_idx in range(len(experiment_names)):
-for exp_idx in range(0,1):
+for exp_idx in range(len(experiment_names)):
+    t = exp_t[exp_idx] # time steps (starting from zero) [yr]
+    nt = len(t) # total number of time steps
+    dt = np.diff(t, prepend=np.nan) # difference between each time step [yr]
     
     print('\nnow running experiment ' + experiment_names[exp_idx] + '\n')
 
     # set up emissions scenario
-    _, _, emissions_annual = p2.get_emissions_scenario(data_path, scenarios[exp_idx])
-    q_emissions = emissions_annual[2015:nt+2015]
+    
+    # get annual emissions
+    q_emissions = np.zeros(nt)
+
+    if scenarios[exp_idx] != 'none':
+    
+        _, _, emissions_annual = p2.get_emissions_scenario(data_path, scenarios[exp_idx])
+        emissions_annual = emissions_annual[2015::]
+        
+        nyears_emissions = len(emissions_annual)
+        integrated_emissions = np.zeros(nt, dtype=float)
+        
+        # for each timestep, compute overlap with all simulation years that
+        # intersect the emissions scenario interval
+        #for idx in range(0,1):
+        for idx in range(0,nt-1):
+            a = t[idx] # interval start
+            b = t[idx+1] # interval end
+            
+            # find if there are years that could overlap in this interval (i.e.
+            # if an interval spans more than one year)
+            y_start = int(np.floor(a))
+            y_end = int(np.floor(b - 1e-12)) # inclusive last year index that starts before b
+            
+            # clamp to available annual emissions indices (i.e. assume
+            # emissions beyond data available are zero)
+            y0 = max(0, y_start)
+            y1 = min(nyears_emissions - 1, y_end)
+            
+            # for all year indicies "y" that might overlap with a timestep,
+            # calculate the length of the interval, get integrated value, and 
+            # accumulate emissions (if > 1 year time step)
+            for y in range(y0, y1 + 1):
+                year_start = float(y)
+                year_end = float(y + 1)
+                overlap_start = max(a, year_start)
+                overlap_end = min(b, year_end)
+                overlap = max(0.0, overlap_end - overlap_start)
+                if overlap > 0:
+                    integrated_emissions[idx+1] += emissions_annual[y] * overlap # emissions_annual [mol CO2 (mol air)-1 yr-1] * overlap [yr] -> mol CO2 (mol air)-1
+       
+        # calculate rate of emissions from integraetd emissions
+        q_emissions[1::] = integrated_emissions[1::] / dt[1::]
 
     # construct matrix C
     # matrix form:
@@ -379,24 +479,29 @@ for exp_idx in range(0,1):
   
     for idx in tqdm(range(0,nt)):
         if idx > 0:
-            # AT and DIC are equal to initial AT and DIC + whatever the change in AT and DIC seen in previous time step are
+            # AT and DIC are equal to initial AT and DIC + whatever the change
+            # in AT and DIC seen in previous time step are
             AT_current = AT + c[(m+1):(2*m+1), idx-1]
             DIC_current = DIC + c[1:(m+1), idx-1]
         
-        # recalculate carbonate system every time >5% of grid cells see change in AT or DIC >5% since last recalculation
+        # recalculate carbonate system every time >5% of grid cells see change
+        # in AT or DIC >5% since last recalculation
         frac_AT = np.mean(np.abs(AT_current - AT_at_last_calc) > 0.05 * np.abs(AT_at_last_calc)) # calculate fraction of grid cells with change in AT above 10%
         frac_DIC = np.mean(np.abs(DIC_current - DIC_at_last_calc) > 0.05 * np.abs(DIC_at_last_calc)) # calculate fraction of grid cells with change in DIC above 10%
         print('\nfraction of cells with change in AT >5%: ' + str(frac_AT))
-        print('fraction of cells with change in DIC >5%: ' + str(frac_DIC))
+        print('fraction of cells with change in DIC >5%: ' + str(frac_DIC)) 
  
+        # (re)calculate carbonate system if it has not yet been calculated or
+        # needs to be recalculated
         if idx == 0 or frac_AT > 0.05 or frac_DIC > 0.05:
             AT_at_last_calc = AT_current.copy()
             DIC_at_last_calc = DIC_current.copy()
             # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
-            # do this for only ocean grid cells
+            # do this for only surface ocean grid cells
             # this is PyCO2SYSv2
-            co2sys = pyco2.sys(dic=DIC_current, alkalinity=AT_current, salinity=S, temperature=T,
-                               pressure=pressure, total_silicate=Si, total_phosphate=P)
+            co2sys = pyco2.sys(dic=DIC_current, alkalinity=AT_current,
+                               salinity=S, temperature=T, pressure=pressure,
+                               total_silicate=Si, total_phosphate=P)
         
             # extract key results arrays
             pCO2 = co2sys['pCO2'] # pCO2 [µatm]
@@ -405,15 +510,18 @@ for exp_idx in range(0,1):
         
             # calculate revelle factor w.r.t. AT [unitless]
             # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
-            co2sys_000001 = pyco2.sys(dic=DIC_current, alkalinity=AT_current+0.000001, salinity=S,
-                                   temperature=T, pressure=pressure, total_silicate=Si,
-                                   total_phosphate=P)
+            # to speed up, only calculating this in surface
+            co2sys_000001 = pyco2.sys(dic=DIC_current[0:ns], alkalinity=AT_current[0:ns]+0.000001, salinity=S[0:ns],
+                                   temperature=T[0:ns], pressure=pressure[0:ns], total_silicate=Si[0:ns],
+                                   total_phosphate=P[0:ns])
         
             pCO2_000001 = co2sys_000001['pCO2']
-            R_A = ((pCO2_000001 - pCO2)/pCO2) / (0.000001/AT)
+            R_A_surf = ((pCO2_000001 - pCO2[0:ns])/pCO2[0:ns]) / (0.000001/AT[0:ns])
+            R_A = np.full(R_C.shape, np.nan)
+            R_A[0:ns] = R_A_surf
          
             # see if average pH has exceeded preindustrial average pH
-            avg_pH = np.nanmean(co2sys['pH'])
+            avg_pH = np.average(co2sys['pH'], weights=p2.flatten(model_vols,ocnmask))
             if avg_pH > avg_pH_preind:
                 print('average pH exceeded average preindustrial pH at time step ' + str(idx))
                 break
@@ -428,77 +536,82 @@ for exp_idx in range(0,1):
             
             print('carbonate system recalculated (year ' + str(idx) + ')')
         
-            # calculate "A" matrix based on new carbonate system
+            # must (re)calculate A matrix if 1. it has not yet been calculated
+            # 2. the carbonate system needs to be recalculated or 3. the time
+            # step interval (dt) has changed
+            if idx == 0 or frac_AT > 0.05 or frac_DIC > 0.05 or dt[idx] != dt[idx-1]:
+            
+                # calculate "A" matrix
+            
+                # dimensions
+                # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
+                #     [m x 1][m x m][m x m]
+                #     [m x 1][m x m][m x m]
+            
+                # what acts on what
+                # A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
+                #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
+                #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
+            
+                # math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
+                # A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
+                #     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
+                #     [0                        ][0                              ][TR                           ]
+            
+                # notation for setup
+                # A = [A00][A01][A02]
+                #     [A10][A11][A12]
+                #     [A20][A21][A22]
+            
+                # to solve for ∆xCO2
+                A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
+                A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
+                A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
+            
+                # combine into A0 row
+                A0_ = np.full(1 + 2*m, np.nan)
+                A0_[0] = A00
+                A0_[1:(m+1)] = A01
+                A0_[(m+1):(2*m+1)] = A02
+            
+                del A00, A01, A02
+            
+                # to solve for ∆DIC
+                A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) # is csc the most efficient format? come back to this
+                A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
+                A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
+            
+                A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
+            
+                del A10, A11, A12
+            
+                # to solve for ∆AT
+                A20 = np.zeros(m)
+                A21 = 0 * TR
+                A22 = TR
+            
+                A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
+            
+                del A20, A21, A22
+            
+                # build into one mega-array!!
+                A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
+            
+                del A0_, A1_, A2_
+                    
+                # perform time stepping using Euler backward
+                LHS = sparse.eye(A.shape[0], format="csc") - dt[idx] * A
         
-            # dimensions
-            # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
-            #     [m x 1][m x m][m x m]
-            #     [m x 1][m x m][m x m]
-        
-            # what acts on what
-            # A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
-            #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
-            #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
-        
-            # math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
-            # A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
-            #     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
-            #     [0                        ][0                              ][TR                           ]
-        
-            # notation for setup
-            # A = [A00][A01][A02]
-            #     [A10][A11][A12]
-            #     [A20][A21][A22]
-        
-            # to solve for ∆xCO2
-            A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
-            A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
-            A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
-        
-            # combine into A0 row
-            A0_ = np.full(1 + 2*m, np.nan)
-            A0_[0] = A00
-            A0_[1:(m+1)] = A01
-            A0_[(m+1):(2*m+1)] = A02
-        
-            del A00, A01, A02
-        
-            # to solve for ∆DIC
-            A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) # is csc the most efficient format? come back to this
-            A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
-            A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
-        
-            A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
-        
-            del A10, A11, A12
-        
-            # to solve for ∆AT
-            A20 = np.zeros(m)
-            A21 = 0 * TR
-            A22 = TR
-        
-            A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
-        
-            del A20, A21, A22
-        
-            # build into one mega-array!!
-            A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
-        
-            del A0_, A1_, A2_
-                
-            # perform time stepping using Euler backward
-            LHS = sparse.eye(A.shape[0], format="csc") - dt * A
-        
-            # test condition number of matrix
-            est = sparse.linalg.onenormest(LHS)
-            print('estimated 1-norm condition number LHS: ' + str(round(est,1)))
-        
-            start = time()
-            ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
-            stop = time()
-            print('ilu calculations: ' + str(stop - start) + ' s\n')
-        
-            M = LinearOperator(LHS.shape, ilu.solve)
+                # test condition number of matrix
+                est = sparse.linalg.onenormest(LHS)
+                print('estimated 1-norm condition number LHS: ' + str(round(est,1)))
+            
+                start = time()
+                ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
+                stop = time()
+                print('ilu calculations: ' + str(stop - start) + ' s\n')
+            
+                M = LinearOperator(LHS.shape, ilu.solve)
         
         # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
         if idx >= 1:
@@ -534,7 +647,7 @@ for exp_idx in range(0,1):
                 c0=None
         
             # calculate right hand side and perform time stepping
-            RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx])
+            RHS = c[:,idx-1] + np.squeeze(dt[idx] * q[:,idx])
             #start = time()
             c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
             #stop = time()
@@ -607,9 +720,19 @@ for exp_idx in range(0,1):
 
 #%% open and analyze outputs
 # calculate change in surface pH at each time step
-data = xr.open_dataset(output_path + 'exp16_2025-09-20-ssp126-MLD-all_lat_lon.nc')
+data = xr.open_dataset(output_path + 'exp16_2025-09-26-ssp126-MLD-all_lat_lon.nc')
+scenario = 'ssp126'
 t = data['time'].values
+
 nt = len(t)
+nt_plot = 5
+nyears=2
+
+#nyears = 2
+#dt = 1/360 # 1 day
+#t = np.arange(0, nyears, dt) # 5 years after year 0 (for now)
+#nt = len(t)
+#nt_plot = nt
 
 DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
 AT_broadcasted = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
@@ -642,14 +765,14 @@ for idx in range(nt):
     del_pH_modeled.append(co2sys['pH'] - pH_preind)
     del_pH_preind_modeled.append(co2sys['pH'] - pH_preind)
     
-    avg_pH_modeled[idx] = np.nanmean(co2sys['pH'])
-    avg_pH_modeled_surf[idx] = np.nanmean(co2sys['pH'][0:ns])
+    avg_pH_modeled[idx] = np.average(co2sys['pH'], weights=p2.flatten(model_vols,ocnmask))
+    avg_pH_modeled_surf[idx] = np.average(co2sys['pH'][0:ns], weights=p2.flatten(model_vols,ocnmask)[0:ns])
     
-    avg_AT_modeled[idx] = np.nanmean(AT_modeled)
-    avg_AT_modeled_surf[idx] = np.nanmean(AT_modeled[0:ns])
+    avg_AT_modeled[idx] = np.average(AT_modeled, weights=p2.flatten(model_vols,ocnmask))
+    avg_AT_modeled_surf[idx] = np.average(AT_modeled[0:ns], weights=p2.flatten(model_vols,ocnmask)[0:ns])
     
-    avg_DIC_modeled[idx] = np.nanmean(DIC_modeled)
-    avg_DIC_modeled_surf[idx] = np.nanmean(DIC_modeled[0:ns])
+    avg_DIC_modeled[idx] = np.average(DIC_modeled, weights=p2.flatten(model_vols,ocnmask))
+    avg_DIC_modeled_surf[idx] = np.average(DIC_modeled[0:ns], weights=p2.flatten(model_vols,ocnmask)[0:ns])
     
     #print(np.nanmean(co2sys['pH']))
     pH_modeled_3D = p2.make_3D(co2sys['pH'], ocnmask)
@@ -662,7 +785,7 @@ for idx in range(nt):
 
 
 #%% make figure of annual alkalinity change each year vs. average ocean pH
-years = np.arange(start=2015, stop=2015 + nt)
+years = t + 2015
 model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
 
 AT_added = data['AT_added'] * model_vols_xr * rho * 1e-6
@@ -672,7 +795,7 @@ AT_added_cum = np.cumsum(AT_added)
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
-ax.plot(years[0:185], avg_pH_modeled[0:185], label='pH under max OAE')
+ax.plot(years[0:nt_plot], avg_pH_modeled[0:nt_plot], label='pH under max OAE')
 ax.axhline(np.nanmean(pH_preind), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
 
 # set up secondary axis "years"
@@ -681,11 +804,10 @@ AT_to_year = interp1d(AT_added_cum, years, kind='linear', fill_value="extrapolat
 secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
 secax.set_xlabel('total amount of AT added (mol)')
 
-
-ax.set_ylabel('average ocean pH')
+ax.set_ylabel('average ocean pH (weighted by grid cell volume)')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2215])
-ax.set_ylim([7.9, 8])
+ax.set_xlim([2015, 2020])
+ax.set_ylim([7.8, 8.1])
 plt.legend(loc = 'lower right')
 plt.show()
 
@@ -694,15 +816,15 @@ plt.show()
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
-ax.plot(years[0:185], avg_pH_modeled_surf[0:185], label='pH under max OAE')
+ax.plot(years[0:nt_plot], avg_pH_modeled_surf[0:nt_plot], label='pH under max OAE')
 ax.axhline(np.nanmean(pH_preind[0:ns]), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
 
 secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
 secax.set_xlabel('total amount of AT added (mol)')
 
-ax.set_ylabel('average surface ocean pH')
+ax.set_ylabel('average surface ocean pH (weighted by grid cell volume)')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2215])
+ax.set_xlim([2015, 2020])
 ax.set_ylim([8, 8.3])
 plt.legend(loc = 'lower right')
 plt.show()
@@ -712,32 +834,32 @@ plt.show()
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
-ax.plot(years[0:185], avg_DIC_modeled_surf[0:185], label='DIC under max OAE')
+ax.plot(years[0:nt_plot], avg_DIC_modeled_surf[0:nt_plot], label='DIC under max OAE')
 ax.axhline(np.nanmean(DIC_preind[0:ns]), c='black', linestyle='--', label='preindustrial DIC') # add line showing preindustrial surface DIC
 
 secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
 secax.set_xlabel('total amount of AT added (mol)')
 
-ax.set_ylabel('average surface ocean DIC')
+ax.set_ylabel('average surface ocean DIC (weighted by grid cell volume)')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2215])
-ax.set_ylim([1950, 2250])
+ax.set_xlim([2015, 2020])
+ax.set_ylim([1950, 2350])
 plt.legend(loc = 'upper right')
 plt.show()
 
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
-ax.plot(years[0:185], avg_DIC_modeled[0:185], label='DIC under max OAE')
+ax.plot(years[0:nt_plot], avg_DIC_modeled[0:nt_plot], label='DIC under max OAE')
 ax.axhline(np.nanmean(DIC_preind), c='black', linestyle='--', label='preindustrial DIC') # add line showing preindustrial surface DIC
 
 secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
 secax.set_xlabel('total amount of AT added (mol)')
 
-ax.set_ylabel('average ocean DIC')
+ax.set_ylabel('average ocean DIC (weighted by grid cell volume)')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2215])
-ax.set_ylim([1950, 2250])
+ax.set_xlim([2015, 2020])
+ax.set_ylim([1950, 2350])
 plt.legend(loc = 'lower right')
 plt.show()
 
@@ -746,32 +868,32 @@ plt.show()
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
-ax.plot(years[0:185], avg_AT_modeled_surf[0:185], label='AT under max OAE')
+ax.plot(years[0:nt_plot], avg_AT_modeled_surf[0:nt_plot], label='AT under max OAE')
 ax.axhline(np.nanmean(AT[0:ns]), c='black', linestyle='--', label='glodap AT') # add line showing preindustrial surface DIC
 
 secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
 secax.set_xlabel('total amount of AT added (mol)')
 
-ax.set_ylabel('average surface ocean AT')
+ax.set_ylabel('average surface ocean AT (weighted by grid cell volume)')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2215])
-ax.set_ylim([2200, 2500])
+ax.set_xlim([2015, 2020])
+ax.set_ylim([2200, 2550])
 plt.legend(loc = 'lower right')
 plt.show()
 
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
-ax.plot(years[0:185], avg_AT_modeled[0:185], label='AT under max OAE')
+ax.plot(years[0:nt_plot], avg_AT_modeled[0:nt_plot], label='AT under max OAE')
 ax.axhline(np.nanmean(AT), c='black', linestyle='--', label='glodap AT') # add line showing preindustrial surface DIC
 
 secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
 secax.set_xlabel('total amount of AT added (mol)')
 
-ax.set_ylabel('average ocean AT')
+ax.set_ylabel('average ocean AT (weighted by grid cell volume)')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2215])
-ax.set_ylim([2200, 2500])
+ax.set_xlim([2015, 2020])
+ax.set_ylim([2200, 2550])
 plt.legend(loc = 'lower right')
 plt.show()
 
@@ -780,7 +902,29 @@ plt.show()
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
-ax.plot(years[0:185], data['delxCO2'].values[0:185] + 400, label='atmospheric CO2 under max OAE')
+ax.plot(years[0:nt_plot], data['delxCO2'].values[0:nt_plot] + 400, label='atmospheric CO2 under max OAE')
+
+_, emissions_cumulative, _ = p2.get_emissions_scenario(data_path, scenario)
+emissions_cumulative = emissions_cumulative[2015:nt+2015] * 1e6
+
+# set up emissions scenario (right now, can only do 1 dt per simulation, but dt can be anything)
+_, _, emissions_annual = p2.get_emissions_scenario(data_path, scenario)
+q_emissions = np.zeros(nt)
+
+steps_per_year = int(1 / dt)
+
+for year in range(nyears):
+    annual_val = emissions_annual[year]
+    per_step_val = annual_val / steps_per_year
+    start_idx = year * steps_per_year
+    end_idx = start_idx + steps_per_year
+    q_emissions[start_idx:end_idx] = per_step_val
+    
+emissions_cumulative = np.cumsum(q_emissions) + 400
+
+# this isn't correct, because emissions will still equilibrate without OAE --> need to run actual counterfactual with no OAE
+#ax.plot(years[0:nt_plot], emissions_cumulative[0:nt_plot], label='atmospheric CO2 without OAE') 
+
 ax.axhline(280, c='black', linestyle='--', label='preindustrial atmospheric CO2') # add line showing preindustrial surface pH
 
 secax = ax.secondary_xaxis('top', functions=(year_to_AT, AT_to_year))
@@ -788,66 +932,64 @@ secax.set_xlabel('total amount of AT added (mol)')
 
 ax.set_ylabel('average atmospheric CO2 (ppm)')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2215])
-ax.set_ylim([250, 450])
-plt.legend(loc = 'upper right')
+ax.set_xlim([2015, 2020])
+ax.set_ylim([270, 410])
+plt.legend(loc = 'center right')
 plt.show()
 
 
 #%% plot AT added over time
 
-years = np.arange(start=2015, stop=2015 + nt)
+years = t + 2015
 
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
-ax.plot(years[0:185], AT_added[0:185], label='AT added')
-ax.plot(years[0:185], AT_added_cum[0:185], label='cumulative AT added')
+ax.plot(years[0:nt_plot], AT_added[0:nt_plot], label='AT added')
+ax.plot(years[0:nt_plot], np.cumsum(AT_added)[0:nt_plot], label='cumulative AT added')
 
 ax.set_ylabel('AT (mol)')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2215])
-#ax.set_ylim([250, 450])
-plt.legend(loc = 'upper left')
+ax.set_xlim([2015, 2020])
+ax.set_ylim([-1e17, 9e17])
+plt.legend(loc = 'upper right')
 plt.show()
-
-#%% make clip of AT being added to surface over time
 
 #%% make clip of surface AT over time
 colorbar_label = 'Change in Total Alkalinity (µmol kg$^{-1}$)'
-p2.make_surf_animation(data['delAT'], colorbar_label, model_lon, model_lat, t, nt, -300, 300, 'RdBu', 'surface_delAT.mp4')
+p2.make_surf_animation(data['delAT'], colorbar_label, model_lon, model_lat, t, nt_plot, -300, 300, 'RdBu', 'surface_delAT.mp4')
 
 colorbar_label = 'Total Alkalinity (µmol kg$^{-1}$)'
-p2.make_surf_animation(data['delAT'] + p2.make_3D(AT,ocnmask), colorbar_label, model_lon, model_lat, t, 185, 2100, 2700, 'viridis', 'surface_AT.mp4')
+p2.make_surf_animation(data['delAT'] + p2.make_3D(AT,ocnmask), colorbar_label, model_lon, model_lat, t, nt_plot, 2100, 2700, 'viridis', 'surface_AT.mp4')
 
 #%% make clip of surface DIC over time
 colorbar_label = 'Change in Dissolved Inorganic Carbon (µmol kg$^{-1}$)'
-p2.make_surf_animation(data['delDIC'], colorbar_label, model_lon, model_lat, t, 185, -300, 300, 'RdBu', 'surface_delDIC.mp4')
+p2.make_surf_animation(data['delDIC'], colorbar_label, model_lon, model_lat, t, nt_plot, -300, 300, 'RdBu', 'surface_delDIC.mp4')
 
 colorbar_label = 'Dissolved Inorganic Carbon (µmol kg$^{-1}$)'
-p2.make_surf_animation(data['delDIC'] + p2.make_3D(DIC,ocnmask), colorbar_label, model_lon, model_lat, t, 185, 1850, 2350, 'viridis', 'surface_DIC.mp4')
+p2.make_surf_animation(data['delDIC'] + p2.make_3D(DIC,ocnmask), colorbar_label, model_lon, model_lat, t, nt_plot, 1850, 2350, 'viridis', 'surface_DIC.mp4')
 
 #%% make clip of surface pH over time
 colorbar_label = 'pH'
-p2.make_surf_animation_pH(pH_modeled, colorbar_label, model_lon, model_lat, t, 185, ocnmask, 7.5, 8.5, 'viridis', 'surface_pH.mp4')
-#
+p2.make_surf_animation_pH(pH_modeled, colorbar_label, model_lon, model_lat, t, nt_plot, ocnmask, 7.5, 8.5, 'viridis', 'surface_pH.mp4')
+
 colorbar_label = 'deviation in pH from preindustrial'
-p2.make_surf_animation_pH(del_pH_preind_modeled, colorbar_label, model_lon, model_lat, t, 185, ocnmask, -0.5, 0.5, 'RdBu', 'surface_delpH_preind.mp4')
+p2.make_surf_animation_pH(del_pH_preind_modeled, colorbar_label, model_lon, model_lat, t, nt_plot, ocnmask, -0.5, 0.5, 'RdBu', 'surface_delpH_preind.mp4')
 
 #%% make clip of change in section of AT over time
 colorbar_label = 'Change in Total Alkalinity (µmol kg$^{-1}$)'
-p2.make_section_animation(data['delAT'], colorbar_label, model_depth, model_lat, t, 185, -300, 300, 'RdBu', 'section_delAT.mp4')
+p2.make_section_animation(data['delAT'], colorbar_label, model_depth, model_lat, t, nt_plot, -300, 300, 'RdBu', 'section_delAT.mp4')
 
 #%% make clip of change in section of DIC over time
 colorbar_label = 'Change in Dissolved Inorganic Carbon (µmol kg$^{-1}$)'
-p2.make_section_animation(data['delDIC'], colorbar_label, model_depth, model_lat, t, 185, -300, 300, 'RdBu', 'section_delDIC.mp4')
+p2.make_section_animation(data['delDIC'], colorbar_label, model_depth, model_lat, t, nt_plot, -300, 300, 'RdBu', 'section_delDIC.mp4')
 
 #%% make clip of change in section of pH over time
 colorbar_label = 'pH'
-p2.make_section_animation_pH(pH_modeled, pH_preind, colorbar_label, model_depth, model_lat, t, 185, ocnmask, 7.5, 8.5, 'viridis', 'section_pH.mp4')
-#%%
+p2.make_section_animation_pH(pH_modeled, pH_preind, colorbar_label, model_depth, model_lat, t, nyears, ocnmask, 7.5, 8.5, 'viridis', 'section_pH.mp4')
+
 colorbar_label = 'deviation in pH from preindustrial'
-p2.make_section_animation_pH(del_pH_preind_modeled, colorbar_label, model_depth, model_lat, t, 185, ocnmask, -0.5, 0.5, 'RdBu', 'section_delpH_preind.mp4')
+p2.make_section_animation_pH(del_pH_preind_modeled, colorbar_label, model_depth, model_lat, t, nyears, ocnmask, -0.5, 0.5, 'RdBu', 'section_delpH_preind.mp4')
 
 #%% testing thresholding for co2sys calcs
 c = np.zeros((1 + 2*m, nt))
@@ -881,9 +1023,48 @@ for idx in range(0,186):
         DIC_at_last_calc = DIC_current.copy()
         print('carbonate system (re)calculated at year: ' + str(idx+2015))
 
+#%% make figure of amount of AT added over time, comparing across scenarios
 
+scenarios = ['ssp126', 'ssp245'] # 'ssp370', 'ssp434', 'ssp585', 'none']
 
+experiment_names = ['exp16_2025-09-20-ssp126-MLD-all_lat_lon.nc',
+                    'exp16_2025-09-20-ssp245-MLD-all_lat_lon.nc']
+'''
+                    'exp16_2025-09-20-ssp370-MLD-all_lat_lon.nc',
+                    'exp16_2025-09-20-ssp434-MLD-all_lat_lon.nc',
+                    'exp16_2025-09-20-ssp585-MLD-all_lat_lon.nc',
+                    'exp16_2025-09-20-no_emissions-MLD-all_lat_lon.nc']
+'''
 
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
 
+for exp_idx in range(0,len(experiment_names)):
+    
+    data = xr.open_dataset(output_path + experiment_names[exp_idx])
+    t = data['time'].values
+    if exp_idx == 0:
+        nt = 185
+    elif exp_idx == 1:
+        nt = 86
+    else:
+        nt = len(t)
+        
+    model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
+
+    AT_added = data['AT_added'] * model_vols_xr * rho * 1e-6
+    AT_added = AT_added.sum(dim=['depth', 'lon', 'lat'], skipna=True).values
+    AT_added_cum = np.cumsum(AT_added)
+    
+    ax.plot(t[0:nt] + 2015, AT_added_cum[0:nt], label=scenarios[exp_idx])
+    
+plt.legend()
+plt.xlabel('year')
+plt.ylabel('AT added to mixed layer (mol)')
+    
+    
+    
+    
+    
 
 
