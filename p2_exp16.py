@@ -107,7 +107,7 @@ z1 = grid_cell_depth[1, 0, 0] # depth of first model layer [m]
 ns = int(np.nansum(ocnmask[0,:,:])) # number of surface grid cells
 rho = 1025 # seawater density for volume to mass [kg m-3]
 
-#%% SET EXPERIMENTAL VARIABLES: WEEKEND RUN 0
+#%% SET EXPERIMENTAL VARIABLES: WEEKEND RUN
 # - length of time of experiment/time stepping
 # - depth of addition
 # - location of addition
@@ -118,308 +118,6 @@ rho = 1025 # seawater density for volume to mass [kg m-3]
 # not treated as a variable
 
 # TIME
-dt0 = 1/8640 # 1 hour
-dt1 = 1/360 # 1 day
-dt2 = 1/12 # 1 month
-dt3 = 1 # 1 year
-
-# just year time steps
-exp0_t = np.arange(0,3,dt3)
-
-# an experiment with dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year
-t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
-t2 = np.arange(1, 2+dt2, dt2) # use a 1 month time step until the 2nd year
-exp1_t = np.concatenate((t1, t2))
-
-# another experiment with dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year
-t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
-t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
-exp2_t = np.concatenate((t1, t3))
-
-# another with dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
-t1 = np.arange(0, 1/12, dt1) # use a 1 day time step for the first month
-t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
-t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
-exp3_t = np.concatenate((t1, t2, t3))
-
-# another with dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
-t0 = np.arange(0, 1/360, dt0) # use a 1 day time step for the first month
-t1 = np.arange(1/360, 1/12, dt1) # use a 1 day time step for the first month
-t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
-t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
-exp4_t = np.concatenate((t0, t1, t2, t3))
-
-exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-
-# DEPTHS OF ADDITION
-
-# testing with built-in MLD (see p2_exp19.py)
-
-mldmask = np.load(data_path + 'mld mask tests/mldmask_built_in.npy') 
-q_AT_depths = p2.make_3D(mldmask, ocnmask)
-
-# to do addition in mixed layer...
-# pull mixed layer depth at each lat/lon from OCIM model data, then create mask
-# of ocean cells that are at or below the mixed layer depth
-mld = model_data.mld.values # [m]
-# create 3D mask where for each grid cell, mask is set to 1 if the depth in the
-# grid cell depths array is less than the mixed layer depth for that column
-# note: this does miss cells where the MLD is close but does not reach the
-# depth of the next grid cell below (i.e. MLD = 40 m, grid cell depths are at
-# 30 m and 42 m, see lon_idx, lat_idx = 20, 30). I am intentionally leaving
-# this for now to ensure what enters the ocean stays mostly within the mixed
-# layer, but the code could be changed to a different method if needed.exp2_t
-
-mldmask = (grid_cell_depth < mld[None, :, :]).astype(int)
-q_AT_depths = mldmask
-
-# to do addition in first (or first two, or first three, etc.) model layer(s)
-#q_AT_depths = ocnmask.copy()
-#q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
-#q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
-#q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
-
-# to do all lat/lons
-q_AT_latlons = ocnmask[0,:,:].copy()
-
-# to constrain lat/lon of addition to LME(s)
-# get masks for each large marine ecosystem (LME)
-#lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
-#p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
-#lme_idx = [22,52] # subset of LMEs
-#lme_idx = list(lme_masks.keys()) # all LMES
-#q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
-
-# COMBINE DEPTH + LAT/LON OF ADDITION
-q_AT_locations_mask = q_AT_depths * q_AT_latlons
-
-# EMISSIONS SCENARIOS
-# no emissions scenario
-#q_emissions = np.zeros(nt)
-
-# with emissions scenario
-scenarios = ['none', 'none', 'none', 'none', 'none']
-
-# EXPERIMENT NAMES AND DESCRIPTIONS
-
-experiment_names = ['exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping0.nc',
-                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping1.nc',
-                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping2.nc',
-                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping3.nc',
-                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping4.nc',]
-
-experiment_attrs = ['adding max AT to built-in MLD before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for two years',
-                    'adding max AT to built-in MLD before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year',
-                    'adding max AT to built-in MLD before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
-                    'adding max AT to built-in MLD before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year',
-                    'adding max AT to built-in MLD before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
-
-#%% SET EXPERIMENTAL VARIABLES: WEEKEND RUN 1
-# - length of time of experiment/time stepping
-# - depth of addition
-# - location of addition
-# - emissions scenarios
-# - experiment names
-# in this experiment, amount of addition is set as the maximum amount of AT
-# that can be added to a grid cell before exceeding preindustrial pH, so it is
-# not treated as a variable
-
-# TIME
-dt0 = 1/8640 # 1 hour
-dt1 = 1/360 # 1 day
-dt2 = 1/12 # 1 month
-dt3 = 1 # 1 year
-
-# just year time steps
-exp0_t = np.arange(0,3,dt3)
-
-# an experiment with dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year
-t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
-t2 = np.arange(1, 2+dt2, dt2) # use a 1 month time step until the 2nd year
-exp1_t = np.concatenate((t1, t2))
-
-# another experiment with dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year
-t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
-t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
-exp2_t = np.concatenate((t1, t3))
-
-# another with dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
-t1 = np.arange(0, 1/12, dt1) # use a 1 day time step for the first month
-t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
-t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
-exp3_t = np.concatenate((t1, t2, t3))
-
-# another with dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
-t0 = np.arange(0, 1/360, dt0) # use a 1 day time step for the first month
-t1 = np.arange(1/360, 1/12, dt1) # use a 1 day time step for the first month
-t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
-t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
-exp4_t = np.concatenate((t0, t1, t2, t3))
-
-exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-
-# DEPTHS OF ADDITION
-
-# testing with alt MLD 1% threshold (see p2_exp19.py)
-
-mldmask = np.load(data_path + 'mld mask tests/mldmask_alt_1percentthresh.npy') 
-q_AT_depths = p2.make_3D(mldmask, ocnmask)
-
-# to do addition in first (or first two, or first three, etc.) model layer(s)
-#q_AT_depths = ocnmask.copy()
-#q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
-#q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
-#q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
-
-# to do all lat/lons
-q_AT_latlons = ocnmask[0,:,:].copy()
-
-# to constrain lat/lon of addition to LME(s)
-# get masks for each large marine ecosystem (LME)
-#lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
-#p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
-#lme_idx = [22,52] # subset of LMEs
-#lme_idx = list(lme_masks.keys()) # all LMES
-#q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
-
-# COMBINE DEPTH + LAT/LON OF ADDITION
-q_AT_locations_mask = q_AT_depths * q_AT_latlons
-
-# EMISSIONS SCENARIOS
-# no emissions scenario
-#q_emissions = np.zeros(nt)
-
-# with emissions scenario
-scenarios = ['none', 'none', 'none', 'none', 'none']
-
-# EXPERIMENT NAMES AND DESCRIPTIONS
-
-experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt1-all_lat_lon-time_stepping0.nc',
-                    'exp16_2025-10-08-ssp_none-MLDalt1-all_lat_lon-time_stepping1.nc',
-                    'exp16_2025-10-08-ssp_none-MLDalt1-all_lat_lon-time_stepping2.nc',
-                    'exp16_2025-10-08-ssp_none-MLDalt1-all_lat_lon-time_stepping3.nc',
-                    'exp16_2025-10-08-ssp_none-MLDalt1-all_lat_lon-time_stepping4.nc',]
-
-experiment_attrs = ['adding max AT to alt MLD with 1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for two years',
-                    'adding max AT to alt MLD with 1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year',
-                    'adding max AT to alt MLD with 1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
-                    'adding max AT to alt MLD with 1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year',
-                    'adding max AT to alt MLD with 1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
-
-#%% SET EXPERIMENTAL VARIABLES: WEEKEND RUN 2
-# - length of time of experiment/time stepping
-# - depth of addition
-# - location of addition
-# - emissions scenarios
-# - experiment names
-# in this experiment, amount of addition is set as the maximum amount of AT
-# that can be added to a grid cell before exceeding preindustrial pH, so it is
-# not treated as a variable
-
-# TIME
-dt0 = 1/8640 # 1 hour
-dt1 = 1/360 # 1 day
-dt2 = 1/12 # 1 month
-dt3 = 1 # 1 year
-
-# just year time steps
-exp0_t = np.arange(0,3,dt3)
-
-# an experiment with dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year
-t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
-t2 = np.arange(1, 2+dt2, dt2) # use a 1 month time step until the 2nd year
-exp1_t = np.concatenate((t1, t2))
-
-# another experiment with dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year
-t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
-t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
-exp2_t = np.concatenate((t1, t3))
-
-# another with dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
-t1 = np.arange(0, 1/12, dt1) # use a 1 day time step for the first month
-t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
-t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
-exp3_t = np.concatenate((t1, t2, t3))
-
-# another with dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
-t0 = np.arange(0, 1/360, dt0) # use a 1 day time step for the first month
-t1 = np.arange(1/360, 1/12, dt1) # use a 1 day time step for the first month
-t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
-t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
-exp4_t = np.concatenate((t0, t1, t2, t3))
-
-exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-
-#exp_t = [np.concatenate((np.arange(0, 5*dt0, dt0), np.arange(5*dt0, 5*dt1, dt1), np.arange(5*dt1, 12*dt2, dt2)))]
-
-# DEPTHS OF ADDITION
-
-# testing with alt MLD 1% threshold (see p2_exp19.py)
-
-mldmask = np.load(data_path + 'mld mask tests/mldmask_alt_point1percentthresh.npy') 
-q_AT_depths = p2.make_3D(mldmask, ocnmask)
-
-# to do addition in first (or first two, or first three, etc.) model layer(s)
-#q_AT_depths = ocnmask.copy()
-#q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
-#q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
-#q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
-
-# to do all lat/lons
-q_AT_latlons = ocnmask[0,:,:].copy()
-
-# to constrain lat/lon of addition to LME(s)
-# get masks for each large marine ecosystem (LME)
-#lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
-#p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
-#lme_idx = [22,52] # subset of LMEs
-#lme_idx = list(lme_masks.keys()) # all LMES
-#q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
-
-# COMBINE DEPTH + LAT/LON OF ADDITION
-q_AT_locations_mask = q_AT_depths * q_AT_latlons
-
-# EMISSIONS SCENARIOS
-# no emissions scenario
-#q_emissions = np.zeros(nt)
-
-# with emissions scenario
-scenarios = ['none', 'none', 'none', 'none', 'none']
-
-# EXPERIMENT NAMES AND DESCRIPTIONS
-
-experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_stepping0.nc',
-                    'exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_stepping1.nc',
-                    'exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_stepping2.nc',
-                    'exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_stepping3.nc',
-                    'exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_stepping4.nc',]
-
-experiment_attrs = ['adding max AT to alt MLD with 0.1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for two years',
-                    'adding max AT to alt MLD with 0.1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year',
-                    'adding max AT to alt MLD with 0.1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
-                    'adding max AT to alt MLD with 0.1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year',
-                    'adding max AT to alt MLD with 0.1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
-
-#%% SET EXPERIMENTAL VARIABLES: WEEKEND RUN 3
-# - length of time of experiment/time stepping
-# - depth of addition
-# - location of addition
-# - emissions scenarios
-# - experiment names
-# in this experiment, amount of addition is set as the maximum amount of AT
-# that can be added to a grid cell before exceeding preindustrial pH, so it is
-# not treated as a variable
-
-# TIME
-#nyears = 5
-#dt = 1 # 1 year
-#t = np.arange(0, nyears, dt) # 200 years after year 0 (for now)
-#nt = len(t)
-
-#nyears = 2
-#dt = 1/360 # 1 day
-#t = np.arange(0, nyears, dt) # 5 years after year 0 (for now)
-#nt = len(t)
 
 dt0 = 1/8640 # 1 hour
 dt1 = 1/360 # 1 day
@@ -427,21 +125,25 @@ dt2 = 1/12 # 1 month
 dt3 = 1 # 1 year
 
 # just year time steps
-exp0_t = np.arange(0,50+dt3,dt3)
+exp0_t = np.arange(0,200,dt3)
 
 # experiment with dt = 1/12 (1 month) time steps
-exp1_t = np.arange(0,15+dt2,dt2)
+exp1_t = np.arange(0,200,dt2)
 
 # experiment with dt = 1/360 (1 day) time steps
-exp2_t = np.arange(0,1+dt1,dt1)
+exp2_t = np.arange(0,200,dt1)
 
 # another with dt = 1/8640 (1 hour) time steps
-exp3_t = np.arange(0,0.05+dt0,dt0)
+exp3_t = np.arange(0,10,dt0)
 
-exp_t = [exp0_t, exp1_t, exp2_t, exp3_t]
-exp_t = [exp1_t, exp2_t, exp3_t]
+# another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
+t0 = np.arange(0, 1, dt0) # use a 1 day time step for the first month
+t1 = np.arange(1, 10, dt1) # use a 1 day time step for the first month
+t2 = np.arange(10, 50, dt2) # use a 1 month time step until the first year
+t3 = np.arange(50, 200, dt3) # use a 1 year time step until the 2nd year
+exp4_t = np.concatenate((t0, t1, t2, t3))
 
-#exp_t = [exp1_t]
+exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
 
 # DEPTHS OF ADDITION
 
@@ -489,27 +191,21 @@ q_AT_locations_mask = q_AT_depths * q_AT_latlons
 #q_emissions = np.zeros(nt)
 
 # with emissions scenario
-scenarios = ['none', 'none', 'none', 'none']
+scenarios = ['none', 'none', 'none', 'none', 'none']
 
 # EXPERIMENT NAMES AND DESCRIPTIONS
 
-experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
-                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
-                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
-                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc']
+experiment_names = ['exp16_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
+                    'exp16_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
+                    'exp16_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
+                    'exp16_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc',
+                    'exp16_2025-10-09-ssp_none-MLD-all_lat_lon-dt_mixed_LONG.nc']
 
-experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for two years',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for the first year, then dt = 1/12 (1 month) for the second year',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
-
-experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
-                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
-                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc']
-
-experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for the first year, then dt = 1/12 (1 month) for the second year',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
+experiment_attrs = ['adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for 200 years',
+                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years',
+                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for 200 years',
+                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for 200 years',
+                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first year, dt = 1/360 (1 day) for the next 10 years, dt = 1/12 (1 month) for the next 50 years, and dt = 1 (1 year) to reach 200 years']
 
 #%% getting initial ∆DIC conditions from TRACEv1
 # note, doing set up with Fortran ordering for consistency
@@ -958,7 +654,7 @@ for exp_idx in range(len(experiment_names)):
     # convert delxCO2 units from unitless [µatm CO2 / µatm air] or [µmol CO2 / µmol air] to ppm
     c_delxCO2 *= 1e6
     q_delxCO2 *= 1e6
-    
+
     # reconstruct 3D arrays for DIC and AT
     c_delDIC_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
     c_delAT_3D = np.full([len(t), ocnmask.shape[0], ocnmask.shape[1], ocnmask.shape[2]], np.nan) # make 3D vector full of nans
@@ -985,6 +681,9 @@ for exp_idx in range(len(experiment_names)):
         
         q_delDIC_3D[idx, :, :, :] = q_delDIC_reshaped
         q_delAT_3D[idx, :, :, :] = q_delAT_reshaped
+
+
+
 
     # save model output in netCDF format
     global_attrs = {'description': experiment_attrs[exp_idx]}
@@ -1471,7 +1170,7 @@ for exp_idx in range(0,len(experiment_names)):
 
 ax.set_ylabel('average ocean pH (weighted by grid cell volume)')
 ax.set_xlabel('year')
-ax.set_xlim([2015, 2015.1])
+ax.set_xlim([2015, 2015.01])
 #ax.set_xticks([2015, 2016, 2017])
 #ax.set_ylim([7.838, 7.874])
 plt.legend()
