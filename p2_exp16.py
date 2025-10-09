@@ -430,7 +430,7 @@ dt3 = 1 # 1 year
 exp0_t = np.arange(0,50+dt3,dt3)
 
 # experiment with dt = 1/12 (1 month) time steps
-exp1_t = np.arange(0,50+dt2,dt2)
+exp1_t = np.arange(0,15+dt2,dt2)
 
 # experiment with dt = 1/360 (1 day) time steps
 exp2_t = np.arange(0,1+dt1,dt1)
@@ -439,6 +439,8 @@ exp2_t = np.arange(0,1+dt1,dt1)
 exp3_t = np.arange(0,0.05+dt0,dt0)
 
 exp_t = [exp0_t, exp1_t, exp2_t, exp3_t]
+exp_t = [exp1_t, exp2_t, exp3_t]
+
 #exp_t = [exp1_t]
 
 # DEPTHS OF ADDITION
@@ -493,8 +495,8 @@ scenarios = ['none', 'none', 'none', 'none']
 
 experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
                     'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
-                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc',
-                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc']
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc']
 
 experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for two years',
                     'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for the first year, then dt = 1/12 (1 month) for the second year',
@@ -502,8 +504,8 @@ experiment_attrs = ['adding max AT before reaching preind pH to all cells within
                     'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
 
 experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
-                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc',
-                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc']
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc']
 
 experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for the first year, then dt = 1/12 (1 month) for the second year',
                     'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
@@ -1315,10 +1317,17 @@ experiment_names = ['exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_step
                     'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping3.nc',
                     'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping4.nc',]
 
-labels = ['dt = 1 yr', 'dt = 1 month']
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping1.nc']
+'''
+
+labels = ['dt = 1 yr', 'dt = 1 month', 'dt = 1 day', 'dt = 1 hr']
 
 experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
-                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc']
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc']
+'''
 
 
 fig = plt.figure(figsize=(5,5), dpi=200)
@@ -1339,9 +1348,9 @@ for exp_idx in range(0,len(experiment_names)):
     ax.plot(t[0:nt] + 2015, AT_added_cum[0:nt], label=labels[exp_idx])
     
 plt.legend()
-plt.xlim([2015, 2017])
+#plt.xlim([2015, 2017])
 #plt.ylim([-0.25e17, 5e17])
-ax.set_xticks([2015, 2016, 2017])
+#ax.set_xticks([2015, 2016, 2017])
 plt.xlabel('year')
 plt.ylabel('AT added to mixed layer (mol)')
     
@@ -1363,6 +1372,17 @@ experiment_names = ['exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping
 
 experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_steppingTEST1.nc']
 
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping1.nc']
+'''
+
+labels = ['dt = 1 yr', 'dt = 1 month', 'dt = 1 day', 'dt = 1 hr']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc']
+'''
 
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
@@ -1377,8 +1397,8 @@ for exp_idx in range(0,len(experiment_names)):
     ax.plot(t[0:nt] + 2015, delxCO2[0:nt], label=labels[exp_idx])
     
 plt.legend()
-plt.xlim([2015, 2017])
-ax.set_xticks([2015, 2016, 2017])
+#plt.xlim([2015, 2017])
+#ax.set_xticks([2015, 2016, 2017])
 #ax.set_ylim([-260, 10])
 plt.xlabel('year')
 plt.ylabel('change in atmospheric CO2 (ppm)')
@@ -1406,6 +1426,18 @@ experiment_names = ['exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping
                     'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping4.nc',]
 
 experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_steppingTEST1.nc']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping1.nc']
+
+
+labels = ['dt = 1 yr', 'dt = 1 month', 'dt = 1 day', 'dt = 1 hr']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc']
+
 
 model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
 DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
@@ -1439,7 +1471,7 @@ for exp_idx in range(0,len(experiment_names)):
 
 ax.set_ylabel('average ocean pH (weighted by grid cell volume)')
 ax.set_xlabel('year')
-#ax.set_xlim([2015, 2017])
+ax.set_xlim([2015, 2015.1])
 #ax.set_xticks([2015, 2016, 2017])
 #ax.set_ylim([7.838, 7.874])
 plt.legend()
@@ -1462,6 +1494,18 @@ experiment_names = ['exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping
                     'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping4.nc',]
 
 experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_steppingTEST1.nc']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping1.nc']
+
+
+labels = ['dt = 1 yr', 'dt = 1 month', 'dt = 1 day', 'dt = 1 hr']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc']
+
 
 model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
 DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
@@ -1486,16 +1530,18 @@ for exp_idx in range(0,len(experiment_names)):
     for idx in range(nt):
         DIC_modeled = p2.flatten(DIC_modeled_3D.isel(time=idx).values, ocnmask)
         AT_modeled = p2.flatten(AT_modeled_3D.isel(time=idx).values, ocnmask)        
-        co2sys = pyco2.sys(dic=DIC_modeled, alkalinity=AT_modeled, salinity=S, temperature=T,
-                           pressure=pressure, total_silicate=Si, total_phosphate=P)
+        co2sys = pyco2.sys(dic=DIC_modeled[0:ns], alkalinity=AT_modeled[0:ns],
+                           salinity=S[0:ns], temperature=T[0:ns],
+                           pressure=pressure[0:ns], total_silicate=Si[0:ns],
+                           total_phosphate=P[0:ns])
         
-        avg_pH_modeled_surf[idx] = np.average(co2sys['pH'][0:ns], weights=p2.flatten(model_vols,ocnmask)[0:ns])
+        avg_pH_modeled_surf[idx] = np.average(co2sys['pH'], weights=p2.flatten(model_vols,ocnmask)[0:ns])
         
     ax.plot(t + 2015, avg_pH_modeled_surf[0:nt], label=labels[exp_idx])
 
 ax.set_ylabel('average surface ocean pH (weighted by grid cell volume)')
 ax.set_xlabel('year')
-#ax.set_xlim([2014.999, 2015.001])
+#ax.set_xlim([2015, 2015.01])
 #ax.set_xticks([2015, 2016, 2017])
 #ax.set_ylim([7.45, 8.25])
 plt.legend()
@@ -1518,6 +1564,19 @@ experiment_names = ['exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_step
                     'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping4.nc',]
 
 experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_steppingTEST.nc']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping1.nc']
+'''
+
+labels = ['dt = 1 yr', 'dt = 1 month', 'dt = 1 day', 'dt = 1 hr']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc']
+'''
+
 
 model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
 DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
@@ -1579,6 +1638,18 @@ experiment_names = ['exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping
                     'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping4.nc',]
 
 experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_steppingTEST.nc']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping1.nc']
+'''
+
+labels = ['dt = 1 yr', 'dt = 1 month', 'dt = 1 day', 'dt = 1 hr']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc']
+'''
 
 
 model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
