@@ -13,13 +13,6 @@ EXP16: Attempting maximum alkalinity calculation
 - Repeat this for 100 years, calculate alkalinity added each year to get back to preindustrial
 - Repeat for each LMES & maybe a few combinations of LMES?
 
-exp16_2025-09-08-b.nc
-- set up to add maximum amount of AT that can be added to each surface ocean
-box at each time step without exceeding preindustrial pH
-- recalculating carbonate system every 25 years
-- running into average ocean pH exceeds average preindustrial ocean pH (recalculating pH every 25 years, max 1000 years before simulation ends)
-- no emissions scenario
-
 SSPs of interest
 - From Meinshausen et al. (2020), https://gmd.copernicus.org/articles/13/3571/2020/
 - Data downloaded from https://greenhousegases.science.unimelb.edu.au/#!/ghg?mode=yearly-gmnhsh
@@ -108,12 +101,13 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
-# depth of first model layer (need bottom of grid cell, not middle) [m]
-grid_cell_depth = model_data['wz'].to_numpy()
-z1 = grid_cell_depth[1, 0, 0]
-ns = int(np.nansum(ocnmask[0,:,:]))
+# some other important numbers
+grid_cell_depth = model_data['wz'].to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
+z1 = grid_cell_depth[1, 0, 0] # depth of first model layer [m]
+ns = int(np.nansum(ocnmask[0,:,:])) # number of surface grid cells
+rho = 1025 # seawater density for volume to mass [kg m-3]
 
-#%% SET EXPERIMENTAL VARIABLES
+#%% SET EXPERIMENTAL VARIABLES: WEEKEND RUN 0
 # - length of time of experiment/time stepping
 # - depth of addition
 # - location of addition
@@ -124,16 +118,6 @@ ns = int(np.nansum(ocnmask[0,:,:]))
 # not treated as a variable
 
 # TIME
-#nyears = 5
-#dt = 1 # 1 year
-#t = np.arange(0, nyears, dt) # 200 years after year 0 (for now)
-#nt = len(t)
-
-#nyears = 2
-#dt = 1/360 # 1 day
-#t = np.arange(0, nyears, dt) # 5 years after year 0 (for now)
-#nt = len(t)
-
 dt0 = 1/8640 # 1 hour
 dt1 = 1/360 # 1 day
 dt2 = 1/12 # 1 month
@@ -169,6 +153,11 @@ exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
 
 # DEPTHS OF ADDITION
 
+# testing with built-in MLD (see p2_exp19.py)
+
+mldmask = np.load(data_path + 'mld mask tests/mldmask_built_in.npy') 
+q_AT_depths = p2.make_3D(mldmask, ocnmask)
+
 # to do addition in mixed layer...
 # pull mixed layer depth at each lat/lon from OCIM model data, then create mask
 # of ocean cells that are at or below the mixed layer depth
@@ -183,10 +172,6 @@ mld = model_data.mld.values # [m]
 
 mldmask = (grid_cell_depth < mld[None, :, :]).astype(int)
 q_AT_depths = mldmask
-
-plot_mlds = mldmask.sum(axis=0)
-
-p2.plot_surface2d(model_lon, model_lat, plot_mlds, 0, 30, 'viridis', 'how many depth layers deep does mld go')
 
 # to do addition in first (or first two, or first three, etc.) model layer(s)
 #q_AT_depths = ocnmask.copy()
@@ -213,36 +198,316 @@ q_AT_locations_mask = q_AT_depths * q_AT_latlons
 #q_emissions = np.zeros(nt)
 
 # with emissions scenario
-#scenarios = ['ssp126', 'ssp245', 'ssp370', 'ssp434', 'ssp585', 'none']
 scenarios = ['none', 'none', 'none', 'none', 'none']
 
 # EXPERIMENT NAMES AND DESCRIPTIONS
 
-#experiment_names = ['exp16_2025-09-20-ssp126-MLD-all_lat_lon.nc',
-#                    'exp16_2025-09-20-ssp245-MLD-all_lat_lon.nc',
-#                    'exp16_2025-09-20-ssp370-MLD-all_lat_lon.nc',
-#                    'exp16_2025-09-20-ssp434-MLD-all_lat_lon.nc',
-#                    'exp16_2025-09-20-ssp585-MLD-all_lat_lon.nc',
-#                    'exp16_2025-09-20-no_emissions-MLD-all_lat_lon.nc']
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-08-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping4.nc',]
 
-#experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp1-2.6',
-#                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp2-4.5',
-#                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp3-7.0',
-#                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp4-3.4',
-#                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using emissions scenario ssp5-8.5',
-#                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface with no emissions scenario']
+experiment_attrs = ['adding max AT to built-in MLD before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for two years',
+                    'adding max AT to built-in MLD before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year',
+                    'adding max AT to built-in MLD before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
+                    'adding max AT to built-in MLD before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year',
+                    'adding max AT to built-in MLD before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
 
-experiment_names = ['exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping0.nc',
-                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping1.nc',
-                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping2.nc',
-                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping3.nc',
-                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping4.nc',]
+#%% SET EXPERIMENTAL VARIABLES: WEEKEND RUN 1
+# - length of time of experiment/time stepping
+# - depth of addition
+# - location of addition
+# - emissions scenarios
+# - experiment names
+# in this experiment, amount of addition is set as the maximum amount of AT
+# that can be added to a grid cell before exceeding preindustrial pH, so it is
+# not treated as a variable
+
+# TIME
+dt0 = 1/8640 # 1 hour
+dt1 = 1/360 # 1 day
+dt2 = 1/12 # 1 month
+dt3 = 1 # 1 year
+
+# just year time steps
+exp0_t = np.arange(0,3,dt3)
+
+# an experiment with dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year
+t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
+t2 = np.arange(1, 2+dt2, dt2) # use a 1 month time step until the 2nd year
+exp1_t = np.concatenate((t1, t2))
+
+# another experiment with dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year
+t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
+t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
+exp2_t = np.concatenate((t1, t3))
+
+# another with dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
+t1 = np.arange(0, 1/12, dt1) # use a 1 day time step for the first month
+t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
+t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
+exp3_t = np.concatenate((t1, t2, t3))
+
+# another with dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
+t0 = np.arange(0, 1/360, dt0) # use a 1 day time step for the first month
+t1 = np.arange(1/360, 1/12, dt1) # use a 1 day time step for the first month
+t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
+t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
+exp4_t = np.concatenate((t0, t1, t2, t3))
+
+exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
+
+# DEPTHS OF ADDITION
+
+# testing with alt MLD 1% threshold (see p2_exp19.py)
+
+mldmask = np.load(data_path + 'mld mask tests/mldmask_alt_1percentthresh.npy') 
+q_AT_depths = p2.make_3D(mldmask, ocnmask)
+
+# to do addition in first (or first two, or first three, etc.) model layer(s)
+#q_AT_depths = ocnmask.copy()
+#q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
+#q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
+#q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
+
+# to do all lat/lons
+q_AT_latlons = ocnmask[0,:,:].copy()
+
+# to constrain lat/lon of addition to LME(s)
+# get masks for each large marine ecosystem (LME)
+#lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
+#p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
+#lme_idx = [22,52] # subset of LMEs
+#lme_idx = list(lme_masks.keys()) # all LMES
+#q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
+
+# COMBINE DEPTH + LAT/LON OF ADDITION
+q_AT_locations_mask = q_AT_depths * q_AT_latlons
+
+# EMISSIONS SCENARIOS
+# no emissions scenario
+#q_emissions = np.zeros(nt)
+
+# with emissions scenario
+scenarios = ['none', 'none', 'none', 'none', 'none']
+
+# EXPERIMENT NAMES AND DESCRIPTIONS
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt1-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-08-ssp_none-MLDalt1-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-08-ssp_none-MLDalt1-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-08-ssp_none-MLDalt1-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-08-ssp_none-MLDalt1-all_lat_lon-time_stepping4.nc',]
+
+experiment_attrs = ['adding max AT to alt MLD with 1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for two years',
+                    'adding max AT to alt MLD with 1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year',
+                    'adding max AT to alt MLD with 1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
+                    'adding max AT to alt MLD with 1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year',
+                    'adding max AT to alt MLD with 1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
+
+#%% SET EXPERIMENTAL VARIABLES: WEEKEND RUN 2
+# - length of time of experiment/time stepping
+# - depth of addition
+# - location of addition
+# - emissions scenarios
+# - experiment names
+# in this experiment, amount of addition is set as the maximum amount of AT
+# that can be added to a grid cell before exceeding preindustrial pH, so it is
+# not treated as a variable
+
+# TIME
+dt0 = 1/8640 # 1 hour
+dt1 = 1/360 # 1 day
+dt2 = 1/12 # 1 month
+dt3 = 1 # 1 year
+
+# just year time steps
+exp0_t = np.arange(0,3,dt3)
+
+# an experiment with dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year
+t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
+t2 = np.arange(1, 2+dt2, dt2) # use a 1 month time step until the 2nd year
+exp1_t = np.concatenate((t1, t2))
+
+# another experiment with dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year
+t1 = np.arange(0, 1, dt1) # use a 1 day time step for the first year
+t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
+exp2_t = np.concatenate((t1, t3))
+
+# another with dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
+t1 = np.arange(0, 1/12, dt1) # use a 1 day time step for the first month
+t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
+t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
+exp3_t = np.concatenate((t1, t2, t3))
+
+# another with dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year
+t0 = np.arange(0, 1/360, dt0) # use a 1 day time step for the first month
+t1 = np.arange(1/360, 1/12, dt1) # use a 1 day time step for the first month
+t2 = np.arange(1/12, 1, dt2) # use a 1 month time step until the first year
+t3 = np.arange(1, 2+dt3, dt3) # use a 1 year time step until the 2nd year
+exp4_t = np.concatenate((t0, t1, t2, t3))
+
+exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
+
+#exp_t = [np.concatenate((np.arange(0, 5*dt0, dt0), np.arange(5*dt0, 5*dt1, dt1), np.arange(5*dt1, 12*dt2, dt2)))]
+
+# DEPTHS OF ADDITION
+
+# testing with alt MLD 1% threshold (see p2_exp19.py)
+
+mldmask = np.load(data_path + 'mld mask tests/mldmask_alt_point1percentthresh.npy') 
+q_AT_depths = p2.make_3D(mldmask, ocnmask)
+
+# to do addition in first (or first two, or first three, etc.) model layer(s)
+#q_AT_depths = ocnmask.copy()
+#q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
+#q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
+#q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
+
+# to do all lat/lons
+q_AT_latlons = ocnmask[0,:,:].copy()
+
+# to constrain lat/lon of addition to LME(s)
+# get masks for each large marine ecosystem (LME)
+#lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
+#p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
+#lme_idx = [22,52] # subset of LMEs
+#lme_idx = list(lme_masks.keys()) # all LMES
+#q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
+
+# COMBINE DEPTH + LAT/LON OF ADDITION
+q_AT_locations_mask = q_AT_depths * q_AT_latlons
+
+# EMISSIONS SCENARIOS
+# no emissions scenario
+#q_emissions = np.zeros(nt)
+
+# with emissions scenario
+scenarios = ['none', 'none', 'none', 'none', 'none']
+
+# EXPERIMENT NAMES AND DESCRIPTIONS
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_stepping4.nc',]
+
+experiment_attrs = ['adding max AT to alt MLD with 0.1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for two years',
+                    'adding max AT to alt MLD with 0.1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year',
+                    'adding max AT to alt MLD with 0.1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
+                    'adding max AT to alt MLD with 0.1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year',
+                    'adding max AT to alt MLD with 0.1 percent threshold before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
+
+#%% SET EXPERIMENTAL VARIABLES: WEEKEND RUN 3
+# - length of time of experiment/time stepping
+# - depth of addition
+# - location of addition
+# - emissions scenarios
+# - experiment names
+# in this experiment, amount of addition is set as the maximum amount of AT
+# that can be added to a grid cell before exceeding preindustrial pH, so it is
+# not treated as a variable
+
+# TIME
+#nyears = 5
+#dt = 1 # 1 year
+#t = np.arange(0, nyears, dt) # 200 years after year 0 (for now)
+#nt = len(t)
+
+#nyears = 2
+#dt = 1/360 # 1 day
+#t = np.arange(0, nyears, dt) # 5 years after year 0 (for now)
+#nt = len(t)
+
+dt0 = 1/8640 # 1 hour
+dt1 = 1/360 # 1 day
+dt2 = 1/12 # 1 month
+dt3 = 1 # 1 year
+
+# just year time steps
+exp0_t = np.arange(0,50+dt3,dt3)
+
+# experiment with dt = 1/12 (1 month) time steps
+exp1_t = np.arange(0,50+dt2,dt2)
+
+# experiment with dt = 1/360 (1 day) time steps
+exp2_t = np.arange(0,1+dt1,dt1)
+
+# another with dt = 1/8640 (1 hour) time steps
+exp3_t = np.arange(0,0.05+dt0,dt0)
+
+exp_t = [exp0_t, exp1_t, exp2_t, exp3_t]
+#exp_t = [exp1_t]
+
+# DEPTHS OF ADDITION
+
+# to do addition in mixed layer...
+# pull mixed layer depth at each lat/lon from OCIM model data, then create mask
+# of ocean cells that are at or below the mixed layer depth
+mld = model_data.mld.values # [m]
+# create 3D mask where for each grid cell, mask is set to 1 if the depth in the
+# grid cell depths array is less than the mixed layer depth for that column
+# note: this does miss cells where the MLD is close but does not reach the
+# depth of the next grid cell below (i.e. MLD = 40 m, grid cell depths are at
+# 30 m and 42 m, see lon_idx, lat_idx = 20, 30). I am intentionally leaving
+# this for now to ensure what enters the ocean stays mostly within the mixed
+# layer, but the code could be changed to a different method if needed.exp2_t
+
+mldmask = (grid_cell_depth < mld[None, :, :]).astype(int)
+q_AT_depths = mldmask
+
+plot_mlds = mldmask.sum(axis=0)
+
+#p2.plot_surface2d(model_lon, model_lat, plot_mlds, 0, 30, 'viridis', 'how many depth layers deep does mld go')
+
+# to do addition in first (or first two, or first three, etc.) model layer(s)
+#q_AT_depths = ocnmask.copy()
+#q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
+#q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
+#q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
+
+# to do all lat/lons
+q_AT_latlons = ocnmask[0,:,:].copy()
+
+# to constrain lat/lon of addition to LME(s)
+# get masks for each large marine ecosystem (LME)
+#lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
+#p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
+#lme_idx = [22,52] # subset of LMEs
+#lme_idx = list(lme_masks.keys()) # all LMES
+#q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
+
+# COMBINE DEPTH + LAT/LON OF ADDITION
+q_AT_locations_mask = q_AT_depths * q_AT_latlons
+
+# EMISSIONS SCENARIOS
+# no emissions scenario
+#q_emissions = np.zeros(nt)
+
+# with emissions scenario
+scenarios = ['none', 'none', 'none', 'none']
+
+# EXPERIMENT NAMES AND DESCRIPTIONS
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc']
 
 experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for two years',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1/12 (1 month) for the second year',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for the first year, then dt = 1/12 (1 month) for the second year',
                     'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year',
-                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first day, then dt = 1/360 (1 day) for the next 29 days, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1hr_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1day_LONG.nc']
+
+experiment_attrs = ['adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for the first year, then dt = 1/12 (1 month) for the second year',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first year, then dt = 1 (1 year) for the second year',
+                    'adding max AT before reaching preind pH to all cells within max annual mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for the first month, then dt = 1/12 (1 month) for 11 months, then dt = 1 (1 year) for the second year']
 
 #%% getting initial ∆DIC conditions from TRACEv1
 # note, doing set up with Fortran ordering for consistency
@@ -477,12 +742,12 @@ for exp_idx in range(len(experiment_names)):
     AT_current = AT.copy()
     DIC_current = DIC.copy()
   
-    for idx in tqdm(range(0,nt)):
-        if idx > 0:
-            # AT and DIC are equal to initial AT and DIC + whatever the change
-            # in AT and DIC seen in previous time step are
-            AT_current = AT + c[(m+1):(2*m+1), idx-1]
-            DIC_current = DIC + c[1:(m+1), idx-1]
+    # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
+    for idx in tqdm(range(1,nt)):
+        # AT and DIC are equal to initial AT and DIC + whatever the change
+        # in AT and DIC seen in previous time step are
+        AT_current = AT + c[(m+1):(2*m+1), idx-1]
+        DIC_current = DIC + c[1:(m+1), idx-1]
         
         # recalculate carbonate system every time >5% of grid cells see change
         # in AT or DIC >5% since last recalculation
@@ -493,7 +758,8 @@ for exp_idx in range(len(experiment_names)):
  
         # (re)calculate carbonate system if it has not yet been calculated or
         # needs to be recalculated
-        if idx == 0 or frac_AT > 0.05 or frac_DIC > 0.05:
+        # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
+        if idx == 1 or frac_AT > 0.05 or frac_DIC > 0.05:
             AT_at_last_calc = AT_current.copy()
             DIC_at_last_calc = DIC_current.copy()
             # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
@@ -529,135 +795,150 @@ for exp_idx in range(len(experiment_names)):
                 print('average pH at time step ' + str(idx) + ' = ' + str(round(avg_pH,8)))
         
             # calculate rest of Nowicki et al. parameters
-            rho = 1025 # seawater density for volume to mass [kg m-3]
             beta_C = DIC/aqueous_CO2 # [unitless]
             beta_A = AT/aqueous_CO2 # [unitless]
             K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
             
-            print('carbonate system recalculated (year ' + str(idx) + ')')
+            print('carbonate system recalculated (t = ' + str(t[idx]) + ')')
         
-            # must (re)calculate A matrix if 1. it has not yet been calculated
-            # 2. the carbonate system needs to be recalculated or 3. the time
-            # step interval (dt) has changed
-            if idx == 0 or frac_AT > 0.05 or frac_DIC > 0.05 or dt[idx] != dt[idx-1]:
+        # must (re)calculate A matrix if 1. it has not yet been calculated
+        # 2. the carbonate system needs to be recalculated or 3. the time
+        # step interval (dt) has changed
+        if idx == 1 or frac_AT > 0.05 or frac_DIC > 0.05 or np.round(dt[idx],10) != np.round(dt[idx-1],10):
             
-                # calculate "A" matrix
-            
-                # dimensions
-                # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
-                #     [m x 1][m x m][m x m]
-                #     [m x 1][m x m][m x m]
-            
-                # what acts on what
-                # A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
-                #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
-                #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
-            
-                # math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
-                # A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
-                #     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
-                #     [0                        ][0                              ][TR                           ]
-            
-                # notation for setup
-                # A = [A00][A01][A02]
-                #     [A10][A11][A12]
-                #     [A20][A21][A22]
-            
-                # to solve for ∆xCO2
-                A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
-                A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
-                A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
-            
-                # combine into A0 row
-                A0_ = np.full(1 + 2*m, np.nan)
-                A0_[0] = A00
-                A0_[1:(m+1)] = A01
-                A0_[(m+1):(2*m+1)] = A02
-            
-                del A00, A01, A02
-            
-                # to solve for ∆DIC
-                A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) # is csc the most efficient format? come back to this
-                A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
-                A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
-            
-                A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
-            
-                del A10, A11, A12
-            
-                # to solve for ∆AT
-                A20 = np.zeros(m)
-                A21 = 0 * TR
-                A22 = TR
-            
-                A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
-            
-                del A20, A21, A22
-            
-                # build into one mega-array!!
-                A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
-            
-                del A0_, A1_, A2_
-                    
-                # perform time stepping using Euler backward
-                LHS = sparse.eye(A.shape[0], format="csc") - dt[idx] * A
+            if frac_AT > 0.05:
+                print('frac_AT > 0.05')
+                
+            if frac_DIC > 0.05:
+                print('frac_DIC > 0.05')
+                
+            if dt[idx] != dt[idx-1]:
+                print('dt[' + str(idx) + '] = ' + str(dt[idx]))
+                print('dt[' + str(idx-1) + '] = ' + str(dt[idx-1]))
         
-                # test condition number of matrix
-                est = sparse.linalg.onenormest(LHS)
-                print('estimated 1-norm condition number LHS: ' + str(round(est,1)))
-            
-                start = time()
-                ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
-                stop = time()
-                print('ilu calculations: ' + str(stop - start) + ' s\n')
-            
-                M = LinearOperator(LHS.shape, ilu.solve)
+            # calculate "A" matrix
         
-        # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
-        if idx >= 1:
-            # add CDR perturbation (construct q vector, it is going to change every iteration in this experiment)
-            # for now, assuming NaOH (no change in DIC)
-            
-            # calculate AT required to return to preindustrial pH
-            # using DIC at previous time step (initial DIC + modeled change in DIC) and preindustrial pH
-            DIC_new = DIC + c[1:(m+1), idx-1]
-            AT_new = AT + c[(m+1):(2*m+1), idx-1]
-            AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, low=0, high=200, tol=1e-6, maxiter=50)
-            AT_to_offset_3D = p2.make_3D(AT_to_offset, ocnmask)
+            # dimensions
+            # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
+            #     [m x 1][m x m][m x m]
+            #     [m x 1][m x m][m x m]
+        
+            # what acts on what
+            # A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
+            #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
+            #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
+        
+            # math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
+            # A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
+            #     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
+            #     [0                        ][0                              ][TR                           ]
+        
+            # notation for setup
+            # A = [A00][A01][A02]
+            #     [A10][A11][A12]
+            #     [A20][A21][A22]
+        
+            # to solve for ∆xCO2
+            A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
+            A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
+            A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
+        
+            # combine into A0 row
+            A0_ = np.full(1 + 2*m, np.nan)
+            A0_[0] = A00
+            A0_[1:(m+1)] = A01
+            A0_[(m+1):(2*m+1)] = A02
+        
+            del A00, A01, A02
+        
+            # to solve for ∆DIC
+            A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) # is csc the most efficient format? come back to this
+            A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
+            A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
+        
+            A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
+        
+            del A10, A11, A12
+        
+            # to solve for ∆AT
+            A20 = np.zeros(m)
+            A21 = 0 * TR
+            A22 = TR
+        
+            A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
+        
+            del A20, A21, A22
+        
+            # build into one mega-array!!
+            A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
+        
+            del A0_, A1_, A2_
+                
+            # perform time stepping using Euler backward
+            LHS = sparse.eye(A.shape[0], format="csc") - dt[idx] * A
     
-            # make sure there are no negative values
-            if len(AT_to_offset[AT_to_offset<0]) != 0:
-                print('error: AT offset is negative')
-                break
-    
-            # set CDR perturbation equal to this AT in mixed layer
-            # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
-            del_q_CDR_AT = p2.flatten(AT_to_offset_3D * q_AT_locations_mask, ocnmask) # apply in maximum annual mixed layer depth
+            # test condition number of matrix
+            est = sparse.linalg.onenormest(LHS)
+            print('estimated 1-norm condition number LHS: ' + str(round(est,1)))
         
-            # add in source/sink vectors for ∆AT to q vector
-            q[(m+1):(2*m+1), idx] = del_q_CDR_AT
-            
-            # add in emissions scenario (∆xCO2) to q vector as well
-            q[0,idx] = q_emissions[idx] # [mol CO2 (mol air)-1]
-            
-            # add starting guess after first time step
-            if idx > 1:
-                c0 = c[:,idx-1]
+            start = time()
+            ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
+            stop = time()
+            print('ilu calculations: ' + str(stop - start) + ' s\n')
+        
+            M = LinearOperator(LHS.shape, ilu.solve)
+        
+        # add CDR perturbation (construct q vector, it is going to change every iteration in this experiment)
+        # for now, assuming NaOH (no change in DIC)
+        
+        # calculate AT required to return to preindustrial pH
+        # using DIC at previous time step (initial DIC + modeled change in DIC) and preindustrial pH
+        DIC_new = DIC + c[1:(m+1), idx-1]
+        AT_new = AT + c[(m+1):(2*m+1), idx-1]
+        AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, low=0, high=200, tol=1e-6, maxiter=50)
+
+        # make sure there are no negative values
+        if len(AT_to_offset[AT_to_offset<0]) != 0:
+            print('error: AT offset is negative')
+            break
+
+        # from this offset, calculate rate at which AT must be applied
+        # by solving discretized equation for q(t)
+        # OCIM manual eqn. 40: (I - dt * TR) * c_t = c_(t-dt) + dt * q(t)
+        # solve for q(t): q(t) = [(I - dt * TR) * c_t - c_(t-dt)] / dt
+        # --> define c_t as modern DIC + whatever AT required to get to
+        #     preind pH
+        # --> define c_(t-1) as preindustrial DIC + preindustrial AT (which
+        #     we are saying is the same as GLODAP AT)
+        # set CDR perturbation equal to this RATE in mixed layer only
+        # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
+        del_q_CDR_AT = (((sparse.eye(TR.shape[0], format="csc") - dt[idx] * TR) * (AT + AT_to_offset) - AT)) / dt[idx]
+        del_q_CDR_AT *= p2.flatten(q_AT_locations_mask, ocnmask) # apply in mixed layer only
+ 
+        # add in source/sink vectors for ∆AT to q vector
+        q[(m+1):(2*m+1), idx] = del_q_CDR_AT
+        
+        # add in emissions scenario (∆xCO2) to q vector as well
+        q[0,idx] = q_emissions[idx] # [mol CO2 (mol air)-1]
+        
+        # add starting guess after first time step
+        if idx > 1:
+            c0 = c[:,idx-1]
+        else:
+            c0=None
+    
+        # calculate right hand side and perform time stepping
+        RHS = c[:,idx-1] + np.squeeze(dt[idx] * q[:,idx])
+        #start = time()
+        c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
+        #stop = time()
+        #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+       
+        if info != 0:
+            if info > 0:
+                print(f'did not converge in {info} iterations.')
             else:
-                c0=None
-        
-            # calculate right hand side and perform time stepping
-            RHS = c[:,idx-1] + np.squeeze(dt[idx] * q[:,idx])
-            #start = time()
-            c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
-            #stop = time()
-            #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
-           
-            if info != 0:
-                if info > 0:
-                    print(f'did not converge in {info} iterations.')
-                else:
-                    print('illegal input or breakdown')
+                print('illegal input or breakdown')
     
     # rebuild 3D concentrations from 1D array used for solving matrix equation
         
@@ -667,9 +948,10 @@ for exp_idx in range(len(experiment_names)):
     c_delAT   = c[(m+1):(2*m+1), :]
     
     # partition "q" into xCO2, DIC, and AT
-    q_delxCO2 = q[0, :]
-    q_delDIC  = q[1:(m+1), :]
-    q_delAT   = q[(m+1):(2*m+1), :]
+    # convert from flux (amount yr-1) to amount by multiplying by dt [yr]
+    q_delxCO2 = q[0, :] * dt
+    q_delDIC  = q[1:(m+1), :] * dt
+    q_delAT   = q[(m+1):(2*m+1), :] * dt
     
     # convert delxCO2 units from unitless [µatm CO2 / µatm air] or [µmol CO2 / µmol air] to ppm
     c_delxCO2 *= 1e6
@@ -701,7 +983,7 @@ for exp_idx in range(len(experiment_names)):
         
         q_delDIC_3D[idx, :, :, :] = q_delDIC_reshaped
         q_delAT_3D[idx, :, :, :] = q_delAT_reshaped
-    
+
     # save model output in netCDF format
     global_attrs = {'description': experiment_attrs[exp_idx]}
     # save model output
@@ -1025,16 +1307,19 @@ for idx in range(0,186):
 
 #%% make figure of amount of AT added over time, comparing across scenarios
 
-scenarios = ['ssp126', 'ssp245'] # 'ssp370', 'ssp434', 'ssp585', 'none']
+labels = ['time stepping 0', 'time stepping 1', 'time stepping 2', 'time stepping 3', 'time stepping 4']
 
-experiment_names = ['exp16_2025-09-20-ssp126-MLD-all_lat_lon.nc',
-                    'exp16_2025-09-20-ssp245-MLD-all_lat_lon.nc']
-'''
-                    'exp16_2025-09-20-ssp370-MLD-all_lat_lon.nc',
-                    'exp16_2025-09-20-ssp434-MLD-all_lat_lon.nc',
-                    'exp16_2025-09-20-ssp585-MLD-all_lat_lon.nc',
-                    'exp16_2025-09-20-no_emissions-MLD-all_lat_lon.nc']
-'''
+experiment_names = ['exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping4.nc',]
+
+labels = ['dt = 1 yr', 'dt = 1 month']
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
+                    'exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1month_LONG.nc']
+
 
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
@@ -1043,12 +1328,7 @@ for exp_idx in range(0,len(experiment_names)):
     
     data = xr.open_dataset(output_path + experiment_names[exp_idx])
     t = data['time'].values
-    if exp_idx == 0:
-        nt = 185
-    elif exp_idx == 1:
-        nt = 86
-    else:
-        nt = len(t)
+    nt = len(t)
         
     model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
 
@@ -1056,15 +1336,281 @@ for exp_idx in range(0,len(experiment_names)):
     AT_added = AT_added.sum(dim=['depth', 'lon', 'lat'], skipna=True).values
     AT_added_cum = np.cumsum(AT_added)
     
-    ax.plot(t[0:nt] + 2015, AT_added_cum[0:nt], label=scenarios[exp_idx])
+    ax.plot(t[0:nt] + 2015, AT_added_cum[0:nt], label=labels[exp_idx])
     
 plt.legend()
+plt.xlim([2015, 2017])
+#plt.ylim([-0.25e17, 5e17])
+ax.set_xticks([2015, 2016, 2017])
 plt.xlabel('year')
 plt.ylabel('AT added to mixed layer (mol)')
     
-    
-    
-    
-    
+#%% make figure of amount of xCO2 removed added over time, comparing across scenarios
+
+labels = ['time stepping 0', 'time stepping 1', 'time stepping 2', 'time stepping 3', 'time stepping 4']
+
+experiment_names = ['exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_steppingTEST1.nc']
 
 
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+for exp_idx in range(0,len(experiment_names)):
+    
+    data = xr.open_dataset(output_path + experiment_names[exp_idx])
+    t = data['time'].values
+    nt=len(t)
+    
+    delxCO2 = data['delxCO2'].values
+    ax.plot(t[0:nt] + 2015, delxCO2[0:nt], label=labels[exp_idx])
+    
+plt.legend()
+plt.xlim([2015, 2017])
+ax.set_xticks([2015, 2016, 2017])
+#ax.set_ylim([-260, 10])
+plt.xlabel('year')
+plt.ylabel('change in atmospheric CO2 (ppm)')
+    
+#%% make figure of average ocean pH change each year, comparing across scenarios
+
+labels = ['time stepping 0', 'time stepping 1', 'time stepping 2', 'time stepping 3', 'time stepping 4']
+
+experiment_names = ['exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_steppingTEST1.nc']
+
+model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
+DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
+AT_broadcasted = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.axhline(np.average(pH_preind, weights=p2.flatten(model_vols,ocnmask)), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
+
+for exp_idx in range(0,len(experiment_names)):
+    
+    data = xr.open_dataset(output_path + experiment_names[exp_idx])
+    t = data['time'].values
+    nt=len(t)
+    
+    DIC_modeled_3D = data.delDIC + DIC_broadcasted
+    AT_modeled_3D = data.delAT + AT_broadcasted
+
+    avg_pH_modeled = np.zeros(nt)
+    
+    for idx in range(nt):
+        DIC_modeled = p2.flatten(DIC_modeled_3D.isel(time=idx).values, ocnmask)
+        AT_modeled = p2.flatten(AT_modeled_3D.isel(time=idx).values, ocnmask)        
+        co2sys = pyco2.sys(dic=DIC_modeled, alkalinity=AT_modeled, salinity=S, temperature=T,
+                           pressure=pressure, total_silicate=Si, total_phosphate=P)
+        
+        avg_pH_modeled[idx] = np.average(co2sys['pH'], weights=p2.flatten(model_vols,ocnmask))
+        
+    ax.plot(t + 2015, avg_pH_modeled[0:nt], label=labels[exp_idx])
+
+ax.set_ylabel('average ocean pH (weighted by grid cell volume)')
+ax.set_xlabel('year')
+#ax.set_xlim([2015, 2017])
+#ax.set_xticks([2015, 2016, 2017])
+#ax.set_ylim([7.838, 7.874])
+plt.legend()
+plt.show()
+
+#%% same thing, but for surface ocean
+
+labels = ['time stepping 0', 'time stepping 1', 'time stepping 2', 'time stepping 3', 'time stepping 4']
+
+experiment_names = ['exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_steppingTEST1.nc']
+
+model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
+DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
+AT_broadcasted = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.axhline(np.average(pH_preind[0:ns], weights=p2.flatten(model_vols,ocnmask)[0:ns]), c='black', linestyle='--', label='preindustrial pH') # add line showing preindustrial surface pH
+
+for exp_idx in range(0,len(experiment_names)):
+    
+    data = xr.open_dataset(output_path + experiment_names[exp_idx])
+    t = data['time'].values
+    nt=len(t)
+    
+    DIC_modeled_3D = data.delDIC + DIC_broadcasted
+    AT_modeled_3D = data.delAT + AT_broadcasted
+
+    avg_pH_modeled_surf = np.zeros(nt)
+    
+    for idx in range(nt):
+        DIC_modeled = p2.flatten(DIC_modeled_3D.isel(time=idx).values, ocnmask)
+        AT_modeled = p2.flatten(AT_modeled_3D.isel(time=idx).values, ocnmask)        
+        co2sys = pyco2.sys(dic=DIC_modeled, alkalinity=AT_modeled, salinity=S, temperature=T,
+                           pressure=pressure, total_silicate=Si, total_phosphate=P)
+        
+        avg_pH_modeled_surf[idx] = np.average(co2sys['pH'][0:ns], weights=p2.flatten(model_vols,ocnmask)[0:ns])
+        
+    ax.plot(t + 2015, avg_pH_modeled_surf[0:nt], label=labels[exp_idx])
+
+ax.set_ylabel('average surface ocean pH (weighted by grid cell volume)')
+ax.set_xlabel('year')
+#ax.set_xlim([2014.999, 2015.001])
+#ax.set_xticks([2015, 2016, 2017])
+#ax.set_ylim([7.45, 8.25])
+plt.legend()
+plt.show()
+
+#%% make figure of DIC change each year, comparing across scenarios
+
+labels = ['time stepping 0', 'time stepping 1', 'time stepping 2', 'time stepping 3', 'time stepping 4']
+
+experiment_names = ['exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_steppingTEST.nc']
+
+model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
+DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
+AT_broadcasted = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.axhline(np.average(DIC_preind, weights=p2.flatten(model_vols,ocnmask)), c='black', linestyle='--', label='preindustrial DIC') # add line showing preindustrial surface pH
+
+for exp_idx in range(0,len(experiment_names)):
+    
+    data = xr.open_dataset(output_path + experiment_names[exp_idx])
+    t = data['time'].values
+    nt=len(t)
+    
+    DIC_modeled_3D = data.delDIC + DIC_broadcasted
+    AT_modeled_3D = data.delAT + AT_broadcasted
+
+    avg_DIC_modeled = np.zeros(nt)
+    
+    for idx in range(nt):
+        DIC_modeled = p2.flatten(DIC_modeled_3D.isel(time=idx).values, ocnmask)
+        avg_DIC_modeled[idx] = np.average(DIC_modeled, weights=p2.flatten(model_vols,ocnmask))
+        
+    ax.plot(t + 2015, avg_DIC_modeled[0:nt], label=labels[exp_idx])
+
+ax.set_ylabel('average ocean DIC (weighted by grid cell volume)')
+ax.set_xlabel('year')
+#ax.set_xlim([2015, 2017])
+#ax.set_xticks([2015, 2016, 2017])
+#ax.set_ylim([2235, 2255])
+plt.legend()
+plt.show()
+
+#%% same thing, but for surface ocean
+
+labels = ['time stepping 0', 'time stepping 1', 'time stepping 2', 'time stepping 3', 'time stepping 4']
+
+experiment_names = ['exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-09-26-ssp_none-MLD-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-06-ssp_none-MLD_builtin-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-07-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-07-ssp_none-MLD_builtinOLD-all_lat_lon-time_stepping1.nc']
+
+experiment_names = ['exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping0.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping1.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping2.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping3.nc',
+                    'exp16_2025-10-07-ssp_none-MLDalt2-all_lat_lon-time_stepping4.nc',]
+
+experiment_names = ['exp16_2025-10-08-ssp_none-MLDalt2-all_lat_lon-time_steppingTEST.nc']
+
+
+model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
+DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
+AT_broadcasted = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+ax.axhline(np.nanmean(DIC_preind[0:ns]), c='black', linestyle='--', label='preindustrial DIC') # add line showing preindustrial surface pH
+
+for exp_idx in range(0,len(experiment_names)):
+    
+    data = xr.open_dataset(output_path + experiment_names[exp_idx])
+    t = data['time'].values
+    nt=len(t)
+    
+    DIC_modeled_3D = data.delDIC + DIC_broadcasted
+    AT_modeled_3D = data.delAT + AT_broadcasted
+
+    avg_DIC_modeled_surf = np.zeros(nt)
+    
+    for idx in range(nt):
+        DIC_modeled = p2.flatten(DIC_modeled_3D.isel(time=idx).values, ocnmask)        
+        avg_DIC_modeled_surf[idx] = np.average(DIC_modeled[0:ns], weights=p2.flatten(model_vols,ocnmask)[0:ns])
+        
+    ax.plot(t + 2015, avg_DIC_modeled_surf[0:nt], label=labels[exp_idx])
+
+ax.set_ylabel('average surface ocean DIC (weighted by grid cell volume)')
+ax.set_xlabel('year')
+#ax.set_xlim([2015, 2017])
+#ax.set_xticks([2015, 2016, 2017])
+#ax.set_ylim([1980, 2065])
+plt.legend()
+plt.show()

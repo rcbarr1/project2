@@ -855,7 +855,8 @@ def schmidt(gas, temperature):
 def calculate_AT_to_add(pH_preind, DIC, AT, T, S, pressure, Si, P, low=0, high=200, tol=1e-6, maxiter=50):
     '''
     Calculate the amount of alkalinity to add to the surface ocean in order to
-    reach preindustrial pH in the surface. This alkalinity will be between "low" and "high", which right now is 0 and 200 µmol kg-1
+    reach preindustrial pH in the surface. This alkalinity will be between
+    "low" and "high", which right now is 0 and 200 µmol kg-1
 
     Parameters
     ----------
