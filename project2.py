@@ -10,7 +10,7 @@ Created on Tue Oct  8 11:15:51 2024
 
 import scipy.io as spio
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator, LinearNDInterpolator
+from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import convolve
 import matplotlib.pyplot as plt
 import xarray as xr
@@ -902,51 +902,62 @@ def calculate_AT_to_add(pH_preind, DIC, AT, T, S, pressure, Si, P, low=0, high=2
     gets_AT = pH_init < pH_preind
 
     # initialize arrays representing low and high guesses
-    low_arr = np.full_like(AT, low, dtype=float)
-    high_arr = np.full_like(AT, high, dtype=float)
-    
-    # set bounds to 0 where no AT should be added
-    low_arr[~gets_AT] = 0.0
-    high_arr[~gets_AT] = 0.0
+    AT_to_offset = np.zeros_like(AT, dtype=float) # to record amount of AT to add
+    low_arr = np.full(np.count_nonzero(gets_AT), low, dtype=float)
+    high_arr = np.full(np.count_nonzero(gets_AT), high, dtype=float)
+
+    # extract only cells that need AT for faster processing
+    DIC_gets_AT = DIC[gets_AT]
+    AT_gets_AT = AT[gets_AT]
+    T_gets_AT = T[gets_AT]
+    S_gets_AT = S[gets_AT]
+    pressure_gets_AT = pressure[gets_AT]
+    Si_gets_AT = Si[gets_AT]
+    P_gets_AT = P[gets_AT]
+    pH_preind_gets_AT = pH_preind[gets_AT]
     
     # iterate through solve
     for it in range(maxiter):
         mid_arr = 0.5 * (low_arr + high_arr)
 
-        # compute pH for midpoints (vectorized pyCO2SYS call)
-        co2sys = pyco2.sys(dic=DIC, alkalinity=AT+mid_arr, salinity=S,
-                          temperature=T, pressure=pressure, total_silicate=Si,
-                          total_phosphate=P)
+        # compute pH for midpoints
+        co2sys = pyco2.sys(dic=DIC_gets_AT, alkalinity=AT_gets_AT+mid_arr,
+                           salinity=S_gets_AT, temperature=T_gets_AT,
+                           pressure=pressure_gets_AT,
+                           total_silicate=Si_gets_AT,
+                           total_phosphate=P_gets_AT)
 
-        f_mid = co2sys['pH'] - pH_preind
+        f_mid = co2sys['pH'] - pH_preind_gets_AT
 
         # evaluate sign at low bound
-        co2sys_low = pyco2.sys(dic=DIC, alkalinity=AT+low_arr, salinity=S,
-                          temperature=T, pressure=pressure, total_silicate=Si,
-                          total_phosphate=P)
+        co2sys_low = pyco2.sys(dic=DIC_gets_AT, alkalinity=AT_gets_AT+low_arr,
+                               salinity=S_gets_AT, temperature=T_gets_AT,
+                               pressure=pressure_gets_AT,
+                               total_silicate=Si_gets_AT,
+                               total_phosphate=P_gets_AT)
 
-        f_low = co2sys_low['pH'] - pH_preind
+        f_low = co2sys_low['pH'] - pH_preind_gets_AT
 
         # update brackets
         same_sign = (f_mid * f_low) > 0
-        low_arr[same_sign & gets_AT] = mid_arr[same_sign & gets_AT]
-        high_arr[~same_sign & gets_AT] = mid_arr[~same_sign & gets_AT]
+        low_arr[same_sign] = mid_arr[same_sign]
+        high_arr[~same_sign] = mid_arr[~same_sign]
 
         # check convergence
-        if np.all((high_arr - low_arr)[gets_AT] < tol):
+        if np.all((high_arr - low_arr) < tol):
             break
+    # assign results back to full grid
+    AT_to_offset[gets_AT] = 0.5 * (low_arr + high_arr)
     
-    #print('total number of iterations to AT offset: ' + str(it))
-    AT_to_offset = 0.5 * (low_arr + high_arr)
     return AT_to_offset
 
 def get_emissions_scenario(data_path, scenario_name):
     """
-    Calculates cumulative and annual CO2 emissions over the historical record
-    and a selected shared socioeconomic pathway (SSP). Returns time in units of
-    years and emissions in units of mol CO2 (mol air-1). Scenarios available
-    are 'none', 'ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434',
-    'ssp460', 'ssp534_OS', and 'ssp585'. Data is from 
+    Finds atmospheric CO2 concentrations over the historical record and a
+    selected shared socioeconomic pathway (SSP). Returns time in units of years
+    and emissions in units of mol CO2 (mol air-1). Scenarios available are
+    'none', 'ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434', 'ssp460',
+    'ssp534_OS', and 'ssp585'. Data is from 
     https://greenhousegases.science.unimelb.edu.au/#!/ghg?mode=downloads
     
     Parameters
@@ -962,10 +973,8 @@ def get_emissions_scenario(data_path, scenario_name):
     ----------
     time: 1-D array of floats
         time (in years CE) of emissions
-    emissions_cumulative: 1-D array of floats
+    atmospheric_xCO2: 1-D array of floats
         cumulative amount of emissions in mol CO2 (mol air)-1 since year 0 CE
-    emissions_annual: 1-D array of floats
-        annual amount of emissions in mol CO2 (mol air)-1 since year 0 CE
     """
     none_flag = 0
     # accessed from https://greenhousegases.science.unimelb.edu.au/#!/ghg?mode=downloads
@@ -1001,7 +1010,7 @@ def get_emissions_scenario(data_path, scenario_name):
     historical_time = np.arange(0, 2015)
     
     # pull out emissions over time, convert to xCO2 [mol CO2 (mol air)-1] from ppm
-    historical_cumulative = historical_data.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
+    historical_xCO2 = historical_data.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
         
     # future scenario
     # pull out future time in decimal years
@@ -1020,20 +1029,15 @@ def get_emissions_scenario(data_path, scenario_name):
     ssp_time = np.array(ssp_time)
     
     # pull out emissions over time, convert to xCO2 [mol CO2 (mol air)-1] from ppm
-    ssp_cumulative = ssp_data.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
+    ssp_xCO2 = ssp_data.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
     
     # combine into one historical + future array
     time = np.concatenate((historical_time, ssp_time))
-    emissions_cumulative = np.concatenate((historical_cumulative, ssp_cumulative))
+    atmospheric_xCO2 = np.concatenate((historical_xCO2, ssp_xCO2))
     
-    # above is cumulative change in xCO2 in atmosphere, calculate ∆q_xCO2 (perturbation at each time step)
-    emissions_annual = np.diff(emissions_cumulative, prepend=0) # [mol CO2 (mol air)-1]
+    if none_flag == 1: atmospheric_xCO2 *= 0
 
-    if none_flag == 1:
-        emissions_cumulative *= 0
-        emissions_annual *= 0
-
-    return time, emissions_cumulative, emissions_annual
+    return time, atmospheric_xCO2
 
 def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
     

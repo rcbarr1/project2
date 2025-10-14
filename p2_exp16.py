@@ -1277,7 +1277,6 @@ experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
 '''
 
 
-model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
 DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
 AT_broadcasted = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
 
@@ -1285,7 +1284,6 @@ fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
 
 ax.axhline(np.average(DIC_preind, weights=p2.flatten(model_vols,ocnmask)), c='black', linestyle='--', label='preindustrial DIC') # add line showing preindustrial surface pH
-
 for exp_idx in range(0,len(experiment_names)):
     
     data = xr.open_dataset(output_path + experiment_names[exp_idx])
@@ -1351,7 +1349,6 @@ experiment_names = ['exp16_2025-10-08-ssp_none-MLD-all_lat_lon-dt_1yr_LONG.nc',
 '''
 
 
-model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆AT from per kg to total
 DIC_broadcasted = xr.DataArray(DIC_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
 AT_broadcasted = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast DIC to convert ∆DIC to total DIC over time
 

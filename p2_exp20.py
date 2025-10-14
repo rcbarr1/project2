@@ -3,7 +3,7 @@
 """
 Created on Thu Oct  9 12:38:43 2025
 
-EXP16: Attempting maximum alkalinity calculation with more efficient memory usage
+EXP20: Attempting maximum alkalinity calculation with more efficient memory usage
 - Import anthropogenic carbon prediction at each grid cell using TRACEv1 to be initial ∆DIC conditions
 - From ∆DIC and gridded GLODAP pH and DIC, calculate how much ∆pH or ∆pCO2 to get back to preindustrial surface conditions
 - With this, calculate ∆AT required to offset
@@ -56,7 +56,8 @@ import matplotlib.pyplot as plt
 
 # load model architecture
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
-output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
+#output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
+output_path = '/Volumes/LaCie/outputs/'
 
 # load transport matrix (OCIM2-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
@@ -99,26 +100,27 @@ dt2 = 1/12 # 1 month
 dt3 = 1 # 1 year
 
 # just year time steps
-exp0_t = np.arange(0,200,dt3)
+exp0_t = np.arange(0,200,dt3) # this took 2:02:36
+#exp0_t = np.arange(0,1000,dt3)
 
 # experiment with dt = 1/12 (1 month) time steps
-exp1_t = np.arange(0,200,dt2)
+exp1_t = np.arange(0,200,dt2) # this took 8:29:18
+exp1_t = np.arange(0,400,dt2)
 
 # experiment with dt = 1/360 (1 day) time steps
-exp2_t = np.arange(0,200,dt1)
+exp2_t = np.arange(0,200,dt1) # this will take ~10 days as is (to calculate 200 years)
 
 # another with dt = 1/8640 (1 hour) time steps
-exp3_t = np.arange(0,10,dt0)
+exp3_t = np.arange(0,10,dt0) # this would take ~10 days as is (to calculate 10 years)
 
 # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
-t0 = np.arange(0, 1, dt0) # use a 1 day time step for the first month
-t1 = np.arange(1, 10, dt1) # use a 1 day time step for the first month
-t2 = np.arange(10, 50, dt2) # use a 1 month time step until the first year
-t3 = np.arange(50, 200, dt3) # use a 1 year time step until the 2nd year
+t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
+t1 = np.arange(1, 10, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
+t2 = np.arange(10, 100, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
+t3 = np.arange(100, 200, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
 exp4_t = np.concatenate((t0, t1, t2, t3))
 
-exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-exp_t = [exp3_t]
+#exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
 
 # DEPTHS OF ADDITION
 
@@ -182,9 +184,26 @@ experiment_attrs = ['adding max AT before reaching preind pH to all cells within
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for 200 years',
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first year, dt = 1/360 (1 day) for the next 10 years, dt = 1/12 (1 month) for the next 50 years, and dt = 1 (1 year) to reach 200 years']
 
-exp_t = [exp3_t]
+exp_t = [exp0_t]
+scenarios = ['none', 'none', 'none']
+experiment_names = ['exp20_2025-10-10-ssp_none-MLD-all_lat_lon-dt_1year',
+                    'exp20_2025-10-10-ssp_none-MLD-all_lat_lon-dt_1month',
+                    'exp20_2025-10-10-ssp_none-MLD-all_lat_lon-dt_mixeddt']
 
-experiment_names = ['exp20_test']
+exp_t = [exp0_t, exp1_t, exp0_t, exp1_t]
+scenarios = ['none', 'none', 'none', 'none']
+
+experiment_names = ['exp20_2025-10-13-ssp_none-MLD-all_lat_lon-dt_1year_co2sys1perc',
+                    'exp20_2025-10-13-ssp_none-MLD-all_lat_lon-dt_1month_co2sys1perc',
+                    'exp20_2025-10-13-ssp_none-MLD-all_lat_lon-dt_1year_co2sys0perc',
+                    'exp20_2025-10-13-ssp_none-MLD-all_lat_lon-dt_1year_co2sys0perc',]
+
+experiment_attrs = ['adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for 200 years with co2sys thresholding at 1%',
+                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 1%',
+                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for 200 years with co2sys thresholding at 0%',
+                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 0%',]
+
+thresholds = [0.01, 0.01, 0.0, 0.0]
 
 #%% getting initial ∆DIC conditions from TRACEv1
 # note, doing set up with Fortran ordering for consistency
@@ -334,95 +353,20 @@ for exp_idx in range(len(experiment_names)):
     
     # set up file saving rules (multiple files to avoid running out of working memory)
     nfiles = nt // t_per_file + (nt % t_per_file > 0) # number of files for this simulation
-
-    for f in range(nfiles):
-        start = f * t_per_file
-        end = min((f + 1) * t_per_file, nt)
-        nt_file = end - start # number of time steps in a given file
-    
-        fname = experiment_names[exp_idx] + f'_{f:03d}.nc'
-        print(f"creating {fname} for steps {start}–{end}")
-        fname = output_path + fname
-    
-        ds = Dataset(fname, "w", format="NETCDF4")
-    
-        ds.createDimension('time', None)
-        ds.createDimension('depth', len(model_depth))
-        ds.createDimension('lat', len(model_lat))
-        ds.createDimension('lon', len(model_lon))
-    
-        ds.createVariable('depth', 'f4', ('depth',))[:] = model_depth
-        ds.createVariable('lat', 'f4', ('lat',))[:] = model_lat
-        ds.createVariable('lon', 'f4', ('lon',))[:] = model_lon
-        time_var = ds.createVariable('time', 'f8', ('time',))
-    
-        # create 4D variables
-        tracers = {}
-        tracers_4D = {'delDIC', 'DIC_added', 'delAT', 'AT_added'}
-        for tracer in tracers_4D:
-            tracers[tracer] = ds.createVariable(
-                tracer,
-                'f4',
-                ('time', 'depth', 'lat', 'lon'),
-                zlib=True,
-                complevel=4,
-                chunksizes=(1, len(model_depth), len(model_lat), len(model_lon)),)
-        
-        # create 1D variables
-        tracers_1D = {'delxCO2', 'xCO2_added'}
-        for tracer in tracers_1D:
-            tracers[tracer] = ds.createVariable(
-                tracer,
-                'f4',
-                ('time'),
-                zlib=True,
-                complevel=4,
-                chunksizes=(1,),)
+    ds = None
+    file_number = -1
     
     # set up emissions scenario
     
     # get annual emissions
-    q_emissions = np.zeros(nt)
+    atmospheric_xCO2 = np.zeros(nt)
 
     if scenarios[exp_idx] != 'none':
     
-        _, _, emissions_annual = p2.get_emissions_scenario(data_path, scenarios[exp_idx])
-        emissions_annual = emissions_annual[2015::]
-        
-        nyears_emissions = len(emissions_annual)
-        integrated_emissions = np.zeros(nt, dtype=float)
-        
-        # for each timestep, compute overlap with all simulation years that
-        # intersect the emissions scenario interval
-        #for idx in range(0,1):
-        for idx in range(0,nt-1):
-            a = t[idx] # interval start
-            b = t[idx+1] # interval end
-            
-            # find if there are years that could overlap in this interval (i.e.
-            # if an interval spans more than one year)
-            y_start = int(np.floor(a))
-            y_end = int(np.floor(b - 1e-12)) # inclusive last year index that starts before b
-            
-            # clamp to available annual emissions indices (i.e. assume
-            # emissions beyond data available are zero)
-            y0 = max(0, y_start)
-            y1 = min(nyears_emissions - 1, y_end)
-            
-            # for all year indicies "y" that might overlap with a timestep,
-            # calculate the length of the interval, get integrated value, and 
-            # accumulate emissions (if > 1 year time step)
-            for y in range(y0, y1 + 1):
-                year_start = float(y)
-                year_end = float(y + 1)
-                overlap_start = max(a, year_start)
-                overlap_end = min(b, year_end)
-                overlap = max(0.0, overlap_end - overlap_start)
-                if overlap > 0:
-                    integrated_emissions[idx+1] += emissions_annual[y] * overlap # emissions_annual [mol CO2 (mol air)-1 yr-1] * overlap [yr] -> mol CO2 (mol air)-1
-       
-        # calculate rate of emissions from integraetd emissions
-        q_emissions[1::] = integrated_emissions[1::] / dt[1::]
+        atmospheric_xCO2_time, atmospheric_xCO2_annual = p2.get_emissions_scenario(data_path, scenarios[exp_idx])
+
+        # interpolate atmospheric CO2 to match time stepping of simulation
+        atmospheric_xCO2 = np.interp(t + 2015, atmospheric_xCO2_time, atmospheric_xCO2_annual)
 
     # construct matrix C
     # matrix form:
@@ -467,6 +411,78 @@ for exp_idx in range(len(experiment_names)):
   
     # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
     for idx in tqdm(range(1,nt)):
+        
+        # open new file if previous file is full (or one hasn't been opened yet)
+        if (idx-1) % t_per_file == 0:
+            
+            # close previous file if open
+            if ds is not None: ds.close()
+            
+            file_number += 1
+            fname = experiment_names[exp_idx] + f'_{file_number:03d}.nc'
+            print('starting new file: ' + fname)
+            fname = output_path + fname
+
+            ds = Dataset(fname, "w", format="NETCDF4")
+        
+            ds.createDimension('time', None)
+            ds.createDimension('depth', len(model_depth))
+            ds.createDimension('lon', len(model_lon))
+            ds.createDimension('lat', len(model_lat))
+            
+            time_var = ds.createVariable('time', 'f8', ('time',))
+            time_var.units = 'year'
+            
+            depth_var = ds.createVariable('depth', 'f4', ('depth',))
+            depth_var[:] = model_depth
+            depth_var.units = 'meters'
+            
+            lon_var = ds.createVariable('lon', 'f4', ('lon',))
+            lon_var[:] = model_lon
+            lon_var.units = 'degrees_east'
+            
+            lat_var = ds.createVariable('lat', 'f4', ('lat',))
+            lat_var[:] = model_lat
+            lat_var.units = 'degrees_north'
+        
+            # create 4D variables
+            tracers = {}
+            tracers_4D = {'delDIC', 'DIC_added', 'delAT', 'AT_added'}
+            for tracer in tracers_4D:
+                tracers[tracer] = ds.createVariable(
+                    tracer,
+                    'f4',
+                    ('time', 'depth', 'lon', 'lat',),
+                    zlib=True,
+                    complevel=4,
+                    chunksizes=(1, len(model_depth), len(model_lon), len(model_lat)),)
+            
+            # create 1D variables
+            tracers_1D = {'delxCO2', 'xCO2_added'}
+            for tracer in tracers_1D:
+                tracers[tracer] = ds.createVariable(
+                    tracer,
+                    'f4',
+                    ('time'),
+                    zlib=True,
+                    complevel=4,
+                    chunksizes=(1,),)
+                
+            # reset time index in the file
+            idx_file = 0
+            
+        # if first iteration, add baseline state to file (should all be zeros)
+        if idx == 1:
+            
+            ds.variables['time'][idx_file] = t[idx] + 2015
+            tracers['delxCO2'][idx_file] = c[0, 0].astype('float32')
+            tracers['delDIC'][idx_file, :, :, :] = p2.make_3D(c[1:(m+1), 0],ocnmask).astype('float32')
+            tracers['delAT'][idx_file, :, :, :] = p2.make_3D(c[(m+1):(2*m+1), 0],ocnmask).astype('float32')
+            tracers['xCO2_added'][idx_file] = q[0].astype('float32')
+            tracers['DIC_added'][idx_file, :, :, :] = p2.make_3D(q[1:(m+1)], ocnmask).astype('float32')
+            tracers['AT_added'][idx_file, :, :, :] = p2.make_3D(q[(m+1):(2*m+1)], ocnmask).astype('float32')
+            idx_file += 1
+        
         # update c vector to move results from idx-1 to "previous timestep" slot
         c[:,0] = c[:,1]
         c[:,1] *= 0
@@ -481,14 +497,12 @@ for exp_idx in range(len(experiment_names)):
         
         # recalculate carbonate system every time >5% of grid cells see change
         # in AT or DIC >5% since last recalculation
-        frac_AT = np.mean(np.abs(AT_current - AT_at_last_calc) > 0.05 * np.abs(AT_at_last_calc)) # calculate fraction of grid cells with change in AT above 10%
-        frac_DIC = np.mean(np.abs(DIC_current - DIC_at_last_calc) > 0.05 * np.abs(DIC_at_last_calc)) # calculate fraction of grid cells with change in DIC above 10%
-        print('\nfraction of cells with change in AT >5%: ' + str(frac_AT))
-        print('fraction of cells with change in DIC >5%: ' + str(frac_DIC)) 
+        frac_AT = np.mean(np.abs(AT_current - AT_at_last_calc) > thresholds[idx] * np.abs(AT_at_last_calc)) # calculate fraction of grid cells with change in AT above 10%
+        frac_DIC = np.mean(np.abs(DIC_current - DIC_at_last_calc) > thresholds[idx] * np.abs(DIC_at_last_calc)) # calculate fraction of grid cells with change in DIC above 10%
  
         # (re)calculate carbonate system if it has not yet been calculated or
         # needs to be recalculated
-        if idx == 1 or frac_AT > 0.05 or frac_DIC > 0.05:
+        if idx == 1 or frac_AT > thresholds[idx] or frac_DIC > thresholds[idx]:
             AT_at_last_calc = AT_current.copy()
             DIC_at_last_calc = DIC_current.copy()
             # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
@@ -520,22 +534,16 @@ for exp_idx in range(len(experiment_names)):
             beta_A = AT/aqueous_CO2 # [unitless]
             K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
             
-            print('carbonate system recalculated (t = ' + str(t[idx]) + ')')
+            print('\ncarbonate system recalculated (t = ' + str(t[idx]) + ')')
         
         # must (re)calculate A matrix if 1. it has not yet been calculated
         # 2. the carbonate system needs to be recalculated or 3. the time
         # step interval (dt) has changed
-        if idx == 1 or frac_AT > 0.05 or frac_DIC > 0.05 or np.round(dt[idx],10) != np.round(dt[idx-1],10):
+        if idx == 1 or frac_AT > thresholds[idx] or frac_DIC > thresholds[idx] or np.round(dt[idx],10) != np.round(dt[idx-1],10):
             
-            if frac_AT > 0.05:
-                print('frac_AT > 0.05')
-                
-            if frac_DIC > 0.05:
-                print('frac_DIC > 0.05')
-                
-            if dt[idx] != dt[idx-1]:
-                print('dt[' + str(idx) + '] = ' + str(dt[idx]))
-                print('dt[' + str(idx-1) + '] = ' + str(dt[idx-1]))
+            if frac_AT > thresholds[idx] and thresholds[idx] > 0: print('frac_AT > ' + str(thresholds[idx]))
+            if frac_DIC > thresholds[idx] and thresholds[idx] > 0: print('frac_DIC > ' + str(thresholds[idx]))
+            if dt[idx] != dt[idx-1]: print('dt[' + str(idx) + '] != dt[' + str(idx-1) + ']')
         
             # calculate "A" matrix
         
@@ -638,22 +646,10 @@ for exp_idx in range(len(experiment_names)):
  
         # add in source/sink vectors for ∆AT to q vector
         q[(m+1):(2*m+1)] = del_q_CDR_AT
-        
-        # add in emissions scenario (∆xCO2) to q vector as well
-        q[0] = q_emissions[idx] # [mol CO2 (mol air)-1]
-        
-        # add starting guess after first time step
-        if idx > 1:
-            c0 = c[:,0]
-        else:
-            c0=None
-    
+
         # calculate right hand side and perform time stepping
         RHS = c[:,0] + np.squeeze(dt[idx] * q)
-        #start = time()
-        c[:,1], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
-        #stop = time()
-        #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
+        c[:,1], info = lgmres(LHS, RHS, M=M, x0=c[:,0], rtol = 1e-5, atol=0)
        
         if info != 0:
             if info > 0:
@@ -682,27 +678,28 @@ for exp_idx in range(len(experiment_names)):
         q_delDIC_3D = np.full(ocnmask.shape, np.nan)
         q_delAT_3D = np.full(ocnmask.shape, np.nan)
         
-        c_delDIC_3D[ocnmask == 1] = np.reshape(c_delDIC[:, idx], (-1,), order='F')
-        c_delAT_3D[ocnmask == 1] = np.reshape(c_delAT[:, idx], (-1,), order='F')
-        q_delDIC_3D[ocnmask == 1] = np.reshape(q_delDIC[:, idx], (-1,), order='F')
-        q_delAT_3D[ocnmask == 1] = np.reshape(q_delAT[:, idx], (-1,), order='F')
+        c_delDIC_3D[ocnmask == 1] = np.reshape(c_delDIC, (-1,), order='F')
+        c_delAT_3D[ocnmask == 1] = np.reshape(c_delAT, (-1,), order='F')
+        q_delDIC_3D[ocnmask == 1] = np.reshape(q_delDIC, (-1,), order='F')
+        q_delAT_3D[ocnmask == 1] = np.reshape(q_delAT, (-1,), order='F')
             
         # write data to xarray
-        ds.variables['time'][idx] = t[idx] + 2015
-        tracers['delxCO2'][t] = c_delxCO2.astype('float32')
-        tracers['delDIC'][t, :, :, :] = c_delDIC_3D.astype('float32')
-        tracers['delAT'][t, :, :, :] = c_delAT_3D.astype('float32')
-        tracers['xCO2_added'][t] = q_delxCO2.astype('float32')
-        tracers['DIC_added'][t, :, :, :] = q_delDIC_3D.astype('float32')
-        tracers['AT_added'][t, :, :, :] = q_delAT_3D.astype('float32')
+        ds.variables['time'][idx_file] = t[idx] + 2015
+        tracers['delxCO2'][idx_file] = c_delxCO2.astype('float32')
+        tracers['delDIC'][idx_file, :, :, :] = c_delDIC_3D.astype('float32')
+        tracers['delAT'][idx_file, :, :, :] = c_delAT_3D.astype('float32')
+        tracers['xCO2_added'][idx_file] = q_delxCO2.astype('float32')
+        tracers['DIC_added'][idx_file, :, :, :] = q_delDIC_3D.astype('float32')
+        tracers['AT_added'][idx_file, :, :, :] = q_delAT_3D.astype('float32')
         
         # sync data to output file every 20 time steps (in case of crash)
         if idx % 20 == 0:
             ds.sync()
-            
-    ds.close()
-
-
+        
+        # increment within-file index
+        idx_file += 1
+    
+    if ds is not None: ds.close()
 
 
 
