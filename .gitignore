@@ -1,0 +1,14 @@
+# Ignore specific folders
+data/
+examples/
+movies/
+notes/
+outputs/
+PyESPER/
+writing/
+yamamoto/
+
+# Ignore temporary or system files
+*.pyc
+__pycache__/
+.DS_Store
