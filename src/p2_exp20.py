@@ -43,7 +43,7 @@ Naming convention for saving model runs (see .txt file for explanation of experi
 
 @author: Reese C. Barrett
 """
-import project2 as p2
+from src.utils import project2 as p2
 import xarray as xr
 from netCDF4 import Dataset
 import numpy as np
@@ -55,9 +55,8 @@ from time import time
 import matplotlib.pyplot as plt
 
 # load model architecture
-data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
-#output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
-output_path = '/Volumes/LaCie/outputs/'
+data_path = './data/'
+output_path = './outputs/'
 
 # load transport matrix (OCIM2-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
