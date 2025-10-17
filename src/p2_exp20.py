@@ -100,7 +100,7 @@ dt3 = 1 # 1 year
 
 # just year time steps
 exp0_t = np.arange(0,200,dt3) # this took 2:02:36
-#exp0_t = np.arange(0,1000,dt3)
+exp0_t = np.arange(0,5,dt3)
 
 # experiment with dt = 1/12 (1 month) time steps
 exp1_t = np.arange(0,200,dt2) # this took 8:29:18
@@ -201,6 +201,8 @@ experiment_attrs = ['adding max AT before reaching preind pH to all cells within
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 1%',
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for 200 years with co2sys thresholding at 0%',
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 0%',]
+
+experiment_names = ['TEST_exp20_2025-10-17']
 
 thresholds = [0.01, 0.01, 0.0, 0.0]
 
