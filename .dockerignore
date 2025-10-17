@@ -1,0 +1,9 @@
+data/
+examples/
+movies/
+notes/
+outputs/
+PyESPER/
+writing/
+yamamoto/
+.DS_Store
