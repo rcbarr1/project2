@@ -221,11 +221,7 @@ output_coordinates = np.array([lon.ravel(order='F'), lat.ravel(order='F'), depth
 dates_2015 = 2015 * np.ones([output_coordinates.shape[0],1])
 #dates_2025 = 2025 * np.ones([output_coordinates.shape[0],1])
 
-# get temperature and salinity predictor measurements from GLODAP data
-#p2.regrid_glodap(data_path, 'temperature', model_depth, model_lat, model_lon, ocnmask)
-#p2.regrid_glodap(data_path, 'salinity', model_depth, model_lat, model_lon, ocnmask)
-
-# or, upload regridded glodap data
+# upload regridded glodap data
 T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy')
 S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy')
 #S_3D[S_3D < 30] = 30 # ensure no very low S values (might be causing co2sys to lose it?)
@@ -252,15 +248,6 @@ Canth_2015 = Canth_2015.transpose([2, 0, 1])
 #p2.plot_surface3d(model_lon, model_lat, Canth_2015, 0, -1, 82, 'viridis', 'anthropogenic carbon')
 
 #%% calculate preindustrial pH from GLODAP DIC minus Canth to get preindustrial DIC and GLODAP TA, assuming steady state
-
-# regrid GLODAP data
-#p2.regrid_glodap(data_path, 'TCO2', model_depth, model_lat, model_lon, ocnmask)
-#p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
-#p2.regrid_glodap(data_path, 'pHtsinsitutp', model_depth, model_lat, model_lon, ocnmask)
-#p2.regrid_glodap(data_path, 'temperature', model_depth, model_lat, model_lon, ocnmask)
-#p2.regrid_glodap(data_path, 'salinity', model_depth, model_lat, model_lon, ocnmask)
-#p2.regrid_glodap(data_path, 'silicate', model_depth, model_lat, model_lon, ocnmask)
-#p2.regrid_glodap(data_path, 'PO4', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded GLODAP data
 DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC.npy') # dissolved inorganic carbon [µmol kg-1]
@@ -300,11 +287,6 @@ avg_pH_preind = np.nanmean(pH_preind)
 pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
 
 #%% set up air-sea gas exchange (Wanninkhof, 2014)
-
-# regrid NCEP/DOE reanalysis II data
-#p2.regrid_ncep_noaa(data_path, 'icec', model_lat, model_lon, ocnmask)
-#p2.regrid_ncep_noaa(data_path, 'wspd', model_lat, model_lon, ocnmask)
-#p2.regrid_ncep_noaa(data_path, 'sst', model_lat, model_lon, ocnmask)
 
 # upload regridded NCEP/DOE reanalysis II data
 f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec.npy') # annual mean ice fraction from 0 to 1 in each grid cell
