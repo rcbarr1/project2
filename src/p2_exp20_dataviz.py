@@ -8,8 +8,8 @@ efficient memory usage
 
 @author: Reese C. Barrett
 """
-
-import project2 as p2
+#%%
+from src.utils import project2 as p2
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
@@ -100,7 +100,7 @@ experiment_names = ['exp20_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1yr',
 experiment_names = ['exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1year_co2sys1perc',
                     'exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1month_co2sys1perc',]
 
-experiment_names = ['exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1year_co2sys1perc']
+experiment_names = ['TEST_exp20_2025-10-17']
 
 labels = ['dt = 1 yr', 'dt = 1 month']
 
@@ -327,8 +327,6 @@ for exp_idx in range(len(experiment_names)):
 plt.legend()
 plt.xlabel('year')
 plt.ylabel('weighted average ocean pH (µmol kg$^{-1}$)')
-
-
     
 #%% line plot of pressure by index
 vmin = -50

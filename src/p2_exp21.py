@@ -1,9 +1,10 @@
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Oct  9 12:38:43 2025
+Created on Mon Oct 20 01:10:59 2025
 
-EXP20: Attempting maximum alkalinity calculation with more efficient memory usage
+EXP21: Attempting maximum alkalinity calculation with parallel sparse matrix solve and running experiments in parallel (optimizing for HPC)
 - Import anthropogenic carbon prediction at each grid cell using TRACEv1 to be initial ∆DIC conditions
 - From ∆DIC and gridded GLODAP pH and DIC, calculate how much ∆pH or ∆pCO2 to get back to preindustrial surface conditions
 - With this, calculate ∆AT required to offset
@@ -565,10 +566,10 @@ for exp_idx in range(len(experiment_names)):
         
             # to solve for ∆DIC
             A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) 
-            A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
+            A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csr')
             A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
         
-            A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
+            A1_ = sparse.hstack((sparse.csr_matrix(np.expand_dims(A10,axis=1)), A11, A12))
         
             del A10, A11, A12
         
@@ -577,30 +578,18 @@ for exp_idx in range(len(experiment_names)):
             A21 = 0 * TR
             A22 = TR
         
-            A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
+            A2_ = sparse.hstack((sparse.csr_matrix(np.expand_dims(A20,axis=1)), A21, A22))
         
             del A20, A21, A22
         
             # build into one mega-array!!
-            A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
+            A = sparse.vstack((sparse.csr_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
         
             del A0_, A1_, A2_
                 
-            # perform time stepping using Euler backward
-            LHS = sparse.eye(A.shape[0], format="csc") - dt[idx] * A
-    
-            # test condition number of matrix
-            est = sparse.linalg.onenormest(LHS)
-            print('estimated 1-norm condition number LHS: ' + str(round(est,1)))
+            # calculate left hand side according to Euler backward method
+            LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
         
-            start = time()
-            ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
-            stop = time()
-            print('ilu calculations: ' + str(stop - start) + ' s\n')
-        
-            M = LinearOperator(LHS.shape, ilu.solve)
-        
-        # add CDR perturbation (construct q vector, it is going to change every iteration in this experiment)
         # for now, assuming NaOH (no change in DIC)
         
         # calculate AT required to return to preindustrial pH
@@ -625,7 +614,7 @@ for exp_idx in range(len(experiment_names)):
         #     we are saying is the same as GLODAP AT)
         # set CDR perturbation equal to this RATE in mixed layer only
         # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
-        #del_q_CDR_AT = (((sparse.eye(TR.shape[0], format="csc") - dt[idx] * TR) * (AT + AT_to_offset) - AT)) / dt[idx]
+        #del_q_CDR_AT = (((sparse.eye(TR.shape[0], format="csr") - dt[idx] * TR) * (AT + AT_to_offset) - AT)) / dt[idx]
         #del_q_CDR_AT *= p2.flatten(q_AT_locations_mask, ocnmask) # apply in mixed layer only
         
         # this doesn't work... try q(t) = AT_to_offset / dt [µmol AT kg-1 yr-1]??
@@ -633,16 +622,50 @@ for exp_idx in range(len(experiment_names)):
  
         # add in source/sink vectors for ∆AT to q vector
         q[(m+1):(2*m+1)] = del_q_CDR_AT
-
-        # calculate right hand side and perform time stepping
+        
+        # calculate right hand side according to Euler backward method
         RHS = c[:,0] + np.squeeze(dt[idx] * q)
-        c[:,1], info = lgmres(LHS, RHS, M=M, x0=c[:,0], rtol = 1e-5, atol=0)
-       
-        if info != 0:
-            if info > 0:
-                print(f'did not converge in {info} iterations.')
-            else:
-                print('illegal input or breakdown')
+        
+        # convert matricies from scipy sparse to PETSc to parallelize
+        LHS_petsc = PETSc.Mat().createAIJ(size=LHS.shape,
+                                        csr=(LHS.indptr, LHS.indices, LHS.data))
+        RHS_petsc = PETSc.Vec().createWithArray(RHS)
+
+        # set up PETSc solver
+        ksp = PETSc.KSP().create()
+        ksp.setOperators(A_petsc)
+        ksp.setType('lgmres')
+        ksp.setGMRESRestart(30)  # restart after 30 iterations
+
+        # set up preconditioner
+        ksp.getPC().setType('bjacobi')  # block Jacobi with ILU on each block
+
+        # set convergence tolerances
+        ksp.setTolerances(rtol=1e-8, atol=1e-10, max_it=1000)
+
+        # set up output array (PETSc vector object)
+        c_petsc = LHS_petsc.createVecRight()
+        c_petsc.setArray(c[:,0])
+        ksp.setInitialGuessNonzero(True) # tell solver to use initial guess
+
+        # solve system (perform time stepping)
+        ksp.solve(RHS_petsc, c_petsc)
+        c[:,1] = c_petsc.array.copy()
+
+        # make sure it converged
+        if ksp.getConvergedReason() < 0:
+            raise RuntimeError(
+                f"Solver failed to converge! "
+                f"Reason code: {ksp.getConvergedReason()}, "
+                f"Iterations: {ksp.getIterationNumber()}, "
+                f"Residual: {ksp.getResidualNorm():.2e}"
+            )
+
+        # clean up
+        A_petsc.destroy()
+        b_petsc.destroy()
+        x_petsc.destroy()
+        ksp.destroy()
         
         # partition "c" into xCO2, DIC, and AT
         c_delxCO2 = c[0, 1]
