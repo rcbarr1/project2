@@ -100,7 +100,7 @@ experiment_names = ['exp20_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1yr',
 experiment_names = ['exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1year_co2sys1perc',
                     'exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1month_co2sys1perc',]
 
-experiment_names = ['TEST_exp20_2025-10-17']
+experiment_names = ['exp21_TEST']
 
 labels = ['dt = 1 yr', 'dt = 1 month']
 

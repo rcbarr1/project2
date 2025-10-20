@@ -2,7 +2,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Oct 20 01:10:59 2025
+Created on Mon Oct 20 13:10:59 2025
 
 EXP21: Attempting maximum alkalinity calculation with parallel sparse matrix solve and running experiments in parallel (optimizing for HPC)
 - Import anthropogenic carbon prediction at each grid cell using TRACEv1 to be initial ∆DIC conditions
@@ -44,16 +44,20 @@ Naming convention for saving model runs (see .txt file for explanation of experi
 
 @author: Reese C. Barrett
 """
+#%%
 from src.utils import project2 as p2
 import xarray as xr
+import os
+from datetime import datetime
 from netCDF4 import Dataset
 import numpy as np
 import PyCO2SYS as pyco2
 from scipy import sparse
 from tqdm import tqdm
-from scipy.sparse.linalg import spilu, LinearOperator, lgmres
+from petsc4py import PETSc
 from time import time
 import matplotlib.pyplot as plt
+import argparse
 
 # load model architecture
 data_path = './data/'
@@ -82,257 +86,250 @@ rho = 1025 # seawater density for volume to mass [kg m-3]
 # rules for saving files
 t_per_file = 2000 # number of time steps 
 
-#%% SET EXPERIMENTAL VARIABLES: WEEKEND RUN
-# - length of time of experiment/time stepping
-# - depth of addition
-# - location of addition
-# - emissions scenarios
-# - experiment names
-# in this experiment, amount of addition is set as the maximum amount of AT
-# that can be added to a grid cell before exceeding preindustrial pH, so it is
-# not treated as a variable
+def set_experiment_parameters(test=False):
+    # SET EXPERIMENTAL VARIABLES: WEEKEND RUN
+    # - length of time of experiment/time stepping
+    # - depth of addition
+    # - location of addition
+    # - emissions scenarios
+    # - experiment names
+    # in this experiment, amount of addition is set as the maximum amount of AT
+    # that can be added to a grid cell before exceeding preindustrial pH, so it is
+    # not treated as a variable
 
-# TIME
+    # TIME
+    dt0 = 1/8640 # 1 hour
+    dt1 = 1/360 # 1 day
+    dt2 = 1/12 # 1 month
+    dt3 = 1 # 1 year
 
-dt0 = 1/8640 # 1 hour
-dt1 = 1/360 # 1 day
-dt2 = 1/12 # 1 month
-dt3 = 1 # 1 year
+    # just year time steps
+    exp0_t = np.arange(0,200,dt3) # this took 2:02:36
+    exp0_t = np.arange(0,5,dt3)
 
-# just year time steps
-exp0_t = np.arange(0,200,dt3) # this took 2:02:36
-exp0_t = np.arange(0,5,dt3)
+    # experiment with dt = 1/12 (1 month) time steps
+    exp1_t = np.arange(0,200,dt2) # this took 8:29:18
+    #exp1_t = np.arange(0,400,dt2)
 
-# experiment with dt = 1/12 (1 month) time steps
-exp1_t = np.arange(0,200,dt2) # this took 8:29:18
-#exp1_t = np.arange(0,400,dt2)
+    # experiment with dt = 1/360 (1 day) time steps
+    exp2_t = np.arange(0,200,dt1) # this will take ~10 days as is (to calculate 200 years)
 
-# experiment with dt = 1/360 (1 day) time steps
-exp2_t = np.arange(0,200,dt1) # this will take ~10 days as is (to calculate 200 years)
+    # another with dt = 1/8640 (1 hour) time steps
+    exp3_t = np.arange(0,10,dt0) # this would take ~10 days as is (to calculate 10 years)
 
-# another with dt = 1/8640 (1 hour) time steps
-exp3_t = np.arange(0,10,dt0) # this would take ~10 days as is (to calculate 10 years)
+    # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
+    t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
+    t1 = np.arange(1, 10, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
+    t2 = np.arange(10, 100, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
+    t3 = np.arange(100, 200, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
+    exp4_t = np.concatenate((t0, t1, t2, t3))
 
-# another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
-t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
-t1 = np.arange(1, 10, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
-t2 = np.arange(10, 100, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
-t3 = np.arange(100, 200, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
-exp4_t = np.concatenate((t0, t1, t2, t3))
+    exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
+    exp_t_names = ['t0', 't1', 't2', 't3', 't4']
 
-#exp_t = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
+    # DEPTHS OF ADDITION
 
-# DEPTHS OF ADDITION
+    # to do addition in mixed layer...
+    # pull mixed layer depth at each lat/lon from OCIM model data, then create mask
+    # of ocean cells that are at or below the mixed layer depth
+    mld = model_data.mld.values # [m]
+    # create 3D mask where for each grid cell, mask is set to 1 if the depth in the
+    # grid cell depths array is less than the mixed layer depth for that column
+    # note: this does miss cells where the MLD is close but does not reach the
+    # depth of the next grid cell below (i.e. MLD = 40 m, grid cell depths are at
+    # 30 m and 42 m, see lon_idx, lat_idx = 20, 30). I am intentionally leaving
+    # this for now to ensure what enters the ocean stays mostly within the mixed
+    # layer, but the code could be changed to a different method if needed.exp2_t
 
-# to do addition in mixed layer...
-# pull mixed layer depth at each lat/lon from OCIM model data, then create mask
-# of ocean cells that are at or below the mixed layer depth
-mld = model_data.mld.values # [m]
-# create 3D mask where for each grid cell, mask is set to 1 if the depth in the
-# grid cell depths array is less than the mixed layer depth for that column
-# note: this does miss cells where the MLD is close but does not reach the
-# depth of the next grid cell below (i.e. MLD = 40 m, grid cell depths are at
-# 30 m and 42 m, see lon_idx, lat_idx = 20, 30). I am intentionally leaving
-# this for now to ensure what enters the ocean stays mostly within the mixed
-# layer, but the code could be changed to a different method if needed.exp2_t
+    mldmask = (grid_cell_depth < mld[None, :, :]).astype(int)
+    q_AT_depths = [mldmask]
 
-mldmask = (grid_cell_depth < mld[None, :, :]).astype(int)
-q_AT_depths = mldmask
+    # to do addition in first (or first two, or first three, etc.) model layer(s)
+    #q_AT_depths = ocnmask.copy()
+    #q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
+    #q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
+    #q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
 
-plot_mlds = mldmask.sum(axis=0)
+    # to do all lat/lons
+    q_AT_latlons = [ocnmask[0,:,:].copy()]
 
-#p2.plot_surface2d(model_lon, model_lat, plot_mlds, 0, 30, 'viridis', 'how many depth layers deep does mld go')
+    # to constrain lat/lon of addition to LME(s)
+    # get masks for each large marine ecosystem (LME)
+    #lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
+    #p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
+    #lme_idx = [22,52] # subset of LMEs
+    #lme_idx = list(lme_masks.keys()) # all LMES
+    #q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
 
-# to do addition in first (or first two, or first three, etc.) model layer(s)
-#q_AT_depths = ocnmask.copy()
-#q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
-#q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
-#q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
+    # EMISSIONS SCENARIOS
+    # no emissions scenario
+    #q_emissions = np.zeros(nt)
 
-# to do all lat/lons
-q_AT_latlons = ocnmask[0,:,:].copy()
+    # with emissions scenario
+    scenarios = ['none'] 
 
-# to constrain lat/lon of addition to LME(s)
-# get masks for each large marine ecosystem (LME)
-#lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
-#p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
-#lme_idx = [22,52] # subset of LMEs
-#lme_idx = list(lme_masks.keys()) # all LMES
-#q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
+    # test different co2sys thresholds
+    thresholds = [0.05, 0.01, 0.00]
 
-# COMBINE DEPTH + LAT/LON OF ADDITION
-q_AT_locations_mask = q_AT_depths * q_AT_latlons
+    # set up experiments to run 
+    experiments = []
 
-# EMISSIONS SCENARIOS
-# no emissions scenario
-#q_emissions = np.zeros(nt)
+    # test experiment
+    if test:
+        for exp_t in [np.arange(0,6,1)]: # 5 years, dt = 1 year
+            for q_AT_depth in q_AT_depths:
+                for q_AT_latlon in q_AT_latlons:
+                    for scenario in ['none']:
+                        for threshold in [0.01]:
+                            experiments.append({'exp_t': exp_t,
+                                                'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
+                                                'scenario': scenario,
+                                                'threshold': threshold,
+                                                'tag': 'TEST'})
+    # real experiments
+    else:
+        for exp_t, exp_t_name in zip(exp_ts, exp_t_names):
+            for q_AT_depth in q_AT_depths:
+                for q_AT_latlon in q_AT_latlons:
+                    for scenario in scenarios:
+                        for threshold in thresholds:
+                            experiments.append({'exp_t': exp_t,
+                                                'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
+                                                'scenario': scenario,
+                                                'threshold': threshold,
+                                                'tag': datetime.now().strftime("%Y-%M-%d_%H:%M:%S") + '_' + exp_t_name + '_' + scenario + '_' + str(threshold)})
+    return experiments
 
-# with emissions scenario
-scenarios = ['none', 'none', 'none', 'none', 'none']
+def run_experiment(experiment):
+    experiment_name = 'exp21_' + experiment['tag']
+    print('\nnow running experiment ' + experiment_name + '\n')
 
-# EXPERIMENT NAMES AND DESCRIPTIONS
-
-experiment_names = ['exp20_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1yr',
-                    'exp20_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1month',
-                    'exp20_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1day',
-                    'exp20_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1hr',
-                    'exp20_2025-10-09-ssp_none-MLD-all_lat_lon-dt_mixed']
-
-experiment_attrs = ['adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for 200 years',
-                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years',
-                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/360 (1 day) for 200 years',
-                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for 200 years',
-                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/8640 (1 hour) for the first year, dt = 1/360 (1 day) for the next 10 years, dt = 1/12 (1 month) for the next 50 years, and dt = 1 (1 year) to reach 200 years']
-
-exp_t = [exp0_t]
-scenarios = ['none', 'none', 'none']
-experiment_names = ['exp20_2025-10-10-ssp_none-MLD-all_lat_lon-dt_1year',
-                    'exp20_2025-10-10-ssp_none-MLD-all_lat_lon-dt_1month',
-                    'exp20_2025-10-10-ssp_none-MLD-all_lat_lon-dt_mixeddt']
-
-exp_t = [exp0_t, exp1_t, exp0_t, exp1_t]
-scenarios = ['none', 'none', 'none', 'none']
-
-experiment_names = ['exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1year_co2sys1perc',
-                    'exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1month_co2sys1perc',
-                    'exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1year_co2sys0perc',
-                    'exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1year_co2sys0perc',]
-
-experiment_attrs = ['adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for 200 years with co2sys thresholding at 1%',
-                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 1%',
-                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for 200 years with co2sys thresholding at 0%',
-                    'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 0%',]
-
-experiment_names = ['TEST_exp20_2025-10-17']
-
-thresholds = [0.01, 0.01, 0.0, 0.0]
-
-#%% getting initial ∆DIC conditions from TRACEv1
-# note, doing set up with Fortran ordering for consistency
-
-# create list of longitudes (ºE), latitudes (ºN), and depths (m) in TRACE format
-# this order is required for TRACE
-lon, lat, depth = np.meshgrid(model_lon, model_lat, model_depth, indexing='ij')
-
-# reshape meshgrid points into a list of coordinates to interpolate to
-output_coordinates = np.array([lon.ravel(order='F'), lat.ravel(order='F'), depth.ravel(order='F'), ]).T
-
-# create required input of dates
-# first simulation year will be 2015 (I think), so do then 
-dates_2015 = 2015 * np.ones([output_coordinates.shape[0],1])
-#dates_2025 = 2025 * np.ones([output_coordinates.shape[0],1])
-
-# upload regridded glodap data
-T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy')
-S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy')
-#S_3D[S_3D < 30] = 30 # ensure no very low S values (might be causing co2sys to lose it?)
-
-# transpose to match requirements for TRACEv1
-T_3D = T_3D.transpose([1, 2, 0])
-S_3D = S_3D.transpose([1, 2, 0])
-predictor_measurements = np.vstack([S_3D.flatten(order='F'), T_3D.flatten(order='F')]).T
-
-# combine all into .csv file to export for use with TRACEv1 in MATLAB (on the edge of my seat for pyTRACE clearly)
-#trace_data = np.hstack([output_coordinates, dates_2015, predictor_measurements])
-#np.savetxt(data_path + 'TRACEv1/trace_inputs_2015.txt', trace_data, delimiter = ',')
-
-# transpose temperature and salinity back
-T_3D = T_3D.transpose([2, 0, 1])
-S_3D = S_3D.transpose([2, 0, 1])
-
-# load in TRACE data
-Canth_2015 = p2.loadmat(data_path + 'TRACEv1/trace_outputs_2015.mat')
-Canth_2015 = Canth_2015['trace_outputs_2015']
-Canth_2015 = Canth_2015.reshape(len(model_lon), len(model_lat), len(model_depth), order='F')
-Canth_2015 = Canth_2015.transpose([2, 0, 1])
-
-#p2.plot_surface3d(model_lon, model_lat, Canth_2015, 0, -1, 82, 'viridis', 'anthropogenic carbon')
-
-#%% calculate preindustrial pH from GLODAP DIC minus Canth to get preindustrial DIC and GLODAP TA, assuming steady state
-
-# upload regridded GLODAP data
-DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC.npy') # dissolved inorganic carbon [µmol kg-1]
-AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA.npy')   # total alkalinity [µmol kg-1]
-pH_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/pHtsinsitutp.npy') # pH on total scale at in situ temperature and pressure 
-Si_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/silicate.npy') # silicate [µmol kg-1]
-P_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/PO4.npy') # phosphate [µmol kg-1]
-
-DIC = p2.flatten(DIC_3D, ocnmask)
-AT = p2.flatten(AT_3D, ocnmask)
-pH = p2.flatten(pH_3D, ocnmask)
-T = p2.flatten(T_3D, ocnmask)
-S = p2.flatten(S_3D, ocnmask)
-Si = p2.flatten(Si_3D, ocnmask)
-P = p2.flatten(P_3D, ocnmask)
-
-# calculate preindustrial pH by subtracting anthropogenic carbon
-DIC_preind_3D = DIC_3D - Canth_2015
-DIC_preind = p2.flatten(DIC_preind_3D, ocnmask)
-
-# create "pressure" array by broadcasting depth array
-pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
-pressure = pressure_3D[ocnmask == 1].flatten(order='F')
-
-# calculate preindustrial pH from DIC in 2015 minus Canth in 2015 AND TA in 2015 (assuming steady state)
-
-# is it okay to use modern-day temperatures for this?? probably not, but not
-# sure if there's a TRACE for this and trying to stick with data-based, not
-# model-based
-# pyCO2SYS v2
-co2sys = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
-                   pressure=pressure, total_silicate=Si, total_phosphate=P)
-
-pH_preind = co2sys['pH']
-avg_pH_preind = np.nanmean(pH_preind)
-
-pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
-
-#%% set up air-sea gas exchange (Wanninkhof, 2014)
-
-# upload regridded NCEP/DOE reanalysis II data
-f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec.npy') # annual mean ice fraction from 0 to 1 in each grid cell
-wspd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/wspd.npy') # annual mean of forecast of wind speed at 10 m [m/s]
-sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst.npy') # annual mean sea surface temperature [ºC]
-
-# calculate Schmidt number using Wanninkhof 2014 parameterization
-vec_schmidt = np.vectorize(p2.schmidt)
-Sc_2D = vec_schmidt('CO2', sst_2D)
-
-# solve for k (gas transfer velocity) for each ocean cell
-a = 0.251 # from Wanninkhof 2014
-k_2D = a * wspd_2D**2 * (Sc_2D/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
-
-k_2D *= (24*365.25/100) # [m/yr] convert units
-
-# set up linearized CO2 system (Nowicki et al., 2024)
-
-# upload (or regrid) glodap data for use as initial conditions for marine carbonate system 
-
-# calculate Nowicki et al. parameters
-Ma = 1.8e26 # number of micromoles of air in atmosphere [µmol air]
-
-Patm = 1e6 # atmospheric pressure [µatm]
-V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
-
-# add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
-k_3D = np.full(ocnmask.shape, np.nan)
-k_3D[0, :, :] = k_2D
-k = p2.flatten(k_3D, ocnmask)
-
-f_ice_3D = np.full(ocnmask.shape, np.nan)
-f_ice_3D[0, :, :] = f_ice_2D
-f_ice = p2.flatten(f_ice_3D, ocnmask)
-
-gammax = k * V * (1 - f_ice) / Ma / z1
-gammaC = -1 * k * (1 - f_ice) / z1
-
-#%% loop through multiple experiments
-
-for exp_idx in range(len(experiment_names)):
-    print('\nnow running experiment ' + experiment_names[exp_idx] + '\n')
-    t = exp_t[exp_idx] # time steps (starting from zero) [yr]
+    # pull experimental parameters out of dictionary
+    t = experiment['exp_t'] # time steps (starting from zero) [yr]
     nt = len(t) # total number of time steps
     dt = np.diff(t, prepend=np.nan) # difference between each time step [yr]
+    q_AT_locations_mask = experiment['q_AT_locations_mask']
+    scenario = experiment['scenario']
+    threshold = experiment['threshold']
+
+    # getting initial ∆DIC conditions from TRACEv1
+    # note, doing set up with Fortran ordering for consistency
+
+    # create list of longitudes (ºE), latitudes (ºN), and depths (m) in TRACE format
+    # this order is required for TRACE
+    lon, lat, depth = np.meshgrid(model_lon, model_lat, model_depth, indexing='ij')
+
+    # reshape meshgrid points into a list of coordinates to interpolate to
+    output_coordinates = np.array([lon.ravel(order='F'), lat.ravel(order='F'), depth.ravel(order='F'), ]).T
+
+    # create required input of dates
+    # first simulation year will be 2015 (I think), so do then 
+    dates_2015 = 2015 * np.ones([output_coordinates.shape[0],1])
+    #dates_2025 = 2025 * np.ones([output_coordinates.shape[0],1])
+
+    # upload regridded glodap data
+    T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy')
+    S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy')
+    #S_3D[S_3D < 30] = 30 # ensure no very low S values (might be causing co2sys to lose it?)
+
+    # transpose to match requirements for TRACEv1
+    T_3D = T_3D.transpose([1, 2, 0])
+    S_3D = S_3D.transpose([1, 2, 0])
+    predictor_measurements = np.vstack([S_3D.flatten(order='F'), T_3D.flatten(order='F')]).T
+
+    # combine all into .csv file to export for use with TRACEv1 in MATLAB (on the edge of my seat for pyTRACE clearly)
+    #trace_data = np.hstack([output_coordinates, dates_2015, predictor_measurements])
+    #np.savetxt(data_path + 'TRACEv1/trace_inputs_2015.txt', trace_data, delimiter = ',')
+
+    # transpose temperature and salinity back
+    T_3D = T_3D.transpose([2, 0, 1])
+    S_3D = S_3D.transpose([2, 0, 1])
+
+    # load in TRACE data
+    Canth_2015 = p2.loadmat(data_path + 'TRACEv1/trace_outputs_2015.mat')
+    Canth_2015 = Canth_2015['trace_outputs_2015']
+    Canth_2015 = Canth_2015.reshape(len(model_lon), len(model_lat), len(model_depth), order='F')
+    Canth_2015 = Canth_2015.transpose([2, 0, 1])
+
+    #p2.plot_surface3d(model_lon, model_lat, Canth_2015, 0, -1, 82, 'viridis', 'anthropogenic carbon')
+
+    # calculate preindustrial pH from GLODAP DIC minus Canth to get preindustrial DIC and GLODAP TA, assuming steady state
+
+    # upload regridded GLODAP data
+    DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC.npy') # dissolved inorganic carbon [µmol kg-1]
+    AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA.npy')   # total alkalinity [µmol kg-1]
+    pH_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/pHtsinsitutp.npy') # pH on total scale at in situ temperature and pressure 
+    Si_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/silicate.npy') # silicate [µmol kg-1]
+    P_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/PO4.npy') # phosphate [µmol kg-1]
+
+    DIC = p2.flatten(DIC_3D, ocnmask)
+    AT = p2.flatten(AT_3D, ocnmask)
+    pH = p2.flatten(pH_3D, ocnmask)
+    T = p2.flatten(T_3D, ocnmask)
+    S = p2.flatten(S_3D, ocnmask)
+    Si = p2.flatten(Si_3D, ocnmask)
+    P = p2.flatten(P_3D, ocnmask)
+
+    # calculate preindustrial pH by subtracting anthropogenic carbon
+    DIC_preind_3D = DIC_3D - Canth_2015
+    DIC_preind = p2.flatten(DIC_preind_3D, ocnmask)
+
+    # create "pressure" array by broadcasting depth array
+    pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
+    pressure = pressure_3D[ocnmask == 1].flatten(order='F')
+
+    # calculate preindustrial pH from DIC in 2015 minus Canth in 2015 AND TA in 2015 (assuming steady state)
+
+    # is it okay to use modern-day temperatures for this?? probably not, but not
+    # sure if there's a TRACE for this and trying to stick with data-based, not
+    # model-based
+    # pyCO2SYS v2
+    co2sys = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
+                    pressure=pressure, total_silicate=Si, total_phosphate=P)
+
+    pH_preind = co2sys['pH']
+    avg_pH_preind = np.nanmean(pH_preind)
+
+    pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
+
+    # set up air-sea gas exchange (Wanninkhof, 2014)
+
+    # upload regridded NCEP/DOE reanalysis II data
+    f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec.npy') # annual mean ice fraction from 0 to 1 in each grid cell
+    wspd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/wspd.npy') # annual mean of forecast of wind speed at 10 m [m/s]
+    sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst.npy') # annual mean sea surface temperature [ºC]
+
+    # calculate Schmidt number using Wanninkhof 2014 parameterization
+    vec_schmidt = np.vectorize(p2.schmidt)
+    Sc_2D = vec_schmidt('CO2', sst_2D)
+
+    # solve for k (gas transfer velocity) for each ocean cell
+    a = 0.251 # from Wanninkhof 2014
+    k_2D = a * wspd_2D**2 * (Sc_2D/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
+
+    k_2D *= (24*365.25/100) # [m/yr] convert units
+
+    # set up linearized CO2 system (Nowicki et al., 2024)
+
+    # upload (or regrid) glodap data for use as initial conditions for marine carbonate system 
+
+    # calculate Nowicki et al. parameters
+    Ma = 1.8e26 # number of micromoles of air in atmosphere [µmol air]
+
+    Patm = 1e6 # atmospheric pressure [µatm]
+    V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
+
+    # add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
+    k_3D = np.full(ocnmask.shape, np.nan)
+    k_3D[0, :, :] = k_2D
+    k = p2.flatten(k_3D, ocnmask)
+
+    f_ice_3D = np.full(ocnmask.shape, np.nan)
+    f_ice_3D[0, :, :] = f_ice_2D
+    f_ice = p2.flatten(f_ice_3D, ocnmask)
+
+    gammax = k * V * (1 - f_ice) / Ma / z1
+    gammaC = -1 * k * (1 - f_ice) / z1
     
     # set up file saving rules (multiple files to avoid running out of working memory)
     nfiles = nt // t_per_file + (nt % t_per_file > 0) # number of files for this simulation
@@ -344,9 +341,8 @@ for exp_idx in range(len(experiment_names)):
     # get annual emissions
     atmospheric_xCO2 = np.zeros(nt)
 
-    if scenarios[exp_idx] != 'none':
-    
-        atmospheric_xCO2_time, atmospheric_xCO2_annual = p2.get_emissions_scenario(data_path, scenarios[exp_idx])
+    if scenario != 'none':
+        atmospheric_xCO2_time, atmospheric_xCO2_annual = p2.get_emissions_scenario(data_path, scenario) 
 
         # interpolate atmospheric CO2 to match time stepping of simulation
         atmospheric_xCO2 = np.interp(t + 2015, atmospheric_xCO2_time, atmospheric_xCO2_annual)
@@ -394,7 +390,6 @@ for exp_idx in range(len(experiment_names)):
   
     # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
     for idx in tqdm(range(1,nt)):
-
         
         # open new file if previous file is full (or one hasn't been opened yet)
         if (idx-1) % t_per_file == 0:
@@ -403,7 +398,7 @@ for exp_idx in range(len(experiment_names)):
             if ds is not None: ds.close()
             
             file_number += 1
-            fname = experiment_names[exp_idx] + f'_{file_number:03d}.nc'
+            fname = experiment_name + f'_{file_number:03d}.nc'
             print('starting new file: ' + fname)
             fname = output_path + fname
 
@@ -481,12 +476,12 @@ for exp_idx in range(len(experiment_names)):
         
         # recalculate carbonate system every time >5% of grid cells see change
         # in AT or DIC >5% since last recalculation
-        frac_AT = np.mean(np.abs(AT_current - AT_at_last_calc) > thresholds[exp_idx] * np.abs(AT_at_last_calc)) # calculate fraction of grid cells with change in AT above 10%
-        frac_DIC = np.mean(np.abs(DIC_current - DIC_at_last_calc) > thresholds[exp_idx] * np.abs(DIC_at_last_calc)) # calculate fraction of grid cells with change in DIC above 10%
+        frac_AT = np.mean(np.abs(AT_current - AT_at_last_calc) > threshold * np.abs(AT_at_last_calc)) # calculate fraction of grid cells with change in AT above 10%
+        frac_DIC = np.mean(np.abs(DIC_current - DIC_at_last_calc) > threshold * np.abs(DIC_at_last_calc)) # calculate fraction of grid cells with change in DIC above 10%
  
         # (re)calculate carbonate system if it has not yet been calculated or
         # needs to be recalculated
-        if idx == 1 or frac_AT > thresholds[exp_idx] or frac_DIC > thresholds[exp_idx]:
+        if idx == 1 or frac_AT > threshold or frac_DIC > threshold: 
             AT_at_last_calc = AT_current.copy()
             DIC_at_last_calc = DIC_current.copy()
             # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
@@ -523,10 +518,10 @@ for exp_idx in range(len(experiment_names)):
         # must (re)calculate A matrix if 1. it has not yet been calculated
         # 2. the carbonate system needs to be recalculated or 3. the time
         # step interval (dt) has changed
-        if idx == 1 or frac_AT > thresholds[exp_idx] or frac_DIC > thresholds[exp_idx] or np.round(dt[idx],10) != np.round(dt[idx-1],10):
+        if idx == 1 or frac_AT > threshold or frac_DIC > threshold or np.round(dt[idx],10) != np.round(dt[idx-1],10):
             
-            if frac_AT > thresholds[exp_idx] and thresholds[exp_idx] > 0: print('frac_AT > ' + str(thresholds[exp_idx]))
-            if frac_DIC > thresholds[exp_idx] and thresholds[exp_idx] > 0: print('frac_DIC > ' + str(thresholds[exp_idx]))
+            if frac_AT > threshold and threshold > 0: print('frac_AT > ' + str(threshold))
+            if frac_DIC > threshold and threshold > 0: print('frac_DIC > ' + str(threshold))
             if dt[idx] != dt[idx-1]: print('dt[' + str(idx) + '] != dt[' + str(idx-1) + ']')
         
             # calculate "A" matrix
@@ -633,7 +628,7 @@ for exp_idx in range(len(experiment_names)):
 
         # set up PETSc solver
         ksp = PETSc.KSP().create()
-        ksp.setOperators(A_petsc)
+        ksp.setOperators(LHS_petsc)
         ksp.setType('lgmres')
         ksp.setGMRESRestart(30)  # restart after 30 iterations
 
@@ -652,7 +647,7 @@ for exp_idx in range(len(experiment_names)):
         ksp.solve(RHS_petsc, c_petsc)
         c[:,1] = c_petsc.array.copy()
 
-        # make sure it converged
+        # check for convergence 
         if ksp.getConvergedReason() < 0:
             raise RuntimeError(
                 f"Solver failed to converge! "
@@ -661,12 +656,6 @@ for exp_idx in range(len(experiment_names)):
                 f"Residual: {ksp.getResidualNorm():.2e}"
             )
 
-        # clean up
-        A_petsc.destroy()
-        b_petsc.destroy()
-        x_petsc.destroy()
-        ksp.destroy()
-        
         # partition "c" into xCO2, DIC, and AT
         c_delxCO2 = c[0, 1]
         c_delDIC  = c[1:(m+1), 1]
@@ -711,23 +700,39 @@ for exp_idx in range(len(experiment_names)):
     
     if ds is not None: ds.close()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+def main():
+    # parse function call (from command line)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--exp-id', type=int,
+                       help='experiment ID (0 to N-1)')
+    parser.add_argument('--list', action='store_true',
+                       help='list all experiments and exit')
+    parser.add_argument('--test', action='store_true',
+                       help='use quick test experiments instead of full set')
+    args = parser.parse_args()
+    
+    # get all experiment configurations
+    test = False
+    if args.test: test = True
+    experiments = set_experiment_parameters(test)
+    
+    # handle --list option
+    if args.list:
+        print(f"total experiments: {len(experiments)}")
+        for i, experiment in enumerate(experiments):
+            print(f"  {i}: exp21_{experiment['tag']}")
+        return
+    
+    # validate exp_id
+    if args.exp_id < 0 or args.exp_id >= len(experiments):
+        print(f"ERROR: exp-id must be between 0 and {len(experiments)-1}")
+        print(f"use --list to see all experiments")
+        return
+    
+    # run the specified experiment
+    experiment = experiments[args.exp_id]
+    run_experiment(experiment)
+    
+# run main function
+if __name__ == '__main__':
+    main()
