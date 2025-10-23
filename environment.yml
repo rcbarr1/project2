@@ -412,7 +412,7 @@ dependencies:
   - sqlalchemy=2.0.37
   - sqlite=3.45.3
   - stack_data=0.2.0
-  - suitesparse=5.10.1
+  - suitesparse=7.7.0
   - superlu=7.0.1
   - superlu_dist=8.2.1
   - superqt=0.7.3
