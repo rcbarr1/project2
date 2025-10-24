@@ -47,7 +47,6 @@ Naming convention for saving model runs (see .txt file for explanation of experi
 #%%
 from src.utils import project2 as p2
 import xarray as xr
-import os
 from datetime import datetime
 from netCDF4 import Dataset
 import numpy as np
@@ -104,18 +103,17 @@ def set_experiment_parameters(test=False):
     dt3 = 1 # 1 year
 
     # just year time steps
-    exp0_t = np.arange(0,200,dt3) # this took 2:02:36
-    exp0_t = np.arange(0,5,dt3)
+    exp0_t = np.arange(0,500,dt3) # this took 2:02:36
 
     # experiment with dt = 1/12 (1 month) time steps
-    exp1_t = np.arange(0,200,dt2) # this took 8:29:18
+    exp1_t = np.arange(0,500,dt2) # this took 8:29:18
     #exp1_t = np.arange(0,400,dt2)
 
     # experiment with dt = 1/360 (1 day) time steps
-    exp2_t = np.arange(0,200,dt1) # this will take ~10 days as is (to calculate 200 years)
+    exp2_t = np.arange(0,500,dt1) # this will take ~10 days as is (to calculate 200 years)
 
     # another with dt = 1/8640 (1 hour) time steps
-    exp3_t = np.arange(0,10,dt0) # this would take ~10 days as is (to calculate 10 years)
+    exp3_t = np.arange(0,500,dt0) # this would take ~10 days as is (to calculate 10 years)
 
     # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
     t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
@@ -201,6 +199,8 @@ def set_experiment_parameters(test=False):
     return experiments
 
 def run_experiment(experiment):
+    print(experiment)
+    print(experiment['tag'])
     experiment_name = 'exp21_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
 
@@ -713,7 +713,8 @@ def main():
     
     # get all experiment configurations
     test = False
-    if args.test: test = True
+    if args.test:
+        test = True
     experiments = set_experiment_parameters(test)
     
     # handle --list option
@@ -724,13 +725,15 @@ def main():
         return
     
     # validate exp_id
-    if args.exp_id < 0 or args.exp_id >= len(experiments):
-        print(f"ERROR: exp-id must be between 0 and {len(experiments)-1}")
-        print(f"use --list to see all experiments")
-        return
+    if not test:
+        if args.exp_id < 0 or args.exp_id >= len(experiments):
+            print(f"ERROR: exp-id must be between 0 and {len(experiments)-1}")
+            print(f"use --list to see all experiments")
+            return
     
     # run the specified experiment
-    experiment = experiments[args.exp_id]
+    if not test: experiment = experiments[args.exp_id]
+    else: experiment = experiments[0]
     run_experiment(experiment)
     
 # run main function
