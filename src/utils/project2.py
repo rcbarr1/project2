@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Functions supporting project2_main.py
 
@@ -509,6 +507,10 @@ def regrid_glodap(data_path, glodap_var, model_depth, model_lat, model_lon, ocnm
     # transform model_lon and meshgrid back for anything > 360
     model_lon[model_lon > 360] -= 360
     
+    # make sure no negative values in total silicate or total phosphate due to interpolation
+    if glodap_var == 'PO4' or glodap_var == 'silicate':
+        var[var < 0] = 0
+    
     # save regridded data
     if glodap_var == 'TCO2':
         np.save(data_path + 'GLODAPv2.2016b.MappedProduct/DIC.npy', var)
@@ -928,13 +930,13 @@ def calculate_AT_to_add(pH_preind, DIC, AT, T, S, pressure, Si, P, AT_mask=None,
         mid_arr = 0.5 * (low_arr + high_arr)
 
         # compute pH for midpoints
-        co2sys = pyco2.sys(dic=DIC_gets_AT, alkalinity=AT_gets_AT+mid_arr,
+        co2sys_mid = pyco2.sys(dic=DIC_gets_AT, alkalinity=AT_gets_AT+mid_arr,
                            salinity=S_gets_AT, temperature=T_gets_AT,
                            pressure=pressure_gets_AT,
                            total_silicate=Si_gets_AT,
                            total_phosphate=P_gets_AT)
 
-        f_mid = co2sys['pH'] - pH_preind_gets_AT
+        f_mid = co2sys_mid['pH'] - pH_preind_gets_AT
 
         # evaluate sign at low bound
         co2sys_low = pyco2.sys(dic=DIC_gets_AT, alkalinity=AT_gets_AT+low_arr,

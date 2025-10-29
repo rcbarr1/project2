@@ -57,6 +57,8 @@ from petsc4py import PETSc
 from time import time
 import matplotlib.pyplot as plt
 import argparse
+import jax
+import gc
 
 # load model architecture
 data_path = './data/'
@@ -195,12 +197,10 @@ def set_experiment_parameters(test=False):
                                                 'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
                                                 'scenario': scenario,
                                                 'threshold': threshold,
-                                                'tag': datetime.now().strftime("%Y-%M-%d_%H:%M:%S") + '_' + exp_t_name + '_' + scenario + '_' + str(threshold)})
+                                                'tag': datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + '_' + exp_t_name + '_' + scenario + '_' + str(threshold)})
     return experiments
 
 def run_experiment(experiment):
-    print(experiment)
-    print(experiment['tag'])
     experiment_name = 'exp21_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
 
@@ -284,10 +284,10 @@ def run_experiment(experiment):
     # sure if there's a TRACE for this and trying to stick with data-based, not
     # model-based
     # pyCO2SYS v2
-    co2sys = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
+    co2sys_preind = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
                     pressure=pressure, total_silicate=Si, total_phosphate=P)
 
-    pH_preind = co2sys['pH']
+    pH_preind = co2sys_preind['pH']
     avg_pH_preind = np.nanmean(pH_preind)
 
     pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
@@ -690,7 +690,14 @@ def run_experiment(experiment):
         tracers['xCO2_added'][idx_file] = q_delxCO2.astype('float32')
         tracers['DIC_added'][idx_file, :, :, :] = q_delDIC_3D.astype('float32')
         tracers['AT_added'][idx_file, :, :, :] = q_delAT_3D.astype('float32')
-        
+
+        # delete pyco2sys objects to avoid running out of memory
+        if 'co2sys' in globals(): del co2sys
+        if 'co2sys_preind' in globals(): del co2sys
+        if 'co2sys_000001' in globals(): del co2sys
+        gc.collect()
+        jax.clear_caches()
+
         # sync data to output file every 20 time steps (in case of crash)
         if idx % 20 == 0:
             ds.sync()

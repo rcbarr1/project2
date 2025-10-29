@@ -104,6 +104,43 @@ experiment_names = ['exp21_TEST']
 
 labels = ['dt = 1 yr', 'dt = 1 month']
 
+experiment_names = ['exp21_2025-10-24_11-26-41_t0_none_0.0',
+                    'exp21_2025-10-24_11-26-41_t1_none_0.0',
+                    'exp21_2025-10-24_11-27-39_t2_none_0.0',
+                    'exp21_2025-10-24_12-57-06_t3_none_0.0',
+                    'exp21_2025-10-24_13-14-48_t4_none_0.0',
+                    'exp21_2025-10-24_11-26-45_t0_none_0.01',
+                    'exp21_2025-10-24_11-26-41_t1_none_0.01',
+                    'exp21_2025-10-24_11-26-45_t2_none_0.01',
+                    'exp21_2025-10-24_12-41-37_t3_none_0.01',
+                    'exp21_2025-10-24_12-58-28_t4_none_0.01',
+                    'exp21_2025-10-24_11-26-45_t0_none_0.05',
+                    'exp21_2025-10-24_11-26-41_t1_none_0.05',
+                    'exp21_2025-10-24_11-26-45_t2_none_0.05',
+                    'exp21_2025-10-24_12-39-41_t3_none_0.05',
+                    'exp21_2025-10-24_12-58-28_t4_none_0.05']
+
+
+experiment_names = ['exp21_2025-10-24_11-26-41_t0_none_0.0',
+                    'exp21_2025-10-24_11-26-41_t1_none_0.0',
+                    'exp21_2025-10-24_11-27-39_t2_none_0.0',
+                    'exp21_2025-10-24_12-57-06_t3_none_0.0',
+                    'exp21_2025-10-24_13-14-48_t4_none_0.0',]
+
+experiment_names = ['exp21_2025-10-24_11-26-45_t0_none_0.01',
+                    'exp21_2025-10-24_11-26-41_t1_none_0.01',
+                    'exp21_2025-10-24_11-26-45_t2_none_0.01',
+                    'exp21_2025-10-24_12-41-37_t3_none_0.01',
+                    'exp21_2025-10-24_12-58-28_t4_none_0.01',]
+
+experiment_names =['exp21_2025-10-24_11-26-45_t0_none_0.05',
+                    'exp21_2025-10-24_11-26-41_t1_none_0.05',
+                    'exp21_2025-10-24_11-26-45_t2_none_0.05',
+                    'exp21_2025-10-24_12-39-41_t3_none_0.05',
+                    'exp21_2025-10-24_12-58-28_t4_none_0.05',]
+
+labels = ['dt = 1 yr', 'dt = 1 month', 'dt = 1 day', 'dt = 1 hour', 'dt = mixed']
+
 #%% cumulative AT added
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
@@ -129,7 +166,7 @@ for exp_idx in range(len(experiment_names)):
 plt.legend()
 plt.xlabel('year')
 plt.ylabel('cumulative AT added to mixed layer (mol)')
-
+plt.ylim([0, 6.5e16])
 #%% normal AT added
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
@@ -172,7 +209,7 @@ for exp_idx in range(len(experiment_names)):
 plt.legend()
 plt.xlabel('year')
 plt.ylabel('change in atmospheric CO2 (ppm)')
-
+plt.ylim([-90, 0])
 #%% change in DIC (surface)
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()

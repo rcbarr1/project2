@@ -7,7 +7,7 @@ Created on Fri Oct 17 17:22:01 2025
 
 @author: Reese C. Barrett
 """
-
+#%%
 from src.utils import project2 as p2
 import xarray as xr
 
