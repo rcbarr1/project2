@@ -60,8 +60,6 @@ S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy') # salini
 Si_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/silicate.npy') # silicate [µmol kg-1]
 P_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/PO4.npy') # phosphate [µmol kg-1]
 
-S_3D[S_3D < 30] = 30
-
 S = p2.flatten(S_3D, ocnmask)
 T = p2.flatten(T_3D, ocnmask)
 Si = p2.flatten(Si_3D, ocnmask)

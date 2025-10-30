@@ -104,13 +104,16 @@ exp0_t = np.arange(0,5,dt3)
 
 # experiment with dt = 1/12 (1 month) time steps
 exp1_t = np.arange(0,200,dt2) # this took 8:29:18
+exp1_t = np.arange(0,0.83,dt2)
 #exp1_t = np.arange(0,400,dt2)
 
 # experiment with dt = 1/360 (1 day) time steps
 exp2_t = np.arange(0,200,dt1) # this will take ~10 days as is (to calculate 200 years)
+exp2_t = np.arange(0,0.27,dt1)
 
 # another with dt = 1/8640 (1 hour) time steps
 exp3_t = np.arange(0,10,dt0) # this would take ~10 days as is (to calculate 10 years)
+exp3_t = np.arange(0,0.001156,dt0) # this would take ~10 days as is (to calculate 10 years)
 
 # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
 t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
@@ -201,10 +204,11 @@ experiment_attrs = ['adding max AT before reaching preind pH to all cells within
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 1%',
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for 200 years with co2sys thresholding at 0%',
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 0%',]
+exp_t = [exp3_t]
 
-experiment_names = ['TEST_exp20_2025-10-17']
+experiment_names = ['TEST_exp20_2025-10-30_dt1hr',]
 
-thresholds = [0.01, 0.01, 0.0, 0.0]
+thresholds = [0.0, 0.0, 0.0, 0.0]
 
 #%% getting initial ∆DIC conditions from TRACEv1
 # note, doing set up with Fortran ordering for consistency

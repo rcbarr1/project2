@@ -2,7 +2,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Oct 20 13:10:59 2025
+Created on Thu Oct 30 14:37 2025
 
 EXP21: Attempting maximum alkalinity calculation with parallel sparse matrix solve and running experiments in parallel (optimizing for HPC)
 - Import anthropogenic carbon prediction at each grid cell using TRACEv1 to be initial ∆DIC conditions
@@ -105,27 +105,20 @@ def set_experiment_parameters(test=False):
     dt3 = 1 # 1 year
 
     # just year time steps
-    exp0_t = np.arange(0,500,dt3)
+    exp0_t = np.arange(0,10,dt3) 
 
     # experiment with dt = 1/12 (1 month) time steps
-    exp1_t = np.arange(0,500,dt2)
+    exp1_t = np.arange(0,10/12,dt2) 
     #exp1_t = np.arange(0,400,dt2)
 
     # experiment with dt = 1/360 (1 day) time steps
-    exp2_t = np.arange(0,500,dt1) 
+    exp2_t = np.arange(0,10/360,dt1) 
 
     # another with dt = 1/8640 (1 hour) time steps
-    exp3_t = np.arange(0,500,dt0) 
+    exp3_t = np.arange(0,10/8640,dt0) 
 
-    # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
-    t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
-    t1 = np.arange(1, 10, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
-    t2 = np.arange(10, 100, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
-    t3 = np.arange(100, 500, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
-    exp4_t = np.concatenate((t0, t1, t2, t3))
-
-    exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-    exp_t_names = ['t0', 't1', 't2', 't3', 't4']
+    exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t]
+    exp_t_names = ['t0', 't1', 't2', 't3'] 
 
     # DEPTHS OF ADDITION
 
@@ -168,9 +161,6 @@ def set_experiment_parameters(test=False):
     # with emissions scenario
     scenarios = ['none'] 
 
-    # test different co2sys thresholds
-    thresholds = [0.00]
-
     # set up experiments to run 
     experiments = []
 
@@ -180,11 +170,10 @@ def set_experiment_parameters(test=False):
             for q_AT_depth in q_AT_depths:
                 for q_AT_latlon in q_AT_latlons:
                     for scenario in ['none']:
-                        for threshold in [0.01]:
                             experiments.append({'exp_t': exp_t,
                                                 'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
                                                 'scenario': scenario,
-                                                'threshold': threshold,
+                                                'threshold': 0.00,
                                                 'tag': 'TEST'})
     # real experiments
     else:
@@ -192,11 +181,10 @@ def set_experiment_parameters(test=False):
             for q_AT_depth in q_AT_depths:
                 for q_AT_latlon in q_AT_latlons:
                     for scenario in scenarios:
-                        for threshold in thresholds:
                             experiments.append({'exp_t': exp_t,
                                                 'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
                                                 'scenario': scenario,
-                                                'threshold': threshold,
+                                                'threshold': 0.00,
                                                 'tag': datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + '_' + exp_t_name + '_' + scenario + '_' + str(threshold)})
     return experiments
 
