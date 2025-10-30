@@ -185,7 +185,7 @@ def set_experiment_parameters(test=False):
                                                 'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
                                                 'scenario': scenario,
                                                 'threshold': 0.00,
-                                                'tag': datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + '_' + exp_t_name + '_' + scenario + '_' + str(threshold)})
+                                                'tag': datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + '_' + exp_t_name + '_' + scenario})
     return experiments
 
 def run_experiment(experiment):
