@@ -542,6 +542,8 @@ def run_experiment(experiment):
             # diagnostics
             t0 = time()
 
+            '''
+
             # to solve for ∆xCO2
             A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
             A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
@@ -581,7 +583,91 @@ def run_experiment(experiment):
             # calculate left hand side according to Euler backward method
             LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
             t1 = time() # diagnostics
+            '''            
+            # set up with PETSc (to reduce time required to convert from scipy)
+            LHS = PETSc.Mat().createAIJ([2*m+1, 2*m+1])
+            LHS.setUp()
 
+            # set up A0 row (to solve for xCO2)
+            A00 = 1 - dt[idx] * (-1 * Patm * np.nansum(gammax * K0)) # using nansum because all subsurface boxes are NaN, we only want surface
+            A01 = dt[idx] * (np.nan_to_num(gammax * rho * R_C / beta_C)) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
+            A02 = dt[idx] * (np.nan_to_num(gammax * rho * R_A / beta_A))
+            
+            LHS.setValue(0, 0, A00)
+            j_idx = 0
+            for j in range(1,m+1):
+                if A01[j_idx] != 0:
+                    LHS.setValue(0,j,A01[j_idx])
+                j_idx += 1
+            j_idx = 0
+            for j in range(m+1,2*m+1):
+                if A02[j_idx] != 0:
+                    LHS.setValue(0,j,-1 * A02[j_idx])
+                j_idx += 1
+            
+            # set up A1 row (to solve for ∆DIC)
+            A10 = dt[idx] * (np.nan_to_num(-1 * gammaC * K0 * Patm / rho))
+            A11 = sparse.eye_array(m, format="csr") - dt[idx] * (TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csr'))
+            A12 = dt[idx] * (sparse.diags(np.nan_to_num(gammaC * R_A / beta_A), format='csr'))
+            
+            # for A10
+            i_idx = 0
+            for i in range(1,m+1):
+                if A10[i_idx] != 0:
+                    LHS.setValue(i,0,A10[i_idx]) 
+                i_idx += 1
+                
+            # for A11
+            for i in range(m):
+                row = 1 + i
+                start, end = A11.indptr[i], A11.indptr[i+1]
+                cols = 1 + A11.indices[start:end]
+                vals = A11.data[start:end]
+                LHS.setValues(row, cols, vals)
+
+            # for A12
+            for i in range(m):
+                row = 1 + i
+                start, end = A12.indptr[i], A12.indptr[i+1]
+                cols = (m+1) + A12.indices[start:end]
+                vals = A12.data[start:end]
+                LHS.setValues(row, cols, vals)
+
+           # set up A2 row (to solve for ∆AT)
+            A20 = dt[idx] * np.zeros(m)
+            A21 = dt[idx] * (0 * TR)
+            A22 = sparse.eye_array(m, format="csr") - dt[idx] * (TR)
+
+            # for A20
+            i_idx = 0 
+            for i in range(m+1,2*m+1):
+                if A20[i_idx] != 0:
+                    LHS.setValue(i,0,A20[i_idx]) 
+                i_idx += 1
+
+            # for A21
+            for i in range(m):
+                row = (m+1) + i
+                start, end = A21.indptr[i], A21.indptr[i+1]
+                cols = 1 + A21.indices[start:end]
+                vals = A21.data[start:end]
+                LHS.setValues(row, cols, vals)
+
+            # for A22
+            for i in range(m):
+                row = (m+1) + i
+                start, end = A22.indptr[i], A22.indptr[i+1]
+                cols = (m+1) + A22.indices[start:end]
+                vals = A22.data[start:end]
+                LHS.setValues(row, cols, vals)
+            
+            LHS.assemblyBegin()
+            LHS.assemblyEnd()
+            
+            del A00, A01, A02, A10, A11, A12, A20, A21, A22
+
+            t1 = time() # diagnostics
+        
         # for now, assuming NaOH (no change in DIC)
         
         # calculate AT required to return to preindustrial pH
@@ -590,9 +676,8 @@ def run_experiment(experiment):
         DIC_new = DIC + c[1:(m+1), 0]
         AT_new = AT + c[(m+1):(2*m+1), 0]
         # diagnostics
-        t000 = time()
         AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, AT_mask=p2.flatten(q_AT_locations_mask,ocnmask), low=0, high=200, tol=1e-6, maxiter=50)
-        t00 = time()
+        t2 = time()
 
         # make sure there are no negative values
         if len(AT_to_offset[AT_to_offset<0]) != 0:
@@ -622,16 +707,15 @@ def run_experiment(experiment):
         RHS = c[:,0] + np.squeeze(dt[idx] * q)
 
         # diagnostics
-        t2 = time()
 
         # convert matricies from scipy sparse to PETSc to parallelize
-        LHS_petsc = PETSc.Mat().createAIJWithArrays(size=LHS.shape,
-                                        csr=(LHS.indptr, LHS.indices, LHS.data))
+        #LHS = PETSc.Mat().createAIJ(size=LHS.shape,
+        #                                csr=(LHS.indptr, LHS.indices, LHS.data))
         RHS_petsc = PETSc.Vec().createWithArray(RHS)
 
         # set up PETSc solver
         ksp = PETSc.KSP().create()
-        ksp.setOperators(LHS_petsc)
+        ksp.setOperators(LHS)
         ksp.setType('lgmres')
         ksp.setGMRESRestart(30)  # restart after 30 iterations
 
@@ -642,7 +726,7 @@ def run_experiment(experiment):
         ksp.setTolerances(rtol=1e-8, atol=1e-10, max_it=1000)
 
         # set up output array (PETSc vector object)
-        c_petsc = LHS_petsc.createVecRight()
+        c_petsc = LHS.createVecRight()
         c_petsc.setArray(c[:,0])
         ksp.setInitialGuessNonzero(True) # tell solver to use initial guess
 
@@ -656,7 +740,7 @@ def run_experiment(experiment):
         # diagnostics
         t4 = time()
         print("KSP iters:", ksp.getIterationNumber(), "reason:", ksp.getConvergedReason()) # diagnostics
-        print("solve for AT to add: ", np.round(t00-t000, 5), "assemble scipy: ", np.round(t1-t0,5), "convert to petsc: ", np.round(t2-t1,5), "set up solver: ", np.round(t3-t2, 5), "solve: ", np.round(t4-t3, 5))
+        print("assemble petsc: ", np.round(t1-t0,5), "solve for AT to add: ", np.round(t2-t1, 5), "set up solver: ", np.round(t3-t2, 5), "solve: ", np.round(t4-t3, 5))
 
         # check for convergence 
         if ksp.getConvergedReason() < 0:
