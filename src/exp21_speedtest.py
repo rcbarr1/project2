@@ -60,7 +60,12 @@ import argparse
 import jax
 import gc
 
-# load model architecture
+#%% diagnostics
+print("numpy config:")
+np.show_config()
+print("PETSc info:", PETSc.Sys.getVersion())
+
+#%% load model architecture
 data_path = './data/'
 output_path = './outputs/'
 
@@ -533,7 +538,10 @@ def run_experiment(experiment):
             # A = [A00][A01][A02]
             #     [A10][A11][A12]
             #     [A20][A21][A22]
-        
+
+            # diagnostics
+            t0 = time()
+
             # to solve for ∆xCO2
             A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
             A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
@@ -572,7 +580,8 @@ def run_experiment(experiment):
                 
             # calculate left hand side according to Euler backward method
             LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
-        
+            t1 = time() # diagnostics
+
         # for now, assuming NaOH (no change in DIC)
         
         # calculate AT required to return to preindustrial pH
@@ -580,7 +589,10 @@ def run_experiment(experiment):
         # apply mask (q_AT_locations_mask) at this step to choose which grid cells AT is added to
         DIC_new = DIC + c[1:(m+1), 0]
         AT_new = AT + c[(m+1):(2*m+1), 0]
+        # diagnostics
+        t000 = time()
         AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, AT_mask=p2.flatten(q_AT_locations_mask,ocnmask), low=0, high=200, tol=1e-6, maxiter=50)
+        t00 = time()
 
         # make sure there are no negative values
         if len(AT_to_offset[AT_to_offset<0]) != 0:
@@ -608,9 +620,12 @@ def run_experiment(experiment):
         
         # calculate right hand side according to Euler backward method
         RHS = c[:,0] + np.squeeze(dt[idx] * q)
-        
+
+        # diagnostics
+        t2 = time()
+
         # convert matricies from scipy sparse to PETSc to parallelize
-        LHS_petsc = PETSc.Mat().createAIJ(size=LHS.shape,
+        LHS_petsc = PETSc.Mat().createAIJWithArrays(size=LHS.shape,
                                         csr=(LHS.indptr, LHS.indices, LHS.data))
         RHS_petsc = PETSc.Vec().createWithArray(RHS)
 
@@ -631,9 +646,17 @@ def run_experiment(experiment):
         c_petsc.setArray(c[:,0])
         ksp.setInitialGuessNonzero(True) # tell solver to use initial guess
 
+        # diagnostics
+        t3 = time()
+
         # solve system (perform time stepping)
         ksp.solve(RHS_petsc, c_petsc)
         c[:,1] = c_petsc.array.copy()
+
+        # diagnostics
+        t4 = time()
+        print("KSP iters:", ksp.getIterationNumber(), "reason:", ksp.getConvergedReason()) # diagnostics
+        print("solve for AT to add: ", np.round(t00-t000, 5), "assemble scipy: ", np.round(t1-t0,5), "convert to petsc: ", np.round(t2-t1,5), "set up solver: ", np.round(t3-t2, 5), "solve: ", np.round(t4-t3, 5))
 
         # check for convergence 
         if ksp.getConvergedReason() < 0:
