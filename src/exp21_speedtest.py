@@ -60,11 +60,6 @@ import argparse
 import jax
 import gc
 
-#%% diagnostics
-print("numpy config:")
-np.show_config()
-print("PETSc info:", PETSc.Sys.getVersion())
-
 #%% load model architecture
 data_path = './data/'
 output_path = './outputs/'
@@ -178,7 +173,6 @@ def set_experiment_parameters(test=False):
                             experiments.append({'exp_t': exp_t,
                                                 'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
                                                 'scenario': scenario,
-                                                'threshold': 0.00,
                                                 'tag': 'TEST'})
     # real experiments
     else:
@@ -189,8 +183,7 @@ def set_experiment_parameters(test=False):
                             experiments.append({'exp_t': exp_t,
                                                 'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
                                                 'scenario': scenario,
-                                                'threshold': 0.00,
-                                                'tag': datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + '_' + exp_t_name + '_' + scenario})
+                                                'tag': datetime.now().strftime("%Y-%m-%d") + '_' + exp_t_name + '_' + scenario})
     return experiments
 
 def run_experiment(experiment):
@@ -203,7 +196,6 @@ def run_experiment(experiment):
     dt = np.diff(t, prepend=np.nan) # difference between each time step [yr]
     q_AT_locations_mask = experiment['q_AT_locations_mask']
     scenario = experiment['scenario']
-    threshold = experiment['threshold']
 
     # getting initial ∆DIC conditions from TRACEv1
     # note, doing set up with Fortran ordering for consistency
@@ -467,207 +459,103 @@ def run_experiment(experiment):
         AT_current = AT + c[(m+1):(2*m+1), 0]
         DIC_current = DIC + c[1:(m+1), 0]
         
-        # recalculate carbonate system every time >5% of grid cells see change
-        # in AT or DIC >5% since last recalculation
-        frac_AT = np.mean(np.abs(AT_current - AT_at_last_calc) > threshold * np.abs(AT_at_last_calc)) # calculate fraction of grid cells with change in AT above 10%
-        frac_DIC = np.mean(np.abs(DIC_current - DIC_at_last_calc) > threshold * np.abs(DIC_at_last_calc)) # calculate fraction of grid cells with change in DIC above 10%
- 
-        # (re)calculate carbonate system if it has not yet been calculated or
-        # needs to be recalculated
-        if idx == 1 or frac_AT > threshold or frac_DIC > threshold: 
-            AT_at_last_calc = AT_current.copy()
-            DIC_at_last_calc = DIC_current.copy()
-            # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
-            # do this for only surface ocean grid cells
-            # this is PyCO2SYSv2
-            co2sys = pyco2.sys(dic=DIC_current, alkalinity=AT_current,
-                               salinity=S, temperature=T, pressure=pressure,
-                               total_silicate=Si, total_phosphate=P)
+        # calculate carbonate system
+        AT_at_last_calc = AT_current.copy()
+        DIC_at_last_calc = DIC_current.copy()
+        # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
+        # do this for only surface ocean grid cells
+        # this is PyCO2SYSv2
+        co2sys = pyco2.sys(dic=DIC_current, alkalinity=AT_current,
+                            salinity=S, temperature=T, pressure=pressure,
+                            total_silicate=Si, total_phosphate=P)
+    
+        # extract key results arrays
+        pCO2 = co2sys['pCO2'] # pCO2 [µatm]
+        aqueous_CO2 = co2sys['CO2'] # aqueous CO2 [µmol kg-1]
+        R_C = co2sys['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
+    
+        # calculate revelle factor w.r.t. AT [unitless]
+        # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
+        # to speed up, only calculating this in surface
+        co2sys_000001 = pyco2.sys(dic=DIC_current[0:ns], alkalinity=AT_current[0:ns]+0.000001, salinity=S[0:ns],
+                                temperature=T[0:ns], pressure=pressure[0:ns], total_silicate=Si[0:ns],
+                                total_phosphate=P[0:ns])
+    
+        pCO2_000001 = co2sys_000001['pCO2']
+        R_A_surf = ((pCO2_000001 - pCO2[0:ns])/pCO2[0:ns]) / (0.000001/AT[0:ns])
+        R_A = np.full(R_C.shape, np.nan)
+        R_A[0:ns] = R_A_surf
         
-            # extract key results arrays
-            pCO2 = co2sys['pCO2'] # pCO2 [µatm]
-            aqueous_CO2 = co2sys['CO2'] # aqueous CO2 [µmol kg-1]
-            R_C = co2sys['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
-        
-            # calculate revelle factor w.r.t. AT [unitless]
-            # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
-            # to speed up, only calculating this in surface
-            co2sys_000001 = pyco2.sys(dic=DIC_current[0:ns], alkalinity=AT_current[0:ns]+0.000001, salinity=S[0:ns],
-                                   temperature=T[0:ns], pressure=pressure[0:ns], total_silicate=Si[0:ns],
-                                   total_phosphate=P[0:ns])
-        
-            pCO2_000001 = co2sys_000001['pCO2']
-            R_A_surf = ((pCO2_000001 - pCO2[0:ns])/pCO2[0:ns]) / (0.000001/AT[0:ns])
-            R_A = np.full(R_C.shape, np.nan)
-            R_A[0:ns] = R_A_surf
-         
-            # calculate rest of Nowicki et al. parameters
-            beta_C = DIC/aqueous_CO2 # [unitless]
-            beta_A = AT/aqueous_CO2 # [unitless]
-            K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
+        # calculate rest of Nowicki et al. parameters
+        beta_C = DIC/aqueous_CO2 # [unitless]
+        beta_A = AT/aqueous_CO2 # [unitless]
+        K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
+
+        # calculate "A" matrix
+    
+        # dimensions
+        # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
+        #     [m x 1][m x m][m x m]
+        #     [m x 1][m x m][m x m]
+    
+        # what acts on what
+        # A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
+        #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
+        #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
+    
+        # math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
+        # A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
+        #     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
+        #     [0                        ][0                              ][TR                           ]
+    
+        # notation for setup
+        # A = [A00][A01][A02]
+        #     [A10][A11][A12]
+        #     [A20][A21][A22]
+
+        # diagnostics
+        t0 = time()
+
+        # to solve for ∆xCO2
+        A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
+        A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
+        A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
+    
+        # combine into A0 row
+        A0_ = np.full(1 + 2*m, np.nan)
+        A0_[0] = A00
+        A0_[1:(m+1)] = A01
+        A0_[(m+1):(2*m+1)] = A02
+    
+        del A00, A01, A02
+    
+        # to solve for ∆DIC
+        A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) 
+        A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csr')
+        A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
+    
+        A1_ = sparse.hstack((sparse.csr_matrix(np.expand_dims(A10,axis=1)), A11, A12))
+    
+        del A10, A11, A12
+    
+        # to solve for ∆AT
+        A20 = np.zeros(m)
+        A21 = 0 * TR
+        A22 = TR
+    
+        A2_ = sparse.hstack((sparse.csr_matrix(np.expand_dims(A20,axis=1)), A21, A22))
+    
+        del A20, A21, A22
+    
+        # build into one mega-array!!
+        A = sparse.vstack((sparse.csr_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
+    
+        del A0_, A1_, A2_
             
-            print('\ncarbonate system recalculated (t = ' + str(t[idx]) + ')')
-        
-        # must (re)calculate A matrix if 1. it has not yet been calculated
-        # 2. the carbonate system needs to be recalculated or 3. the time
-        # step interval (dt) has changed
-        if idx == 1 or frac_AT > threshold or frac_DIC > threshold or np.round(dt[idx],10) != np.round(dt[idx-1],10):
-            
-            if frac_AT > threshold and threshold > 0: print('frac_AT > ' + str(threshold))
-            if frac_DIC > threshold and threshold > 0: print('frac_DIC > ' + str(threshold))
-            if dt[idx] != dt[idx-1]: print('dt[' + str(idx) + '] != dt[' + str(idx-1) + ']')
-        
-            # calculate "A" matrix
-        
-            # dimensions
-            # A = [1 x 1][1 x m][1 x m] --> total size 2m + 1 x 2m + 1
-            #     [m x 1][m x m][m x m]
-            #     [m x 1][m x m][m x m]
-        
-            # what acts on what
-            # A = [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆xCO2 (still need q)
-            #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆DIC (still need q)
-            #     [THIS BOX * ∆xCO2][THIS BOX * ∆DIC][THIS BOX * ∆AT] --> to calculate new ∆AT (still need q)
-        
-            # math in each box (note: air-sea gas exchange terms only operate in surface boxes, they are set as main diagonal of identity matrix)
-            # A = [-gammax * K0 * Patm      ][gammax * rho * R_DIC / beta_DIC][gammax * rho * R_AT / beta_AT]
-            #     [-gammaC * K0 * Patm / rho][TR + gammaC * R_DIC / beta_DIC ][gammaC * R_AT / beta_AT      ]
-            #     [0                        ][0                              ][TR                           ]
-        
-            # notation for setup
-            # A = [A00][A01][A02]
-            #     [A10][A11][A12]
-            #     [A20][A21][A22]
-
-            # diagnostics
-            t0 = time()
-
-            '''
-
-            # to solve for ∆xCO2
-            A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
-            A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
-            A02 = np.nan_to_num(gammax * rho * R_A / beta_A)
-        
-            # combine into A0 row
-            A0_ = np.full(1 + 2*m, np.nan)
-            A0_[0] = A00
-            A0_[1:(m+1)] = A01
-            A0_[(m+1):(2*m+1)] = A02
-        
-            del A00, A01, A02
-        
-            # to solve for ∆DIC
-            A10 = np.nan_to_num(-1 * gammaC * K0 * Patm / rho) 
-            A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csr')
-            A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
-        
-            A1_ = sparse.hstack((sparse.csr_matrix(np.expand_dims(A10,axis=1)), A11, A12))
-        
-            del A10, A11, A12
-        
-            # to solve for ∆AT
-            A20 = np.zeros(m)
-            A21 = 0 * TR
-            A22 = TR
-        
-            A2_ = sparse.hstack((sparse.csr_matrix(np.expand_dims(A20,axis=1)), A21, A22))
-        
-            del A20, A21, A22
-        
-            # build into one mega-array!!
-            A = sparse.vstack((sparse.csr_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
-        
-            del A0_, A1_, A2_
-                
-            # calculate left hand side according to Euler backward method
-            LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
-            t1 = time() # diagnostics
-            '''            
-            # set up with PETSc (to reduce time required to convert from scipy)
-            LHS = PETSc.Mat().createAIJ([2*m+1, 2*m+1])
-            LHS.setUp()
-
-            # set up A0 row (to solve for xCO2)
-            A00 = 1 - dt[idx] * (-1 * Patm * np.nansum(gammax * K0)) # using nansum because all subsurface boxes are NaN, we only want surface
-            A01 = dt[idx] * (np.nan_to_num(gammax * rho * R_C / beta_C)) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
-            A02 = dt[idx] * (np.nan_to_num(gammax * rho * R_A / beta_A))
-            
-            LHS.setValue(0, 0, A00)
-            j_idx = 0
-            for j in range(1,m+1):
-                if A01[j_idx] != 0:
-                    LHS.setValue(0,j,A01[j_idx])
-                j_idx += 1
-            j_idx = 0
-            for j in range(m+1,2*m+1):
-                if A02[j_idx] != 0:
-                    LHS.setValue(0,j,-1 * A02[j_idx])
-                j_idx += 1
-            
-            # set up A1 row (to solve for ∆DIC)
-            A10 = dt[idx] * (np.nan_to_num(-1 * gammaC * K0 * Patm / rho))
-            A11 = sparse.eye_array(m, format="csr") - dt[idx] * (TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csr'))
-            A12 = dt[idx] * (sparse.diags(np.nan_to_num(gammaC * R_A / beta_A), format='csr'))
-            
-            # for A10
-            i_idx = 0
-            for i in range(1,m+1):
-                if A10[i_idx] != 0:
-                    LHS.setValue(i,0,A10[i_idx]) 
-                i_idx += 1
-                
-            # for A11
-            for i in range(m):
-                row = 1 + i
-                start, end = A11.indptr[i], A11.indptr[i+1]
-                cols = 1 + A11.indices[start:end]
-                vals = A11.data[start:end]
-                LHS.setValues(row, cols, vals)
-
-            # for A12
-            for i in range(m):
-                row = 1 + i
-                start, end = A12.indptr[i], A12.indptr[i+1]
-                cols = (m+1) + A12.indices[start:end]
-                vals = A12.data[start:end]
-                LHS.setValues(row, cols, vals)
-
-           # set up A2 row (to solve for ∆AT)
-            A20 = dt[idx] * np.zeros(m)
-            A21 = dt[idx] * (0 * TR)
-            A22 = sparse.eye_array(m, format="csr") - dt[idx] * (TR)
-
-            # for A20
-            i_idx = 0 
-            for i in range(m+1,2*m+1):
-                if A20[i_idx] != 0:
-                    LHS.setValue(i,0,A20[i_idx]) 
-                i_idx += 1
-
-            # for A21
-            for i in range(m):
-                row = (m+1) + i
-                start, end = A21.indptr[i], A21.indptr[i+1]
-                cols = 1 + A21.indices[start:end]
-                vals = A21.data[start:end]
-                LHS.setValues(row, cols, vals)
-
-            # for A22
-            for i in range(m):
-                row = (m+1) + i
-                start, end = A22.indptr[i], A22.indptr[i+1]
-                cols = (m+1) + A22.indices[start:end]
-                vals = A22.data[start:end]
-                LHS.setValues(row, cols, vals)
-            
-            LHS.assemblyBegin()
-            LHS.assemblyEnd()
-            
-            del A00, A01, A02, A10, A11, A12, A20, A21, A22
-
-            t1 = time() # diagnostics
-        
+        # calculate left hand side according to Euler backward method
+        LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
+        t1 = time() # diagnostics
+    
         # for now, assuming NaOH (no change in DIC)
         
         # calculate AT required to return to preindustrial pH
@@ -709,8 +597,8 @@ def run_experiment(experiment):
         # diagnostics
 
         # convert matricies from scipy sparse to PETSc to parallelize
-        #LHS = PETSc.Mat().createAIJ(size=LHS.shape,
-        #                                csr=(LHS.indptr, LHS.indices, LHS.data))
+        LHS = PETSc.Mat().createAIJ(size=LHS.shape,
+                                    csr=(LHS.indptr, LHS.indices, LHS.data))
         RHS_petsc = PETSc.Vec().createWithArray(RHS)
 
         # set up PETSc solver
@@ -739,8 +627,7 @@ def run_experiment(experiment):
 
         # diagnostics
         t4 = time()
-        print("KSP iters:", ksp.getIterationNumber(), "reason:", ksp.getConvergedReason()) # diagnostics
-        print("assemble petsc: ", np.round(t1-t0,5), "solve for AT to add: ", np.round(t2-t1, 5), "set up solver: ", np.round(t3-t2, 5), "solve: ", np.round(t4-t3, 5))
+        print("assemble scipy: ", np.round(t1-t0,5), "solve for AT to add: ", np.round(t2-t1, 5), "set up solver: ", np.round(t3-t2, 5), "solve: ", np.round(t4-t3, 5))
 
         # check for convergence 
         if ksp.getConvergedReason() < 0:
