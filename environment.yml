@@ -8,6 +8,7 @@ dependencies:
   - geopandas=1.0.1
   - geopandas-base=1.0.1
   - h5netcdf=1.2.0
+  - joblib=1.4.2
   - matplotlib=3.10.3
   - netcdf4=1.6.5
   - numpy=1.24.4
@@ -15,6 +16,7 @@ dependencies:
   - petsc=3.21.1
   - petsc4py=3.21.1
   - pip
+  - pytorch=2.6.0
   - scipy
   - shapely=2.1.1
   - suitesparse=5.10.1

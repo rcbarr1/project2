@@ -28,8 +28,9 @@ import random
 import PyCO2SYS as pyco2
 import cftime
 import matplotlib.animation as animation
-
-
+import torch
+import torch.nn as nn
+import joblib
 
 def loadmat(filename):
     '''
@@ -957,6 +958,117 @@ def calculate_AT_to_add(pH_preind, DIC, AT, T, S, pressure, Si, P, AT_mask=None,
             break
     # assign results back to full grid
     AT_to_offset[gets_AT] = 0.5 * (low_arr + high_arr)
+    
+    return AT_to_offset
+
+def estimate_AT_to_add(model_path, pH_preind, DIC, AT, T, S, pressure, Si, P, AT_mask=None):
+    '''
+    Estimate the amount of alkalinity to add to the surface ocean in order to
+    reach preindustrial pH in the surface. This estimation is done using a neural
+    network that is trained on results obtained by applying calculate_AT_to_add
+    to the mixed layer for many time steps. 
+
+    Parameters
+    ----------
+    model_path : String
+        Path to where model weights and scaling are stored
+    pH_preind : Array of floats.
+        Preindustrial pH values at each ocean grid cell [unitless]
+    DIC : Array of floats.
+        Present-day dissolved inorganic carbon values at each ocean grid cell
+        [µmol kg-1]
+    AT : Array of floats.
+        Present-day alkalinity values at each ocean grid cell [µmol kg-1]
+    T : Array of floats.
+        Present-day temperature values at each ocean grid cell [ºC]
+    S : Array of floats.
+        Present-day salinity values at each ocean grid cell [unitless]
+    pressure : Array of floats.
+        Present-day pressure values at each ocean grid cell [dbar]
+    Si : Array of floats.
+        Present-day total silicate values at each ocean grid cell [µmol kg-1]
+    P : Array of floats.
+        Present-day total phosphate values at each ocean grid cell [µmol kg-1].
+    AT_mask : Mask same shape as pH/DIC/AT, etc. where 1 marks an cell that
+        recieves AT and 0 marks cells that do not get AT (i.e. scenario in
+        which AT is added to surface only)
+
+    Returns
+    -------
+    AT_to_offset: Array of floats.
+        Amount of AT to apply at each present-day ocean grid cell in order to
+        reach preindustrial pH in the surface ocean [µmol kg-1]
+    '''
+    # check which grid cells have pH < pH_preind
+    co2sys_init = pyco2.sys(dic=DIC, alkalinity=AT, salinity=S,
+                            temperature=T, pressure=pressure, 
+                            total_silicate=Si, total_phosphate=P)
+    pH_init = co2sys_init['pH']
+    
+    # mask for grid cells that will have AT added
+    gets_AT = pH_init < pH_preind
+    
+    # combine with AT_mask if provided
+    if AT_mask is not None:
+        gets_AT = gets_AT & (AT_mask == 1)
+
+    # extract only cells that need AT for faster processing
+    DIC_gets_AT = DIC[gets_AT]
+    AT_gets_AT = AT[gets_AT]
+    T_gets_AT = T[gets_AT]
+    S_gets_AT = S[gets_AT]
+    pressure_gets_AT = pressure[gets_AT]
+    Si_gets_AT = Si[gets_AT]
+    P_gets_AT = P[gets_AT]
+    pH_preind_gets_AT = pH_preind[gets_AT]
+
+    # combine predictors into one array
+    X = np.hstack([AT_gets_AT, DIC_gets_AT, T_gets_AT, S_gets_AT, Si_gets_AT, P_gets_AT, pressure_gets_AT, pH_preind_gets_AT]) 
+
+    # set up neural network model architecture (same as when training)
+    class AT_added_model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.net = nn.Sequential(
+                nn.Linear(8,128), # layer 1 shape
+                nn.ReLU(),
+                nn.Linear(128, 64), # layer 2 shape
+                nn.ReLU(),
+                nn.Linear(64, 32), # layer 3 shape
+                nn.ReLU(),
+                nn.Linear(32, 1) # layer 3 shape
+            )
+
+        def forward(self, x):
+            return self.net(x)
+
+    model = AT_added_model()
+    criterion = nn.MSELoss() # mean squared error to evaluate model fit
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+    # upload model for testing
+    model = AT_added_model()
+    model.load_state_dict(torch.load(model_path + 'AT_added_model.pth'))
+    model.eval() 
+
+    # load scalers
+    scaler_X = joblib.load(model_path + 'AT_added_model_scaler_X.save')
+    scaler_y = joblib.load(model_path + 'AT_added_model_scaler_y.save')
+
+    # scale data
+    X_scaled = scaler_X.fit_transform(X)
+    X_scaled = torch.tensor(X_scaled, dtype=torch.float32)
+
+    # predict AT to add
+    with torch.no_grad():
+        y_pred_scaled = model(X_scaled).numpy() 
+    y_pred_real = scaler_y.inverse_transform(y_pred_scaled) # invert scaling to get (µmol kg-1)
+
+    # all ocean boxes to record amount of AT to add 
+    AT_to_offset = np.zeros_like(AT, dtype=float)  
+
+    # assign results back to full grid
+    AT_to_offset[gets_AT] = y_pred_real
     
     return AT_to_offset
 

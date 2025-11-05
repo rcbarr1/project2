@@ -1,4 +1,4 @@
-# Ignore specific folders
+# ignore specific folders
 data/
 examples/
 movies/
@@ -7,7 +7,7 @@ outputs/
 PyESPER/
 writing/
 
-# Ignore temporary or system files
+# ignore temporary or system files
 *.pyc
 __pycache__/
 .DS_Store
@@ -15,3 +15,12 @@ Dockerfile
 .dockerignore
 .vscode
 .env
+*.asv
+
+# ignore data in test and utils files
+LHS_1hr.mat
+LHS_1yr.mat
+RHS_1hr.mat
+RHS_1yr.mat
+*.pth
+*.save

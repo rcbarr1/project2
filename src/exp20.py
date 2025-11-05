@@ -43,12 +43,14 @@ Naming convention for saving model runs (see .txt file for explanation of experi
 
 @author: Reese C. Barrett
 """
+#%%
 from src.utils import project2 as p2
 import xarray as xr
 from netCDF4 import Dataset
 import numpy as np
 import PyCO2SYS as pyco2
 from scipy import sparse
+from scipy import io
 from tqdm import tqdm
 from scipy.sparse.linalg import spilu, LinearOperator, lgmres
 from time import time
@@ -206,7 +208,7 @@ experiment_attrs = ['adding max AT before reaching preind pH to all cells within
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 0%',]
 exp_t = [exp3_t]
 
-experiment_names = ['TEST_exp20_2025-10-30_dt1hr',]
+experiment_names = ['TEST_exp20_2025-11-04_dt1day',]
 
 thresholds = [0.0, 0.0, 0.0, 0.0]
 
@@ -397,7 +399,6 @@ for exp_idx in range(len(experiment_names)):
   
     # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
     for idx in tqdm(range(1,nt)):
-
         
         # open new file if previous file is full (or one hasn't been opened yet)
         if (idx-1) % t_per_file == 0:
@@ -592,7 +593,8 @@ for exp_idx in range(len(experiment_names)):
                 
             # perform time stepping using Euler backward
             LHS = sparse.eye(A.shape[0], format="csc") - dt[idx] * A
-    
+            #io.savemat('LHS_1day.mat',{'LHS' : LHS}, do_compression=False)
+
             # test condition number of matrix
             est = sparse.linalg.onenormest(LHS)
             print('estimated 1-norm condition number LHS: ' + str(round(est,1)))
@@ -640,6 +642,7 @@ for exp_idx in range(len(experiment_names)):
 
         # calculate right hand side and perform time stepping
         RHS = c[:,0] + np.squeeze(dt[idx] * q)
+        #io.savemat('RHS_1day.mat', {'RHS' : RHS}, do_compression=False)
         c[:,1], info = lgmres(LHS, RHS, M=M, x0=c[:,0], rtol = 1e-5, atol=0)
        
         if info != 0:
@@ -692,23 +695,4 @@ for exp_idx in range(len(experiment_names)):
     
     if ds is not None: ds.close()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# %%

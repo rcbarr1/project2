@@ -2,7 +2,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Oct 20 13:10:59 2025
+Created on Wed Nov 5 12:45 2025
+
+same as exp21_speedtest.py except using NN to estimate AT to add instead of pyco2sys
 
 EXP21: Attempting maximum alkalinity calculation with parallel sparse matrix solve and running experiments in parallel (optimizing for HPC)
 - Import anthropogenic carbon prediction at each grid cell using TRACEv1 to be initial ∆DIC conditions
@@ -60,9 +62,10 @@ import argparse
 import jax
 import gc
 
-# load model architecture
+#%% load model architecture
 data_path = './data/'
 output_path = './outputs/'
+model_path = './src/utils/'
 
 # load transport matrix (OCIM2-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
@@ -105,27 +108,20 @@ def set_experiment_parameters(test=False):
     dt3 = 1 # 1 year
 
     # just year time steps
-    exp0_t = np.arange(0,500,dt3)
+    exp0_t = np.arange(0,10,dt3) 
 
     # experiment with dt = 1/12 (1 month) time steps
-    exp1_t = np.arange(0,500,dt2)
+    exp1_t = np.arange(0,10/12,dt2) 
     #exp1_t = np.arange(0,400,dt2)
 
     # experiment with dt = 1/360 (1 day) time steps
-    exp2_t = np.arange(0,500,dt1) 
+    exp2_t = np.arange(0,10/360,dt1) 
 
     # another with dt = 1/8640 (1 hour) time steps
-    exp3_t = np.arange(0,500,dt0) 
+    exp3_t = np.arange(0,10/8640,dt0) 
 
-    # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
-    t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
-    t1 = np.arange(1, 10, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
-    t2 = np.arange(10, 100, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
-    t3 = np.arange(100, 500, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
-    exp4_t = np.concatenate((t0, t1, t2, t3))
-
-    exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-    exp_t_names = ['t0', 't1', 't2', 't3', 't4']
+    exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t]
+    exp_t_names = ['t0', 't1', 't2', 't3'] 
 
     # DEPTHS OF ADDITION
 
@@ -272,6 +268,9 @@ def run_experiment(experiment):
 
     # calculate preindustrial pH from DIC in 2015 minus Canth in 2015 AND TA in 2015 (assuming steady state)
 
+    # is it okay to use modern-day temperatures for this?? probably not, but not
+    # sure if there's a TRACE for this and trying to stick with data-based, not
+    # model-based
     # pyCO2SYS v2
     co2sys_preind = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
                     pressure=pressure, total_silicate=Si, total_phosphate=P)
@@ -494,9 +493,7 @@ def run_experiment(experiment):
         beta_C = DIC/aqueous_CO2 # [unitless]
         beta_A = AT/aqueous_CO2 # [unitless]
         K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
-        
-        print('\ncarbonate system recalculated (t = ' + str(t[idx]) + ')')
-    
+
         # calculate "A" matrix
     
         # dimensions
@@ -518,7 +515,10 @@ def run_experiment(experiment):
         # A = [A00][A01][A02]
         #     [A10][A11][A12]
         #     [A20][A21][A22]
-    
+
+        # diagnostics
+        t0 = time()
+
         # to solve for ∆xCO2
         A00 = -1 * Patm * np.nansum(gammax * K0) # using nansum because all subsurface boxes are NaN, we only want surface
         A01 = np.nan_to_num(gammax * rho * R_C / beta_C) # nan_to_num sets all NaN = 0 (subsurface boxes, no air-sea gas exchange)
@@ -557,6 +557,7 @@ def run_experiment(experiment):
             
         # calculate left hand side according to Euler backward method
         LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
+        t1 = time() # diagnostics
     
         # for now, assuming NaOH (no change in DIC)
         
@@ -565,7 +566,9 @@ def run_experiment(experiment):
         # apply mask (q_AT_locations_mask) at this step to choose which grid cells AT is added to
         DIC_new = DIC + c[1:(m+1), 0]
         AT_new = AT + c[(m+1):(2*m+1), 0]
-        AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, AT_mask=p2.flatten(q_AT_locations_mask,ocnmask), low=0, high=200, tol=1e-6, maxiter=50)
+        # diagnostics
+        AT_to_offset = p2.estimate_AT_to_add(model_path,pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, AT_mask=p2.flatten(q_AT_locations_mask,ocnmask), low=0, high=200, tol=1e-6, maxiter=50)
+        t2 = time()
 
         # make sure there are no negative values
         if len(AT_to_offset[AT_to_offset<0]) != 0:
@@ -593,15 +596,17 @@ def run_experiment(experiment):
         
         # calculate right hand side according to Euler backward method
         RHS = c[:,0] + np.squeeze(dt[idx] * q)
-        
+
+        # diagnostics
+
         # convert matricies from scipy sparse to PETSc to parallelize
-        LHS_petsc = PETSc.Mat().createAIJ(size=LHS.shape,
-                                        csr=(LHS.indptr, LHS.indices, LHS.data))
+        LHS = PETSc.Mat().createAIJ(size=LHS.shape,
+                                    csr=(LHS.indptr, LHS.indices, LHS.data))
         RHS_petsc = PETSc.Vec().createWithArray(RHS)
 
         # set up PETSc solver
         ksp = PETSc.KSP().create()
-        ksp.setOperators(LHS_petsc)
+        ksp.setOperators(LHS)
         ksp.setType('lgmres')
         ksp.setGMRESRestart(30)  # restart after 30 iterations
 
@@ -612,13 +617,20 @@ def run_experiment(experiment):
         ksp.setTolerances(rtol=1e-8, atol=1e-10, max_it=1000)
 
         # set up output array (PETSc vector object)
-        c_petsc = LHS_petsc.createVecRight()
+        c_petsc = LHS.createVecRight()
         c_petsc.setArray(c[:,0])
         ksp.setInitialGuessNonzero(True) # tell solver to use initial guess
+
+        # diagnostics
+        t3 = time()
 
         # solve system (perform time stepping)
         ksp.solve(RHS_petsc, c_petsc)
         c[:,1] = c_petsc.array.copy()
+
+        # diagnostics
+        t4 = time()
+        print("assemble scipy: ", np.round(t1-t0,5), "solve for AT to add: ", np.round(t2-t1, 5), "set up solver: ", np.round(t3-t2, 5), "solve: ", np.round(t4-t3, 5))
 
         # check for convergence 
         if ksp.getConvergedReason() < 0:
@@ -701,7 +713,7 @@ def main():
     if args.list:
         print(f"total experiments: {len(experiments)}")
         for i, experiment in enumerate(experiments):
-            print(f"  {i}: exp21_{experiment['tag']}")
+            print(f"  {i}: exp21NN_{experiment['tag']}")
         return
     
     # validate exp_id
@@ -719,4 +731,3 @@ def main():
 # run main function
 if __name__ == '__main__':
     main()
-# %%
