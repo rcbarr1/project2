@@ -121,7 +121,11 @@ experiment_names = ['exp21_2025-10-29_17-57-38_t0_none_0.05',
                     'exp21_2025-10-30_15-49-33_t4_none_0.05',]
 '''
 labels = ['dt = 1 yr', 'dt = 1 month', 'dt = 1 day', 'dt = 1 hour', 'dt = mixed']
-
+'''
+experiment_names = ['exp21_2025-11-05_t2_none',
+                    'exp21NN_2025-11-05_t2_none']
+labels=['dt = 1 day (pyco2sys)', 'dt = 1 day (NN)']
+'''
 #%% cumulative AT added
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()

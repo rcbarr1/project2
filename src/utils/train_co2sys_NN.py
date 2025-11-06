@@ -113,6 +113,8 @@ DIC_flat = ds.delDIC.isel(time=slice(0,nt)).values.reshape(nt,-1,order='F')
 DIC_flat = DIC_flat[:, mldmask_flat] + DIC_mld
 DIC_stacked = DIC_flat.reshape(-1,1)
 
+ds.close()
+
 T_stacked = np.expand_dims(np.tile(T_mld, nt),1)
 S_stacked = np.expand_dims(np.tile(S_mld, nt),1)
 Si_stacked = np.expand_dims(np.tile(Si_mld, nt),1)
@@ -149,11 +151,9 @@ class AT_added_model(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(8,128), # layer 1 shape
+            nn.Linear(8,64), # layer 1 shape
             nn.ReLU(),
-            nn.Linear(128, 64), # layer 2 shape
-            nn.ReLU(),
-            nn.Linear(64, 32), # layer 3 shape
+            nn.Linear(64, 32), # layer 2 shape
             nn.ReLU(),
             nn.Linear(32, 1) # layer 3 shape
         )
@@ -167,7 +167,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
 # %% train meural network model (skip if uploading already-trained model)
 
-for epoch in tqdm(range(500)):
+for epoch in tqdm(range(1000)):
     total_loss = 0.0
     for X_batch, y_batch in train_loader:
         optimizer.zero_grad() # reset gradients

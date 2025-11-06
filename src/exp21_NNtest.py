@@ -190,7 +190,7 @@ def set_experiment_parameters(test=False):
     return experiments
 
 def run_experiment(experiment):
-    experiment_name = 'exp21_' + experiment['tag']
+    experiment_name = 'exp21NN_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
 
     # pull experimental parameters out of dictionary
@@ -567,7 +567,7 @@ def run_experiment(experiment):
         DIC_new = DIC + c[1:(m+1), 0]
         AT_new = AT + c[(m+1):(2*m+1), 0]
         # diagnostics
-        AT_to_offset = p2.estimate_AT_to_add(model_path,pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, AT_mask=p2.flatten(q_AT_locations_mask,ocnmask), low=0, high=200, tol=1e-6, maxiter=50)
+        AT_to_offset = p2.estimate_AT_to_add(model_path,pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, AT_mask=p2.flatten(q_AT_locations_mask,ocnmask))
         t2 = time()
 
         # make sure there are no negative values

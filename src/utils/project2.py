@@ -1013,14 +1013,14 @@ def estimate_AT_to_add(model_path, pH_preind, DIC, AT, T, S, pressure, Si, P, AT
         gets_AT = gets_AT & (AT_mask == 1)
 
     # extract only cells that need AT for faster processing
-    DIC_gets_AT = DIC[gets_AT]
-    AT_gets_AT = AT[gets_AT]
-    T_gets_AT = T[gets_AT]
-    S_gets_AT = S[gets_AT]
-    pressure_gets_AT = pressure[gets_AT]
-    Si_gets_AT = Si[gets_AT]
-    P_gets_AT = P[gets_AT]
-    pH_preind_gets_AT = pH_preind[gets_AT]
+    DIC_gets_AT = np.expand_dims(DIC[gets_AT],1)
+    AT_gets_AT = np.expand_dims(AT[gets_AT],1)
+    T_gets_AT = np.expand_dims(T[gets_AT],1)
+    S_gets_AT = np.expand_dims(S[gets_AT],1)
+    pressure_gets_AT = np.expand_dims(pressure[gets_AT],1)
+    Si_gets_AT = np.expand_dims(Si[gets_AT],1)
+    P_gets_AT = np.expand_dims(P[gets_AT],1)
+    pH_preind_gets_AT = np.expand_dims(pH_preind[gets_AT],1)
 
     # combine predictors into one array
     X = np.hstack([AT_gets_AT, DIC_gets_AT, T_gets_AT, S_gets_AT, Si_gets_AT, P_gets_AT, pressure_gets_AT, pH_preind_gets_AT]) 
@@ -1030,11 +1030,9 @@ def estimate_AT_to_add(model_path, pH_preind, DIC, AT, T, S, pressure, Si, P, AT
         def __init__(self):
             super().__init__()
             self.net = nn.Sequential(
-                nn.Linear(8,128), # layer 1 shape
+                nn.Linear(8,64), # layer 1 shape
                 nn.ReLU(),
-                nn.Linear(128, 64), # layer 2 shape
-                nn.ReLU(),
-                nn.Linear(64, 32), # layer 3 shape
+                nn.Linear(64, 32), # layer 2 shape
                 nn.ReLU(),
                 nn.Linear(32, 1) # layer 3 shape
             )
@@ -1064,11 +1062,14 @@ def estimate_AT_to_add(model_path, pH_preind, DIC, AT, T, S, pressure, Si, P, AT
         y_pred_scaled = model(X_scaled).numpy() 
     y_pred_real = scaler_y.inverse_transform(y_pred_scaled) # invert scaling to get (µmol kg-1)
 
+    # if a negative value is predicted, zero it out
+    y_pred_real[y_pred_real < 0] = 0
+
     # all ocean boxes to record amount of AT to add 
     AT_to_offset = np.zeros_like(AT, dtype=float)  
 
     # assign results back to full grid
-    AT_to_offset[gets_AT] = y_pred_real
+    AT_to_offset[gets_AT] = np.squeeze(y_pred_real)
     
     return AT_to_offset
 
