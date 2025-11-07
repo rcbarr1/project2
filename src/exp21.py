@@ -105,23 +105,22 @@ def set_experiment_parameters(test=False):
     dt3 = 1 # 1 year
 
     # just year time steps
-    exp0_t = np.arange(0,500,dt3)
+    exp0_t = np.arange(0,1000,dt3)
 
     # experiment with dt = 1/12 (1 month) time steps
-    exp1_t = np.arange(0,500,dt2)
-    #exp1_t = np.arange(0,400,dt2)
+    exp1_t = np.arange(0,1000,dt2)
 
     # experiment with dt = 1/360 (1 day) time steps
-    exp2_t = np.arange(0,500,dt1) 
+    exp2_t = np.arange(0,1000,dt1) 
 
     # another with dt = 1/8640 (1 hour) time steps
-    exp3_t = np.arange(0,500,dt0) 
+    exp3_t = np.arange(0,1000,dt0) 
 
     # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
     t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
     t1 = np.arange(1, 10, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
     t2 = np.arange(10, 100, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
-    t3 = np.arange(100, 500, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
+    t3 = np.arange(100, 1000, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
     exp4_t = np.concatenate((t0, t1, t2, t3))
 
     exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]

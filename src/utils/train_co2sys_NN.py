@@ -36,7 +36,8 @@ ns = int(np.nansum(ocnmask[0,:,:])) # number of surface grid cells
 
 mld = model_data.mld.values # [m]
 grid_cell_depth = model_data['wz'].to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
-mldmask = (grid_cell_depth < mld[None, :, :]).astype(int) * ocnmask
+
+model_data.close()
 
 #%% generate training data
 # AT, DIC, T, S, pressure, Si, P at each grid cell are input variables
@@ -99,10 +100,13 @@ pH_preind = co2sys_preind['pH']
 pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
 pH_preind_mld = p2.flatten(pH_preind_3D, mldmask)
 
+# make mask to only add AT in mixed layer where pH < pH_preind
+mldmask = (grid_cell_depth < mld[None, :, :]).astype(int) * ocnmask
+
 #%% format training data for input in NN
 
 # need to get flatten AT and DIC from time step "t", match with T, S, Si, P, and pressure data (constant), and vertically stack
-nt = 25 # number of time steps to include in training data
+nt = 5 # number of time steps to include in training data
 mldmask_flat = (mldmask == 1).flatten(order='F')
 
 AT_flat = ds.delAT.isel(time=slice(0,nt)).values.reshape(nt,-1,order='F')
@@ -130,6 +134,8 @@ AT_added_flat = AT_added_flat[:, mldmask_flat]
 AT_added_stacked = AT_added_flat.reshape(-1, 1)
 
 y = AT_added_stacked
+
+ds.close()
 # %% preprocess data and split into training and testing
 
 scaler_X = StandardScaler()
@@ -155,7 +161,9 @@ class AT_added_model(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 32), # layer 2 shape
             nn.ReLU(),
-            nn.Linear(32, 1) # layer 3 shape
+            nn.Linear(32, 16), # layer 3 shape
+            nn.ReLU(),
+            nn.Linear(16, 1) # layer 4 shape
         )
 
     def forward(self, x):
@@ -163,11 +171,11 @@ class AT_added_model(nn.Module):
 
 model = AT_added_model()
 criterion = nn.MSELoss() # mean squared error to evaluate model fit
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
 
 # %% train meural network model (skip if uploading already-trained model)
 
-for epoch in tqdm(range(1000)):
+for epoch in tqdm(range(10)):
     total_loss = 0.0
     for X_batch, y_batch in train_loader:
         optimizer.zero_grad() # reset gradients
