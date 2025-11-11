@@ -36,6 +36,7 @@ ns = int(np.nansum(ocnmask[0,:,:])) # number of surface grid cells
 
 mld = model_data.mld.values # [m]
 grid_cell_depth = model_data['wz'].to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
+mldmask = (grid_cell_depth < mld[None, :, :]).astype(int) * ocnmask
 
 model_data.close()
 
@@ -100,21 +101,18 @@ pH_preind = co2sys_preind['pH']
 pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
 pH_preind_mld = p2.flatten(pH_preind_3D, mldmask)
 
-# make mask to only add AT in mixed layer where pH < pH_preind
-mldmask = (grid_cell_depth < mld[None, :, :]).astype(int) * ocnmask
-
 #%% format training data for input in NN
 
 # need to get flatten AT and DIC from time step "t", match with T, S, Si, P, and pressure data (constant), and vertically stack
 nt = 5 # number of time steps to include in training data
 mldmask_flat = (mldmask == 1).flatten(order='F')
 
-AT_flat = ds.delAT.isel(time=slice(0,nt)).values.reshape(nt,-1,order='F')
-AT_flat = AT_flat[:, mldmask_flat] + AT_mld
+delAT_flat = ds.delAT.isel(time=slice(0,nt)).values.reshape(nt,-1,order='F')
+AT_flat = delAT_flat[:, mldmask_flat] + AT_mld
 AT_stacked = AT_flat.reshape(-1,1)
 
-DIC_flat = ds.delDIC.isel(time=slice(0,nt)).values.reshape(nt,-1,order='F')
-DIC_flat = DIC_flat[:, mldmask_flat] + DIC_mld
+delDIC_flat = ds.delDIC.isel(time=slice(0,nt)).values.reshape(nt,-1,order='F')
+DIC_flat = delDIC_flat[:, mldmask_flat] + DIC_mld
 DIC_stacked = DIC_flat.reshape(-1,1)
 
 ds.close()
@@ -136,6 +134,16 @@ AT_added_stacked = AT_added_flat.reshape(-1, 1)
 y = AT_added_stacked
 
 ds.close()
+
+#%% filter out points where pH > pH_preind
+co2sys_stacked = pyco2.sys(dic=DIC_stacked, alkalinity=AT_stacked, salinity=S_stacked,
+                            temperature=T_stacked, pressure=pressure_stacked, 
+                            total_silicate=Si_stacked, total_phosphate=P_stacked)
+pH_stacked = co2sys_stacked['pH']
+
+X = X[np.squeeze(pH_stacked < pH_preind_stacked),:]
+y = y[np.squeeze(pH_stacked < pH_preind_stacked),:] 
+
 # %% preprocess data and split into training and testing
 
 scaler_X = StandardScaler()
@@ -157,13 +165,9 @@ class AT_added_model(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(8,64), # layer 1 shape
+            nn.Linear(8,40), # layer 1 shape
             nn.ReLU(),
-            nn.Linear(64, 32), # layer 2 shape
-            nn.ReLU(),
-            nn.Linear(32, 16), # layer 3 shape
-            nn.ReLU(),
-            nn.Linear(16, 1) # layer 4 shape
+            nn.Linear(40, 1) # layer 3 shape
         )
 
     def forward(self, x):
@@ -171,11 +175,11 @@ class AT_added_model(nn.Module):
 
 model = AT_added_model()
 criterion = nn.MSELoss() # mean squared error to evaluate model fit
-optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
 
 # %% train meural network model (skip if uploading already-trained model)
 
-for epoch in tqdm(range(10)):
+for epoch in tqdm(range(1000)):
     total_loss = 0.0
     for X_batch, y_batch in train_loader:
         optimizer.zero_grad() # reset gradients

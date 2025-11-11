@@ -6,6 +6,7 @@ notes/
 outputs/
 PyESPER/
 writing/
+src/utils/pyTRACE/
 
 # ignore temporary or system files
 *.pyc
