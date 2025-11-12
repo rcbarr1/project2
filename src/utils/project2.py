@@ -163,14 +163,19 @@ def flatten(e_3D, ocnmask):
     '''
     flattens array from 3D to 1D in Fortran ordering and simultaneously removes land points from flat array
     '''
-    return e_3D[ocnmask == 1].flatten(order='F')
+    return e_3D.flatten(order='F')[ocnmask.flatten(order='F').astype(bool)]
 
 def make_3D(e_flat, ocnmask):
     '''
     returns 1D array to 3D, adds np.NaN for land boxes as defined by ocnmask. Fortran ordering
     '''
     e_3D = np.full(ocnmask.shape, np.nan)
-    e_3D[ocnmask == 1] = np.reshape(e_flat, (-1,), order='F')
+    flat_mask = ocnmask.flatten(order='F').astype(bool)
+    
+    e_3D_flat = e_3D.flatten(order='F')
+   
+    e_3D_flat[flat_mask] = e_flat
+    e_3D = e_3D_flat.reshape(ocnmask.shape, order='F') 
     
     return e_3D
 

@@ -84,7 +84,7 @@ grid_cell_depth = model_data['wz'].to_numpy() # depth of model layers (need bott
 z1 = grid_cell_depth[1, 0, 0] # depth of first model layer [m]
 ns = int(np.nansum(ocnmask[0,:,:])) # number of surface grid cells
 rho = 1025 # seawater density for volume to mass [kg m-3]
-
+#%%
 # rules for saving files
 t_per_file = 2000 # number of time steps 
 
@@ -107,7 +107,7 @@ def set_experiment_parameters(test=False):
 
     # just year time steps
     exp0_t = np.arange(0,1000,dt3)
-
+    
     # experiment with dt = 1/12 (1 month) time steps
     exp1_t = np.arange(0,1000,dt2)
 
@@ -204,44 +204,83 @@ def run_experiment(experiment):
     q_AT_locations_mask = experiment['q_AT_locations_mask']
     scenario = experiment['scenario']
 
-    # calculate preindustrial pH using pyTRACE
+    #%% calculate preindustrial pH using pyTRACE
     # create list of longitudes (ºE), latitudes (ºN), and depths (m) in TRACE format
     # this order is required for TRACE
     lon, lat, depth = np.meshgrid(model_lon, model_lat, model_depth, indexing='ij')
     ocim_coordinates = np.array([lon.ravel(order='F'), lat.ravel(order='F'), depth.ravel(order='F'), ]).T # reshape meshgrid points into a list of coordinates to interpolate to
-    
+    ocim_coordinates = ocim_coordinates[ocnmask.flatten(order='F').astype(bool)]
+
     # GLODAP gridded product is adjusted to 2002, so need Canth in 2002 to subtract off GLODAP DIC
-    dates_2002 = 2002 * np.ones([ocim_coordinates.shape[0],1])
+    dates_2002 = 2015 * np.ones([ocim_coordinates.shape[0],1])
 
     # upload regridded glodap data for temperature and salinity
-    T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy')
-    S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy')
+    T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy') # temperature [ºC]
+    S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy') # salinity [unitless]
 
     # transpose to match requirements for PyTRACE
-    T_3D = T_3D.transpose([1, 2, 0])
-    S_3D = S_3D.transpose([1, 2, 0])
-    predictor_measurements = np.vstack([S_3D.flatten(order='F'), T_3D.flatten(order='F')]).T
-    
+    T_3D_T = T_3D.transpose([1, 2, 0])
+    S_3D_T = S_3D.transpose([1, 2, 0])
+    ocnmask_T = ocnmask.transpose([1, 2, 0])
+
+    predictor_measurements = np.vstack([S_3D_T.flatten(order='F'), T_3D_T.flatten(order='F')]).T
+    predictor_measurements = predictor_measurements[ocnmask_T.flatten(order='F').astype(bool)]
+
     trace_output = trace(output_coordinates=ocim_coordinates,
-                         dates=dates_2002,
-                         predictor_measurements=predictor_measurements,
-                         predictor_types=[1, 2],
-                         atm_co2_trajectory=1)
+                        dates=dates_2002[:,0],
+                        predictor_measurements=predictor_measurements,
+                        predictor_types=[1, 2],
+                        atm_co2_trajectory=1)
+    
+    # right now, pyTRACE is estimating some preformed P and Si as <0, which is
+    # resulting in NaN Canth. for now, am fixing this by setting <0 values =0.
+    # also pulling preformed AT and scale factors to make second pyTRACE
+    # calculation faster
+    preformed_p = trace_output.preformed_p.values
+    preformed_p[preformed_p < 0] = 0
+    preformed_ta = trace_output.preformed_ta.values
+    preformed_si = trace_output.preformed_si.values
+    preformed_si[preformed_si < 0] = 0
+    scale_factors = trace_output.scale_factors.values
 
-    # transpose temperature and salinity back
-    T_3D = T_3D.transpose([2, 0, 1])
-    S_3D = S_3D.transpose([2, 0, 1])
+    trace_output = trace(output_coordinates=ocim_coordinates,
+                    dates=dates_2002[:,0],
+                    predictor_measurements=predictor_measurements,
+                    predictor_types=[1, 2],
+                    atm_co2_trajectory=1,
+                    preformed_p=preformed_p,
+                    preformed_ta=preformed_ta,
+                    preformed_si=preformed_si,
+                    scale_factors=scale_factors)
+    #%%
+    Canth_2002_T = p2.make_3D(trace_output.canth.values, ocnmask_T)
+    preformed_p_T = p2.make_3D(trace_output.preformed_p.values, ocnmask_T)
+    preformed_si_T = p2.make_3D(trace_output.preformed_si.values, ocnmask_T)
+    preformed_ta_T = p2.make_3D(trace_output.preformed_ta.values, ocnmask_T)
+    predictor_T_T = p2.make_3D(predictor_measurements[:, 1], ocnmask_T)
+    predictor_S_T = p2.make_3D(predictor_measurements[:, 0], ocnmask_T)
+    
+    Canth_2002 = Canth_2002_T.transpose([2, 0, 1])
+    preformed_p = preformed_p_T.transpose([2, 0, 1])
+    preformed_si = preformed_si_T.transpose([2, 0, 1])
+    preformed_ta = preformed_ta_T.transpose([2, 0, 1])
+    predictor_T = predictor_T_T.transpose([2, 0, 1])
+    predictor_S = predictor_S_T.transpose([2, 0, 1])
 
-    # load in TRACE data (GLODAP gridded represents year 2002, so must subtract off anthropogenic C in 2002 to get preindustrial levels)
-    Canth_2002 = p2.loadmat(data_path + 'TRACEv1/trace_outputs_2002.mat')
-    Canth_2002 = Canth_2005['trace_outputs_2002']
-    Canth_2002 = Canth_2002.reshape(len(model_lon), len(model_lat), len(model_depth), order='F')
-    Canth_2002 = Canth_2002.transpose([2, 0, 1])
+    p2.plot_surface3d(model_lon, model_lat, predictor_T, 0, -5, 35, 'viridis', 'temperature')
+    p2.plot_surface3d(model_lon, model_lat, predictor_S, 0, 20, 45, 'viridis', 'salinity')
+    p2.plot_surface3d(model_lon, model_lat, preformed_p, 0, 0, 3, 'viridis', 'preformed phosphate')
+    p2.plot_surface3d(model_lon, model_lat, preformed_si, 0, 0, 200, 'viridis', 'preformed silicate')
+    p2.plot_surface3d(model_lon, model_lat, preformed_ta, 0, 2000, 2600, 'viridis', 'preformed total alkalinity')
+    p2.plot_surface3d(model_lon, model_lat, Canth_2002, 0, -10, 100, 'viridis', 'anthropogenic carbon (µmol kg-1)')
+    p2.plot_longitude3d(model_lat, model_depth, Canth_2002, 0, -10, 100, 'viridis', 'Canth')
 
+#%%
     # upload regridded GLODAP data
+    DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC.npy')   # dissolved inorganic carbon [µmol kg-1]
     AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA.npy')   # total alkalinity [µmol kg-1]
-    T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy')
-    S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy')
+    T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy') # temperature [ºC]
+    S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy') # salinity [unitless]
     Si_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/silicate.npy') # silicate [µmol kg-1]
     P_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/PO4.npy') # phosphate [µmol kg-1]
 
@@ -255,9 +294,18 @@ def run_experiment(experiment):
     pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
     pressure = pressure_3D[ocnmask == 1].flatten(order='F')
 
-    # upload preindustrial pH on OCIM grid
-    pH_preind = np.load(data_path + 'TRACEv1/preindustrial_pH.npy')
+    # calculate preindustrial pH from GLODAP DIC minus Canth to get preindustrial DIC and GLODAP TA, assuming steady state
+    DIC_preind_3D = p2.flatten(DIC_3D,ocnmask) - Canth_2002
+    DIC_preind = p2.flatten(DIC_preind_3D, ocnmask)
 
+    # calculate preindustrial pH from DIC in 2002 minus Canth in 2002 AND TA in 2002 (assuming steady state)
+
+    # pyCO2SYS v2
+    co2sys_preind = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
+                    pressure=pressure, total_silicate=Si, total_phosphate=P)
+
+    pH_preind = co2sys_preind['pH']
+    
     # set up air-sea gas exchange (Wanninkhof, 2014)
 
     # upload regridded NCEP/DOE reanalysis II data
