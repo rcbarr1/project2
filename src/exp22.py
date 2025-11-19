@@ -89,10 +89,11 @@ rho = 1025 # seawater density for volume to mass [kg m-3]
 t_per_file = 2000 # number of time steps 
 
 def set_experiment_parameters(test=False):
-    # SET EXPERIMENTAL VARIABLES: WEEKEND RUN
+    # SET EXPERIMENTAL VARIABLES
     # - length of time of experiment/time stepping
     # - depth of addition
     # - location of addition
+    # - year to start simulation
     # - emissions scenarios
     # - experiment names
     # in this experiment, amount of addition is set as the maximum amount of AT
@@ -106,26 +107,27 @@ def set_experiment_parameters(test=False):
     dt3 = 1 # 1 year
 
     # just year time steps
-    exp0_t = np.arange(0,1000,dt3)
+    exp0_t = np.arange(0,200,dt3)
     
     # experiment with dt = 1/12 (1 month) time steps
-    exp1_t = np.arange(0,1000,dt2)
+    exp1_t = np.arange(0,200,dt2)
 
     # experiment with dt = 1/360 (1 day) time steps
-    exp2_t = np.arange(0,1000,dt1) 
+    exp2_t = np.arange(0,200,dt1) 
 
     # another with dt = 1/8640 (1 hour) time steps
-    exp3_t = np.arange(0,1000,dt0) 
+    exp3_t = np.arange(0,200,dt0) 
 
     # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
     t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
     t1 = np.arange(1, 10, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
     t2 = np.arange(10, 100, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
-    t3 = np.arange(100, 1000, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
+    t3 = np.arange(100, 200, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
     exp4_t = np.concatenate((t0, t1, t2, t3))
 
     exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-    exp_t_names = ['t0', 't1', 't2', 't3', 't4']
+    exp_ts = [exp0_t, exp1_t, exp2_t]
+    exp_t_names = ['t0', 't1', 't2']
 
     # DEPTHS OF ADDITION
 
@@ -165,8 +167,11 @@ def set_experiment_parameters(test=False):
     # no emissions scenario
     #q_emissions = np.zeros(nt)
 
+    # with starting year
+    start_year = 2030
+
     # with emissions scenario
-    scenarios = ['none'] 
+    scenarios = ['none', 'ssp126', 'ssp245', 'ssp534_OS'] 
 
     # set up experiments to run 
     experiments = []
@@ -179,7 +184,8 @@ def set_experiment_parameters(test=False):
                     for scenario in ['none']:
                             experiments.append({'exp_t': exp_t,
                                                 'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
-                                                'scenario': scenario,
+                                                'scenario': 'ssp126',
+                                                'start_year': 2002,
                                                 'tag': 'TEST'})
     # real experiments
     else:
@@ -190,11 +196,12 @@ def set_experiment_parameters(test=False):
                             experiments.append({'exp_t': exp_t,
                                                 'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
                                                 'scenario': scenario,
+                                                'start_year' : start_year,
                                                 'tag': datetime.now().strftime("%Y-%m-%d") + '_' + exp_t_name + '_' + scenario})
     return experiments
 
 def run_experiment(experiment):
-    experiment_name = 'exp21_' + experiment['tag']
+    experiment_name = 'exp22_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
 
     # pull experimental parameters out of dictionary
@@ -202,85 +209,14 @@ def run_experiment(experiment):
     nt = len(t) # total number of time steps
     dt = np.diff(t, prepend=np.nan) # difference between each time step [yr]
     q_AT_locations_mask = experiment['q_AT_locations_mask']
+    start_year = experiment['start_year']
     scenario = experiment['scenario']
 
-    #%% calculate preindustrial pH using pyTRACE
-    # create list of longitudes (ºE), latitudes (ºN), and depths (m) in TRACE format
-    # this order is required for TRACE
-    lon, lat, depth = np.meshgrid(model_lon, model_lat, model_depth, indexing='ij')
-    ocim_coordinates = np.array([lon.ravel(order='F'), lat.ravel(order='F'), depth.ravel(order='F'), ]).T # reshape meshgrid points into a list of coordinates to interpolate to
-    ocim_coordinates = ocim_coordinates[ocnmask.flatten(order='F').astype(bool)]
-
-    # GLODAP gridded product is adjusted to 2002, so need Canth in 2002 to subtract off GLODAP DIC
-    dates_2002 = 2015 * np.ones([ocim_coordinates.shape[0],1])
-
-    # upload regridded glodap data for temperature and salinity
+    # upload regridded GLODAP data
     T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy') # temperature [ºC]
     S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy') # salinity [unitless]
-
-    # transpose to match requirements for PyTRACE
-    T_3D_T = T_3D.transpose([1, 2, 0])
-    S_3D_T = S_3D.transpose([1, 2, 0])
-    ocnmask_T = ocnmask.transpose([1, 2, 0])
-
-    predictor_measurements = np.vstack([S_3D_T.flatten(order='F'), T_3D_T.flatten(order='F')]).T
-    predictor_measurements = predictor_measurements[ocnmask_T.flatten(order='F').astype(bool)]
-
-    trace_output = trace(output_coordinates=ocim_coordinates,
-                        dates=dates_2002[:,0],
-                        predictor_measurements=predictor_measurements,
-                        predictor_types=[1, 2],
-                        atm_co2_trajectory=1)
-    
-    # right now, pyTRACE is estimating some preformed P and Si as <0, which is
-    # resulting in NaN Canth. for now, am fixing this by setting <0 values =0.
-    # also pulling preformed AT and scale factors to make second pyTRACE
-    # calculation faster
-    preformed_p = trace_output.preformed_p.values
-    preformed_p[preformed_p < 0] = 0
-    preformed_ta = trace_output.preformed_ta.values
-    preformed_si = trace_output.preformed_si.values
-    preformed_si[preformed_si < 0] = 0
-    scale_factors = trace_output.scale_factors.values
-
-    trace_output = trace(output_coordinates=ocim_coordinates,
-                    dates=dates_2002[:,0],
-                    predictor_measurements=predictor_measurements,
-                    predictor_types=[1, 2],
-                    atm_co2_trajectory=1,
-                    preformed_p=preformed_p,
-                    preformed_ta=preformed_ta,
-                    preformed_si=preformed_si,
-                    scale_factors=scale_factors)
-    #%%
-    Canth_2002_T = p2.make_3D(trace_output.canth.values, ocnmask_T)
-    preformed_p_T = p2.make_3D(trace_output.preformed_p.values, ocnmask_T)
-    preformed_si_T = p2.make_3D(trace_output.preformed_si.values, ocnmask_T)
-    preformed_ta_T = p2.make_3D(trace_output.preformed_ta.values, ocnmask_T)
-    predictor_T_T = p2.make_3D(predictor_measurements[:, 1], ocnmask_T)
-    predictor_S_T = p2.make_3D(predictor_measurements[:, 0], ocnmask_T)
-    
-    Canth_2002 = Canth_2002_T.transpose([2, 0, 1])
-    preformed_p = preformed_p_T.transpose([2, 0, 1])
-    preformed_si = preformed_si_T.transpose([2, 0, 1])
-    preformed_ta = preformed_ta_T.transpose([2, 0, 1])
-    predictor_T = predictor_T_T.transpose([2, 0, 1])
-    predictor_S = predictor_S_T.transpose([2, 0, 1])
-
-    p2.plot_surface3d(model_lon, model_lat, predictor_T, 0, -5, 35, 'viridis', 'temperature')
-    p2.plot_surface3d(model_lon, model_lat, predictor_S, 0, 20, 45, 'viridis', 'salinity')
-    p2.plot_surface3d(model_lon, model_lat, preformed_p, 0, 0, 3, 'viridis', 'preformed phosphate')
-    p2.plot_surface3d(model_lon, model_lat, preformed_si, 0, 0, 200, 'viridis', 'preformed silicate')
-    p2.plot_surface3d(model_lon, model_lat, preformed_ta, 0, 2000, 2600, 'viridis', 'preformed total alkalinity')
-    p2.plot_surface3d(model_lon, model_lat, Canth_2002, 0, -10, 100, 'viridis', 'anthropogenic carbon (µmol kg-1)')
-    p2.plot_longitude3d(model_lat, model_depth, Canth_2002, 0, -10, 100, 'viridis', 'Canth')
-
-#%%
-    # upload regridded GLODAP data
     DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC.npy')   # dissolved inorganic carbon [µmol kg-1]
     AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA.npy')   # total alkalinity [µmol kg-1]
-    T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy') # temperature [ºC]
-    S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy') # salinity [unitless]
     Si_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/silicate.npy') # silicate [µmol kg-1]
     P_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/PO4.npy') # phosphate [µmol kg-1]
 
@@ -294,18 +230,21 @@ def run_experiment(experiment):
     pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
     pressure = pressure_3D[ocnmask == 1].flatten(order='F')
 
+    # calculate preindustrial DIC using TRACE
+    Canth_2002_3D = p2.calculate_canth('none', 2002, T_3D, S_3D, ocnmask, model_depth, model_lon, model_lat)
+    
     # calculate preindustrial pH from GLODAP DIC minus Canth to get preindustrial DIC and GLODAP TA, assuming steady state
-    DIC_preind_3D = p2.flatten(DIC_3D,ocnmask) - Canth_2002
+    DIC_preind_3D = DIC_3D - Canth_2002_3D
     DIC_preind = p2.flatten(DIC_preind_3D, ocnmask)
-
-    # calculate preindustrial pH from DIC in 2002 minus Canth in 2002 AND TA in 2002 (assuming steady state)
-
     # pyCO2SYS v2
     co2sys_preind = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
                     pressure=pressure, total_silicate=Si, total_phosphate=P)
-
     pH_preind = co2sys_preind['pH']
-    
+
+    # calculate anthropogenic carbon at starting year with TRACE
+    Canth_3D = p2.calculate_canth(scenario, start_year, T_3D, S_3D, ocnmask, model_depth, model_lon, model_lat)
+    Canth = p2.flatten(Canth_3D, ocnmask)
+
     # set up air-sea gas exchange (Wanninkhof, 2014)
 
     # upload regridded NCEP/DOE reanalysis II data
@@ -350,17 +289,6 @@ def run_experiment(experiment):
     ds = None
     file_number = -1
     
-    # set up emissions scenario
-    
-    # get annual emissions
-    atmospheric_xCO2 = np.zeros(nt)
-
-    if scenario != 'none':
-        atmospheric_xCO2_time, atmospheric_xCO2_annual = p2.get_emissions_scenario(data_path, scenario) 
-
-        # interpolate atmospheric CO2 to match time stepping of simulation
-        atmospheric_xCO2 = np.interp(t + 2015, atmospheric_xCO2_time, atmospheric_xCO2_annual)
-
     # construct matrix C
     # matrix form:
     #  dc/dt = A * c + q
@@ -393,14 +321,12 @@ def run_experiment(experiment):
     #     [ ∆q_CDR,AT + ∆q_diss,AT - ∆q_prod,AT    ] --> m * nt, q[(m+1):(2*m+1)]
     
     q = np.zeros((1 + 2*m))
-    
+
     # time stepping simulation forward
     
     # set initial baseline to evaluate if co2sys recalculation is needed
-    AT_at_last_calc = AT.copy()
-    DIC_at_last_calc = DIC.copy()
     AT_current = AT.copy()
-    DIC_current = DIC.copy()
+    DIC_current = DIC_preind + Canth
   
     # not calculating delAT/delDIC/delxCO2 at time = 0 (this time step is initial conditions only)
     for idx in tqdm(range(1,nt)):
@@ -482,26 +408,32 @@ def run_experiment(experiment):
         
         # reset q vector
         q *= 0
-        
+
+        # recalculate anthropogenic carbon if the year has incremented since the last whole number
+        # do not recalculate if no scenario selected --> anthropogenic CO2 will remain at level
+        # at specified start year
+        if scenario != 'none':
+            Canth_3D = p2.calculate_canth(scenario, t[idx] + start_year, T_3D, S_3D, ocnmask, model_depth, model_lon, model_lat)
+            Canth = p2.flatten(Canth_3D, ocnmask)
+
         # AT and DIC are equal to initial AT and DIC + whatever the change
-        # in AT and DIC seen in previous time step are
+        # in AT and DIC seen in previous time step are + whatever the 
+        # anthropogenic carbon in this year is
         AT_current = AT + c[(m+1):(2*m+1), 0]
-        DIC_current = DIC + c[1:(m+1), 0]
+        DIC_current = DIC_preind + c[1:(m+1), 0] + Canth
         
         # calculate carbonate system
-        AT_at_last_calc = AT_current.copy()
-        DIC_at_last_calc = DIC_current.copy()
         # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
         # do this for only surface ocean grid cells
         # this is PyCO2SYSv2
-        co2sys = pyco2.sys(dic=DIC_current, alkalinity=AT_current,
-                            salinity=S, temperature=T, pressure=pressure,
-                            total_silicate=Si, total_phosphate=P)
+        co2sys_current = pyco2.sys(dic=DIC_current, alkalinity=AT_current,
+                                salinity=S, temperature=T, pressure=pressure,
+                                total_silicate=Si, total_phosphate=P)
     
         # extract key results arrays
-        pCO2 = co2sys['pCO2'] # pCO2 [µatm]
-        aqueous_CO2 = co2sys['CO2'] # aqueous CO2 [µmol kg-1]
-        R_C = co2sys['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
+        pCO2 = co2sys_current['pCO2'] # pCO2 [µatm]
+        aqueous_CO2 = co2sys_current['CO2'] # aqueous CO2 [µmol kg-1]
+        R_C = co2sys_current['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
     
         # calculate revelle factor w.r.t. AT [unitless]
         # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
@@ -516,12 +448,10 @@ def run_experiment(experiment):
         R_A[0:ns] = R_A_surf
         
         # calculate rest of Nowicki et al. parameters
-        beta_C = DIC/aqueous_CO2 # [unitless]
+        beta_C = DIC_current/aqueous_CO2 # [unitless]
         beta_A = AT/aqueous_CO2 # [unitless]
         K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
         
-        print('\ncarbonate system recalculated (t = ' + str(t[idx]) + ')')
-    
         # calculate "A" matrix
     
         # dimensions
@@ -588,14 +518,14 @@ def run_experiment(experiment):
         # calculate AT required to return to preindustrial pH
         # using DIC at previous time step (initial DIC + modeled change in DIC) and preindustrial pH
         # apply mask (q_AT_locations_mask) at this step to choose which grid cells AT is added to
-        DIC_new = DIC + c[1:(m+1), 0]
-        AT_new = AT + c[(m+1):(2*m+1), 0]
-        AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, AT_mask=p2.flatten(q_AT_locations_mask,ocnmask), low=0, high=200, tol=1e-6, maxiter=50)
 
-        # make sure there are no negative values
-        if len(AT_to_offset[AT_to_offset<0]) != 0:
-            print('error: AT offset is negative')
-            break
+        # solve for AT to add
+        co2sys_desired = pyco2.sys(dic=DIC_current, pH=pH_preind,
+                                salinity=S, temperature=T, pressure=pressure,
+                                total_silicate=Si, total_phosphate=P)
+        AT_desired = co2sys_desired['alkalinity']
+        AT_to_offset = (AT_desired - AT_current) * p2.flatten(q_AT_locations_mask, ocnmask) # only add AT where mask is 1, rest is 0
+        AT_to_offset[AT_to_offset < 0] = 0 # 
 
         # from this offset, calculate rate at which AT must be applied
         # by solving discretized equation for q(t)
@@ -691,8 +621,10 @@ def run_experiment(experiment):
 
         # delete pyco2sys objects to avoid running out of memory
         if 'co2sys' in globals(): del co2sys
-        if 'co2sys_preind' in globals(): del co2sys
-        if 'co2sys_000001' in globals(): del co2sys
+        if 'co2sys_preind' in globals(): del co2sys_preind
+        if 'co2sys_000001' in globals(): del co2sys_000001
+        if 'co2sys_current' in globals(): del co2sys_current
+        if 'co2sys_desired' in globals(): del co2sys_desired
         gc.collect()
         jax.clear_caches()
 

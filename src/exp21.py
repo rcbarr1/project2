@@ -276,8 +276,6 @@ def run_experiment(experiment):
                     pressure=pressure, total_silicate=Si, total_phosphate=P)
 
     pH_preind = co2sys_preind['pH']
-    avg_pH_preind = np.nanmean(pH_preind)
-
     pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
 
     # set up air-sea gas exchange (Wanninkhof, 2014)
@@ -494,8 +492,6 @@ def run_experiment(experiment):
         beta_A = AT/aqueous_CO2 # [unitless]
         K0 = aqueous_CO2/pCO2*rho # [µmol CO2 m-3 (µatm CO2)-1], in derivation this is defined in per volume units so used density to get there
         
-        print('\ncarbonate system recalculated (t = ' + str(t[idx]) + ')')
-    
         # calculate "A" matrix
     
         # dimensions
@@ -564,12 +560,14 @@ def run_experiment(experiment):
         # apply mask (q_AT_locations_mask) at this step to choose which grid cells AT is added to
         DIC_new = DIC + c[1:(m+1), 0]
         AT_new = AT + c[(m+1):(2*m+1), 0]
-        AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, AT_mask=p2.flatten(q_AT_locations_mask,ocnmask), low=0, high=200, tol=1e-6, maxiter=50)
 
-        # make sure there are no negative values
-        if len(AT_to_offset[AT_to_offset<0]) != 0:
-            print('error: AT offset is negative')
-            break
+        # solve for AT to add
+        co2sys_desired = pyco2.sys(dic=DIC_current, pH=pH_preind,
+                                salinity=S, temperature=T, pressure=pressure,
+                                total_silicate=Si, total_phosphate=P)
+        AT_desired = co2sys_desired['alkalinity']
+        AT_to_offset = (AT_desired - AT_new) * p2.flatten(q_AT_locations_mask, ocnmask) # only add AT where mask is 1, rest is 0
+        AT_to_offset[AT_to_offset < 0] = 0 # get rid of any negative values        
 
         # from this offset, calculate rate at which AT must be applied
         # by solving discretized equation for q(t)

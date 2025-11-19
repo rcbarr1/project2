@@ -31,6 +31,7 @@ import matplotlib.animation as animation
 import torch
 import torch.nn as nn
 import joblib
+from pyTRACE import trace
 
 def loadmat(filename):
     '''
@@ -1077,6 +1078,87 @@ def estimate_AT_to_add(model_path, pH_preind, DIC, AT, T, S, pressure, Si, P, AT
     AT_to_offset[gets_AT] = np.squeeze(y_pred_real)
     
     return AT_to_offset
+def calculate_canth(scenario, year, T_3D, S_3D, ocnmask, model_depth, model_lon, model_lat):
+    """
+    calculates anthropogenic carbon stored in the ocean relative to a preindustrial
+    (280 ppm) baseline using pyTRACE.
+
+    Parameters
+    ----------
+    scenario : string of the following choices: 'none', 'ssp119', 'ssp126', 'ssp245', 'ssp370', 'ssp460_NTCF', 'ssp434', 'ssp460', 'ssp534_OS'
+    year : year to calculate anthropogenic carbon at
+    T_3D : array of temperatures [ºC] of shape len(model_depth), len(model_lon), len(model_lon)
+    S_3D : array of salinities of shape len(model_depth), len(model_lon), len(model_lon)
+    ocnmask : mask of shape len(model_depth), len(model_lon), len(model_lon) where 1 marks an ocean cell and 0 marks land
+    model_depth : array of model depth levels
+    model_lat : array pf model latitudes
+    model_lon : array of model longitudes
+
+    Returns
+    ----------
+    Canth_3D : anthropogenic carbon [µmol kg-1] at each combination of depth/lat/lon provided.
+    """
+
+    # truncate year to nearest whole number
+
+    if year > 2015 and scenario == 'none':
+        raise ValueError('error: future year chosen (after 2015) but no emissions scenario selected')
+    
+    # set up emissions scenario
+    # note: none = no perturbation to atmospheric co2, NOT trace historical scenario. error is raised
+    # if projections forward are attempted with none. GLODAP 2002 data is used as baseline and no
+    # change to Revelle factors due to emissions are included. Other scenarios follow Meinshausen et al. (2020)
+    scenario_dict = {'none' : 2, 'ssp119': 2, 'ssp126' : 3, 'ssp245' : 4, 'ssp370' : 5,
+                     'ssp360_NTCF' : 6, 'ssp434' : 7, 'ssp460' : 8, 'ssp534_OS' : 9}
+
+    # transpose to match requirements for PyTRACE
+    T_3D_T = T_3D.transpose([1, 2, 0])
+    S_3D_T = S_3D.transpose([1, 2, 0])
+    ocnmask_T = ocnmask.transpose([1, 2, 0])
+
+    predictor_measurements = np.vstack([S_3D_T.flatten(order='F'), T_3D_T.flatten(order='F')]).T
+    predictor_measurements = predictor_measurements[ocnmask_T.flatten(order='F').astype(bool)]
+    
+    # create list of longitudes (ºE), latitudes (ºN), and depths (m) in TRACE format
+    # this order is required for TRACE
+    lon, lat, depth = np.meshgrid(model_lon, model_lat, model_depth, indexing='ij')
+    ocim_coordinates = np.array([lon.ravel(order='F'), lat.ravel(order='F'), depth.ravel(order='F'), ]).T # reshape meshgrid points into a list of coordinates to interpolate to
+    ocim_coordinates = ocim_coordinates[ocnmask_T.flatten(order='F').astype(bool)]
+
+    dates = year * np.ones([ocim_coordinates.shape[0],1])
+
+    trace_output = trace(output_coordinates=ocim_coordinates,
+                         dates=dates[:,0],
+                         predictor_measurements=predictor_measurements,
+                         predictor_types=[1, 2],
+                         atm_co2_trajectory=scenario_dict[scenario],
+                         verbose_tf=False)
+    
+    # right now, pyTRACE is estimating some preformed P and Si as <0, which is
+    # resulting in NaN Canth. for now, am fixing this by setting <0 values =0.
+    # also pulling preformed AT and scale factors to make second pyTRACE
+    # calculation faster
+    preformed_p = trace_output.preformed_p.values
+    preformed_p[preformed_p < 0] = 0
+    preformed_ta = trace_output.preformed_ta.values
+    preformed_si = trace_output.preformed_si.values
+    preformed_si[preformed_si < 0] = 0
+    scale_factors = trace_output.scale_factors.values
+
+    trace_output = trace(output_coordinates=ocim_coordinates,
+                         dates=dates[:,0],
+                         predictor_measurements=predictor_measurements,
+                         predictor_types=[1, 2],
+                         atm_co2_trajectory=scenario_dict[scenario],
+                         preformed_p=preformed_p,
+                         preformed_ta=preformed_ta,
+                         preformed_si=preformed_si,
+                         scale_factors=scale_factors,
+                         verbose_tf=False)
+    
+    Canth_3D = make_3D(trace_output.canth.values, ocnmask_T).transpose([2, 0, 1])
+
+    return Canth_3D
 
 def get_emissions_scenario(data_path, scenario_name):
     """
@@ -1233,7 +1315,7 @@ def plot_longitude3d(lats, depths, variable, longitude, vmin, vmax, cmap, title)
     plt.xlabel('latitude (ºN)')
     plt.ylabel('depth (m)')
     plt.title(title)
-    plt.xlim([-90, 90]), plt.ylim([5500, 0])
+    plt.xlim([-90, 90]), plt.ylim([depths.max(), 0])
     
 def build_lme_masks(shp_path, ocnmask, lats, lons):
     lmes = gpd.read_file(shp_path)

@@ -564,7 +564,13 @@ def run_experiment(experiment):
         DIC_new = DIC + c[1:(m+1), 0]
         AT_new = AT + c[(m+1):(2*m+1), 0]
         # diagnostics
-        AT_to_offset = p2.calculate_AT_to_add(pH_preind, DIC_new, AT_new, T, S, pressure, Si, P, AT_mask=p2.flatten(q_AT_locations_mask,ocnmask), low=0, high=200, tol=1e-6, maxiter=50)
+        # solve for AT to add
+        co2sys_desired = pyco2.sys(dic=DIC_current, pH=pH_preind,
+                                salinity=S, temperature=T, pressure=pressure,
+                                total_silicate=Si, total_phosphate=P)
+        AT_desired = co2sys_desired['alkalinity']
+        AT_to_offset = (AT_desired - AT_new) * p2.flatten(q_AT_locations_mask, ocnmask) # only add AT where mask is 1, rest is 0
+        AT_to_offset[AT_to_offset < 0] = 0 # get rid of any negative values
         t2 = time()
 
         # make sure there are no negative values
@@ -675,8 +681,10 @@ def run_experiment(experiment):
 
         # delete pyco2sys objects to avoid running out of memory
         if 'co2sys' in globals(): del co2sys
-        if 'co2sys_preind' in globals(): del co2sys
-        if 'co2sys_000001' in globals(): del co2sys
+        if 'co2sys_preind' in globals(): del co2sys_preind
+        if 'co2sys_000001' in globals(): del co2sys_000001
+        if 'co2sys_current' in globals(): del co2sys_current
+        if 'co2sys_desired' in globals(): del co2sys_desired
         gc.collect()
         jax.clear_caches()
 
