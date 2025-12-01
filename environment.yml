@@ -7,17 +7,22 @@ dependencies:
   - cftime=1.6.4
   - geopandas=1.0.1
   - geopandas-base=1.0.1
+  - gsw=3.6.19
   - h5netcdf=1.2.0
   - joblib=1.4.2
   - matplotlib=3.10.3
   - netcdf4=1.6.5
+  - numba=0.61.2
   - numpy=1.24.4
   - pandas=2.3.0
   - petsc=3.21.1
   - petsc4py=3.21.1
   - pip
   - pytorch=2.6.0
-  - scipy
+  - pyyaml=6.0.1
+  - seawater=3.3.5
+  - setuptools=72.1.0
+  - scipy=1.13.1
   - shapely=2.1.1
   - suitesparse=5.10.1
   - tbb=2022.2.0

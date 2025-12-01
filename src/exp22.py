@@ -107,22 +107,22 @@ def set_experiment_parameters(test=False):
     dt3 = 1 # 1 year
 
     # just year time steps
-    exp0_t = np.arange(0,200,dt3)
+    exp0_t = np.arange(0,50,dt3)
     
     # experiment with dt = 1/12 (1 month) time steps
-    exp1_t = np.arange(0,200,dt2)
+    exp1_t = np.arange(0,50,dt2)
 
     # experiment with dt = 1/360 (1 day) time steps
-    exp2_t = np.arange(0,200,dt1) 
+    exp2_t = np.arange(0,50,dt1) 
 
     # another with dt = 1/8640 (1 hour) time steps
-    exp3_t = np.arange(0,200,dt0) 
+    exp3_t = np.arange(0,50,dt0) 
 
     # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
     t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
-    t1 = np.arange(1, 10, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
-    t2 = np.arange(10, 100, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
-    t3 = np.arange(100, 200, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
+    t1 = np.arange(1, 5, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
+    t2 = np.arange(5, 10, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
+    t3 = np.arange(10, 50, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
     exp4_t = np.concatenate((t0, t1, t2, t3))
 
     exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
@@ -168,7 +168,8 @@ def set_experiment_parameters(test=False):
     #q_emissions = np.zeros(nt)
 
     # with starting year
-    start_year = 2030
+    start_year = 2015 # year to start simulation
+    start_CDR = 2030 # year to start CDR deployment
 
     # with emissions scenario
     scenarios = ['none', 'ssp126', 'ssp245', 'ssp534_OS'] 
@@ -186,6 +187,7 @@ def set_experiment_parameters(test=False):
                                                 'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
                                                 'scenario': 'ssp126',
                                                 'start_year': 2002,
+                                                'start_CDR' : 2002,
                                                 'tag': 'TEST'})
     # real experiments
     else:
@@ -197,6 +199,7 @@ def set_experiment_parameters(test=False):
                                                 'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
                                                 'scenario': scenario,
                                                 'start_year' : start_year,
+                                                'start_CDR' : start_CDR,
                                                 'tag': datetime.now().strftime("%Y-%m-%d") + '_' + exp_t_name + '_' + scenario})
     return experiments
 
@@ -210,6 +213,7 @@ def run_experiment(experiment):
     dt = np.diff(t, prepend=np.nan) # difference between each time step [yr]
     q_AT_locations_mask = experiment['q_AT_locations_mask']
     start_year = experiment['start_year']
+    start_CDR = experiment['start_CDR']
     scenario = experiment['scenario']
 
     # upload regridded GLODAP data
@@ -513,38 +517,43 @@ def run_experiment(experiment):
         # calculate left hand side according to Euler backward method
         LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
     
-        # for now, assuming NaOH (no change in DIC)
+        print('current year: ' + str(t[idx] + start_year))
+        print('start CDR year: ' + str(start_CDR))
         
-        # calculate AT required to return to preindustrial pH
-        # using DIC at previous time step (initial DIC + modeled change in DIC) and preindustrial pH
-        # apply mask (q_AT_locations_mask) at this step to choose which grid cells AT is added to
+        if t[idx] + start_year >= start_CDR:
+            print('cdr performed')
+            # for now, assuming NaOH (no change in DIC)
+            
+            # calculate AT required to return to preindustrial pH
+            # using DIC at previous time step (initial DIC + modeled change in DIC) and preindustrial pH
+            # apply mask (q_AT_locations_mask) at this step to choose which grid cells AT is added to
 
-        # solve for AT to add
-        co2sys_desired = pyco2.sys(dic=DIC_current, pH=pH_preind,
-                                salinity=S, temperature=T, pressure=pressure,
-                                total_silicate=Si, total_phosphate=P)
-        AT_desired = co2sys_desired['alkalinity']
-        AT_to_offset = (AT_desired - AT_current) * p2.flatten(q_AT_locations_mask, ocnmask) # only add AT where mask is 1, rest is 0
-        AT_to_offset[AT_to_offset < 0] = 0 # 
+            # solve for AT to add
+            co2sys_desired = pyco2.sys(dic=DIC_current, pH=pH_preind,
+                                    salinity=S, temperature=T, pressure=pressure,
+                                    total_silicate=Si, total_phosphate=P)
+            AT_desired = co2sys_desired['alkalinity']
+            AT_to_offset = (AT_desired - AT_current) * p2.flatten(q_AT_locations_mask, ocnmask) # only add AT where mask is 1, rest is 0
+            AT_to_offset[AT_to_offset < 0] = 0 # 
 
-        # from this offset, calculate rate at which AT must be applied
-        # by solving discretized equation for q(t)
-        # OCIM manual eqn. 40: (I - dt * TR) * c_t = c_(t-dt) + dt * q(t)
-        # solve for q(t): q(t) = [(I - dt * TR) * c_t - c_(t-dt)] / dt
-        # --> define c_t as modern DIC + whatever AT required to get to
-        #     preind pH
-        # --> define c_(t-1) as preindustrial DIC + preindustrial AT (which
-        #     we are saying is the same as GLODAP AT)
-        # set CDR perturbation equal to this RATE in mixed layer only
-        # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
-        #del_q_CDR_AT = (((sparse.eye(TR.shape[0], format="csr") - dt[idx] * TR) * (AT + AT_to_offset) - AT)) / dt[idx]
-        #del_q_CDR_AT *= p2.flatten(q_AT_locations_mask, ocnmask) # apply in mixed layer only
-        
-        # this doesn't work... try q(t) = AT_to_offset / dt [µmol AT kg-1 yr-1]??
-        del_q_CDR_AT = AT_to_offset / dt[idx]        
- 
-        # add in source/sink vectors for ∆AT to q vector
-        q[(m+1):(2*m+1)] = del_q_CDR_AT
+            # from this offset, calculate rate at which AT must be applied
+            # by solving discretized equation for q(t)
+            # OCIM manual eqn. 40: (I - dt * TR) * c_t = c_(t-dt) + dt * q(t)
+            # solve for q(t): q(t) = [(I - dt * TR) * c_t - c_(t-dt)] / dt
+            # --> define c_t as modern DIC + whatever AT required to get to
+            #     preind pH
+            # --> define c_(t-1) as preindustrial DIC + preindustrial AT (which
+            #     we are saying is the same as GLODAP AT)
+            # set CDR perturbation equal to this RATE in mixed layer only
+            # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
+            #del_q_CDR_AT = (((sparse.eye(TR.shape[0], format="csr") - dt[idx] * TR) * (AT + AT_to_offset) - AT)) / dt[idx]
+            #del_q_CDR_AT *= p2.flatten(q_AT_locations_mask, ocnmask) # apply in mixed layer only
+            
+            # this doesn't work... try q(t) = AT_to_offset / dt [µmol AT kg-1 yr-1]??
+            del_q_CDR_AT = AT_to_offset / dt[idx]        
+    
+            # add in source/sink vectors for ∆AT to q vector
+            q[(m+1):(2*m+1)] = del_q_CDR_AT
         
         # calculate right hand side according to Euler backward method
         RHS = c[:,0] + np.squeeze(dt[idx] * q)
