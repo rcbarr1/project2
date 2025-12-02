@@ -82,8 +82,9 @@ model_vols = model_data['vol'].to_numpy() # m^3
 # some other important numbers
 grid_cell_depth = model_data['wz'].to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
 z1 = grid_cell_depth[1, 0, 0] # depth of first model layer [m]
-ns = int(np.nansum(ocnmask[0,:,:])) # number of surface grid cells
 rho = 1025 # seawater density for volume to mass [kg m-3]
+surf_idx = p2.get_depth_idx(ocnmask,0) # indicies of surface grid cells in 3D array flattened by p2.flatten()
+
 #%%
 # rules for saving files
 t_per_file = 2000 # number of time steps 
@@ -153,7 +154,7 @@ def set_experiment_parameters(test=False):
     #q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
 
     # to do all lat/lons
-    q_AT_latlons = [ocnmask[0,:,:].copy()]
+    q_AT_latlons = [ocnmask.copy()]
 
     # to constrain lat/lon of addition to LME(s)
     # get masks for each large marine ecosystem (LME)
@@ -442,14 +443,14 @@ def run_experiment(experiment):
         # calculate revelle factor w.r.t. AT [unitless]
         # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
         # to speed up, only calculating this in surface
-        co2sys_000001 = pyco2.sys(dic=DIC_current[0:ns], alkalinity=AT_current[0:ns]+0.000001, salinity=S[0:ns],
-                                temperature=T[0:ns], pressure=pressure[0:ns], total_silicate=Si[0:ns],
-                                total_phosphate=P[0:ns])
+        co2sys_000001 = pyco2.sys(dic=DIC_current[surf_idx], alkalinity=AT_current[surf_idx]+0.000001, salinity=S[surf_idx],
+                                temperature=T[surf_idx], pressure=pressure[surf_idx], total_silicate=Si[surf_idx],
+                                total_phosphate=P[surf_idx])
     
         pCO2_000001 = co2sys_000001['pCO2']
-        R_A_surf = ((pCO2_000001 - pCO2[0:ns])/pCO2[0:ns]) / (0.000001/AT[0:ns])
+        R_A_surf = ((pCO2_000001 - pCO2[surf_idx])/pCO2[surf_idx]) / (0.000001/AT[surf_idx])
         R_A = np.full(R_C.shape, np.nan)
-        R_A[0:ns] = R_A_surf
+        R_A[surf_idx] = R_A_surf
         
         # calculate rest of Nowicki et al. parameters
         beta_C = DIC_current/aqueous_CO2 # [unitless]
@@ -517,11 +518,7 @@ def run_experiment(experiment):
         # calculate left hand side according to Euler backward method
         LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
     
-        print('current year: ' + str(t[idx] + start_year))
-        print('start CDR year: ' + str(start_CDR))
-        
         if t[idx] + start_year >= start_CDR:
-            print('cdr performed')
             # for now, assuming NaOH (no change in DIC)
             
             # calculate AT required to return to preindustrial pH

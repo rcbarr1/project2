@@ -180,6 +180,22 @@ def make_3D(e_flat, ocnmask):
     
     return e_3D
 
+def get_depth_idx(ocnmask, depth_level):
+    '''
+    returns indicies in 3D array flattened using flatten() above that correspond to 
+    values at a depth level represented by depth_idx
+    '''
+
+    nz, ny, nx = ocnmask.shape
+
+    depth_index_full = np.tile(np.arange(nz), ny * nx) # fortran ordering
+
+    mask = ocnmask.flatten(order='F').astype(bool)
+    depth_index = depth_index_full[mask]
+
+    return np.where(depth_index == depth_level)[0]
+
+
 def find_MLD(model_lon, model_lat, ocnmask, MLD_da, latm, lonm, type_flag):
     """
     Reads in the Holte et al. monthly mixed layer climatology and interpolates
