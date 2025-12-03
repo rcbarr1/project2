@@ -765,7 +765,7 @@ def regrid_cobalt(cobalt_vrbl, model_depth, model_lat, model_lon, ocnmask, data_
     ----------
     cobalt_vrbl : variable from COBALT model to regrid
     model_depth : array of model depth levels
-    model_lat : array pf model latitudes
+    model_lat : array of model latitudes
     model_lon : array of model longitudes
     ocnmask : mask same shape as glodap_var where 1 marks an ocean cell and 0 marks land
     data_path : where data is stored
@@ -845,6 +845,88 @@ def regrid_cobalt(cobalt_vrbl, model_depth, model_lat, model_lon, ocnmask, data_
     #np.save(output_path + var_name + '_averaged_regridded_inpainted.npy', var_inpainted)
     np.save(data_path + 'COBALT_regridded/' + var_name + '.npy', var_inpainted)
     print('\tfinal regridded array saved')
+
+def interp_TRACE(data_path, time, scenario, model_depth, model_lon, model_lat, ocnmask):
+    '''
+    Given a time and an emissions scenario, interpolate TRACE gridded product
+    (downloaded from https://zenodo.org/records/15003059) to return a 3-D array
+    of Canth matching OCIM grid.
+
+    If time is before 2020, historical/none scenario is used. If time is
+    after 2020, one of the following emissions scenarios must be specified:
+    ssp119, ssp126, ssp245, ssp370, ssp370_lowNTCF, ssp434, ssp460, ssp534_OS	
+
+    Parameters
+    ----------
+    data_path = path to folder which contains TRACE gridded product data
+    time = time, in decimal years, of interest
+    scenario = emissions scenario of interest ('historical', 'ssp119', 'ssp126',
+               'ssp245', 'ssp370', 'ssp370_lowNTCF', 'ssp434', 'ssp460', 'ssp534_OS')
+    model_depth = array of model depth levels
+    model_lon = array of model longitudes
+    model_lat = array of model latitudes
+    ocnmask = mask with shape len(model_depth) x len(model_lon) x len(model_lat) where
+              1 marks an ocean cell and 0 marks land
+    
+    Returns
+    ----------
+    canth = array with same shape as ocnmask that has values of canth at each grid cell
+            interpolated from TRACE gridded product given a time of interest and an emissions scenario
+
+    '''
+    # pull correct data from gridded dataset
+    scenarios = {'none' : 1, 'ssp119' : 2, 'ssp126' : 3, 'ssp245' : 4, 'ssp370' : 5,
+                 'ssp370_lowNTCF' : 6,'ssp434' : 7,'ssp460' : 8,'ssp534_OS' : 9}
+
+    if scenario not in list(scenarios.keys()):
+        raise ValueError(f"Invalid value: {scenario!r}. Must be one of: {', '.join(list(scenarios.keys()))}")
+
+    if time >= 2020:
+        if scenario == 'none':
+            raise ValueError("'none' scenario chosen, but time > 2020 selected.")
+        trace_data = xr.open_dataset(data_path + 'TRACE_gridded/CanthFromTRACECO2Pathway' + str(scenarios[scenario]) + '.nc', decode_times=False)    
+    else:
+        trace_data = xr.open_dataset(data_path + 'TRACE_gridded/CanthFromTRACECO2Pathway1.nc', decode_times=False)    
+
+    # interpolate to time of interest
+    trace_data = trace_data.interp(time=time)
+
+    # pull out arrays of depth, latitude, and longitude from TRACE gridded product
+    trace_depth = trace_data['depth'].to_numpy() # m below sea surface
+    trace_lon = trace_data['lon'].to_numpy()     # ºE
+    trace_lat = trace_data['lat'].to_numpy()     # ºN
+
+    # pull out values of DIC and TA from TRACE
+    canth = trace_data['canth'].copy().values
+
+    # switch order of TRACE dimensions to match OCIM dimensions
+    canth = np.transpose(canth, (0, 2, 1))
+    
+    # create interpolator
+    interp = RegularGridInterpolator((trace_depth, trace_lon, trace_lat), canth, bounds_error=False, fill_value=None)
+
+    # transform model_lon for anything < 20 (because TRACE goes from 20ºE - 380ºE)
+    model_lon[model_lon < 20] += 360
+
+    # create meshgrid for OCIM grid
+    depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
+
+    # reshape meshgrid points into a list of coordinates to interpolate to
+    query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
+
+    # perform interpolation (regrid TRACE data to match OCIM grid)
+    canth = interp(query_points)
+
+    # transform results back to model grid shape
+    canth = canth.reshape(depth.shape)
+
+    # inpaint nans
+    canth = inpaint_nans3d(canth, mask=ocnmask.astype(bool))
+
+    # transform model_lon and meshgrid back for anything > 360
+    model_lon[model_lon > 360] -= 360
+    
+    return canth
 
 def schmidt(gas, temperature):
     '''

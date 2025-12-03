@@ -111,6 +111,15 @@ labels = ['dt=1yr, no ssp',
           'dt=1mon, ssp245', 
           'dt=1mon, ssp534_OS']
 
+scenarios = ['none',
+             'ssp126',
+             'ssp245',
+             'ssp534_OS',
+             'none',
+             'ssp126',
+             'ssp245',
+             'ssp534_OS',]
+
 linestyles = ['-','-','-','-','--','--','--','--',]
 linecolors = ['#023880', '#96adcf', '#145a6a', '#2eceb7','#023880', '#96adcf', '#145a6a', '#2eceb7']
 ncol = 2
@@ -128,6 +137,19 @@ experiment_names = ['exp22_2025-12-01_t0_none',
                     'exp22_2025-12-01_t2_ssp126',
                     'exp22_2025-12-01_t2_ssp245',
                     'exp22_2025-12-01_t2_ssp534_OS',]
+
+scenarios = ['none',
+             'ssp126',
+             'ssp245',
+             'ssp534_OS',
+             'none',
+             'ssp126',
+             'ssp245',
+             'ssp534_OS',
+             'none',
+             'ssp126',
+             'ssp245',
+             'ssp534_OS',]
 
 labels = ['dt=1yr, no_ssp',
           'dt=1yr, ssp126',
@@ -259,6 +281,29 @@ plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
 plt.xlabel('year')
 plt.ylabel('change in atmospheric CO2 (ppm)')
 #plt.ylim([-90, 0])
+
+#%% total atmospheric CO2 over time
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+# use xarray to open metadata of files of interest
+for exp_idx in range(len(experiment_names)):
+# create emissions scenario trajectory
+# pull from CO2TrajectoriesAdjusted.txt (maybe update get co2 trajectory function?)
+
+    ds = xr.open_mfdataset(
+        output_path + experiment_names[exp_idx] + '_*.nc',
+        combine='by_coords',
+        chunks={'time': 10},
+        parallel=True)
+    
+    # only actually pull values into memory needed for plotting
+    ax.plot(ds['time'].values, ds['delxCO2'].values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
+    
+plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
+plt.xlabel('year')
+plt.ylabel('atmospheric CO2 (ppm)')
+
 #%% change in DIC (surface)
 fig = plt.figure(figsize=(5,5), dpi=200)
 ax = fig.gca()
