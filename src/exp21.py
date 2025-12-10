@@ -81,9 +81,10 @@ model_vols = model_data['vol'].to_numpy() # m^3
 # some other important numbers
 grid_cell_depth = model_data['wz'].to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
 z1 = grid_cell_depth[1, 0, 0] # depth of first model layer [m]
-ns = int(np.nansum(ocnmask[0,:,:])) # number of surface grid cells
 rho = 1025 # seawater density for volume to mass [kg m-3]
+surf_idx = p2.get_depth_idx(ocnmask,0) # indicies of surface grid cells in 3D array flattened by p2.flatten()
 
+#%%
 # rules for saving files
 t_per_file = 2000 # number of time steps 
 
@@ -105,22 +106,22 @@ def set_experiment_parameters(test=False):
     dt3 = 1 # 1 year
 
     # just year time steps
-    exp0_t = np.arange(0,1000,dt3)
+    exp0_t = np.arange(0,50,dt3)
 
     # experiment with dt = 1/12 (1 month) time steps
-    exp1_t = np.arange(0,1000,dt2)
+    exp1_t = np.arange(0,50,dt2)
 
     # experiment with dt = 1/360 (1 day) time steps
-    exp2_t = np.arange(0,1000,dt1) 
+    exp2_t = np.arange(0,50,dt1) 
 
     # another with dt = 1/8640 (1 hour) time steps
-    exp3_t = np.arange(0,1000,dt0) 
+    exp3_t = np.arange(0,50,dt0) 
 
     # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
     t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
-    t1 = np.arange(1, 10, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
-    t2 = np.arange(10, 100, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
-    t3 = np.arange(100, 1000, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
+    t1 = np.arange(1, 5, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
+    t2 = np.arange(5, 10, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
+    t3 = np.arange(10, 50, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
     exp4_t = np.concatenate((t0, t1, t2, t3))
 
     exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
@@ -193,7 +194,7 @@ def set_experiment_parameters(test=False):
     return experiments
 
 def run_experiment(experiment):
-    experiment_name = 'exp21_' + experiment['tag']
+    experiment_name = 'TESTexp21_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
 
     # pull experimental parameters out of dictionary
@@ -478,14 +479,14 @@ def run_experiment(experiment):
         # calculate revelle factor w.r.t. AT [unitless]
         # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
         # to speed up, only calculating this in surface
-        co2sys_000001 = pyco2.sys(dic=DIC_current[0:ns], alkalinity=AT_current[0:ns]+0.000001, salinity=S[0:ns],
-                                temperature=T[0:ns], pressure=pressure[0:ns], total_silicate=Si[0:ns],
-                                total_phosphate=P[0:ns])
+        co2sys_000001 = pyco2.sys(dic=DIC_current[surf_idx], alkalinity=AT_current[surf_idx]+0.000001, salinity=S[surf_idx],
+                                temperature=T[surf_idx], pressure=pressure[surf_idx], total_silicate=Si[surf_idx],
+                                total_phosphate=P[surf_idx])
     
         pCO2_000001 = co2sys_000001['pCO2']
-        R_A_surf = ((pCO2_000001 - pCO2[0:ns])/pCO2[0:ns]) / (0.000001/AT[0:ns])
+        R_A_surf = ((pCO2_000001 - pCO2[surf_idx])/pCO2[surf_idx]) / (0.000001/AT[surf_idx])
         R_A = np.full(R_C.shape, np.nan)
-        R_A[0:ns] = R_A_surf
+        R_A[surf_idx] = R_A_surf
         
         # calculate rest of Nowicki et al. parameters
         beta_C = DIC/aqueous_CO2 # [unitless]
@@ -663,8 +664,8 @@ def run_experiment(experiment):
 
         # delete pyco2sys objects to avoid running out of memory
         if 'co2sys' in globals(): del co2sys
-        if 'co2sys_preind' in globals(): del co2sys
-        if 'co2sys_000001' in globals(): del co2sys
+        if 'co2sys_preind' in globals(): del co2sys_preind
+        if 'co2sys_000001' in globals(): del co2sys_000001
         gc.collect()
         jax.clear_caches()
 

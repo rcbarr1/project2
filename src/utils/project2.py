@@ -413,7 +413,7 @@ def inpaint_nans3d(array_3d, iterations=10, mask=None):
     else:
         land_mask = np.zeros_like(array_3d, dtype=bool)
     
-    for _ in tqdm(range(iterations), desc="inpainting NaNs"):
+    for _ in range(iterations):
         # count valid neighbors
         valid = ~np.isnan(interpolated)
         neighbor_sum = convolve(np.nan_to_num(interpolated), kernel, mode='wrap')
@@ -1258,93 +1258,62 @@ def calculate_canth(scenario, year, T_3D, S_3D, ocnmask, model_depth, model_lon,
 
     return Canth_3D
 
-def get_emissions_scenario(data_path, scenario_name):
+def get_CO2_scenario(scenario, times):
     """
     Finds atmospheric CO2 concentrations over the historical record and a
     selected shared socioeconomic pathway (SSP). Returns time in units of years
     and emissions in units of mol CO2 (mol air-1). Scenarios available are
-    'none', 'ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434', 'ssp460',
-    'ssp534_OS', and 'ssp585'. Data is from 
+    'none', 'ssp119', 'ssp126', 'ssp245', 'ssp370', 'ssp370_NTCF', 'ssp434',
+    'ssp460', and 'ssp534_OS'. Data is from pyTRACE CO2TrajectoriesAdjusted.txt,
+    which is originally from:
     https://greenhousegases.science.unimelb.edu.au/#!/ghg?mode=downloads
+
+    note: historical data is different from SSPs by < 1 ppm even before SSPs
+    diverge starting in 2016 
     
     Parameters
     ----------
-    data_path : String
-        path to folder where emissions data is stored
-    scenario_name: String
+    scenario: String
         name of historical or future emissions scenario of interest
-        ('none', 'ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434',
-         'ssp460', 'ssp534_OS', 'ssp585')
+        ('none', 'ssp119', 'ssp126', 'ssp245', 'ssp370', 'ssp370_NTCF',
+        'ssp434', 'ssp460', 'ssp534_OS')
+    times: 1-D array of floats
+        array of times (in decimal years CE) of interest
         
     Returns
     ----------
-    time: 1-D array of floats
-        time (in years CE) of emissions
-    atmospheric_xCO2: 1-D array of floats
-        cumulative amount of emissions in mol CO2 (mol air)-1 since year 0 CE
+    atmospheric_CO2: 1-D array of floats
+        cumulative amount of emissions in µmol CO2 (mol air)-1 (aka ppm) since year 0 CE
     """
-    none_flag = 0
-    # accessed from https://greenhousegases.science.unimelb.edu.au/#!/ghg?mode=downloads
-    historical_data = xr.open_dataset(data_path + 'carbon-dioxide/historical/CMIP6GHGConcentrationHistorical_1_2_0/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_CMIP_UoM-CMIP-1-2-0_gr1-GMNHSH_0000-2014.nc', decode_times=False)
-    if scenario_name == 'none':
-        ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-IMAGE-ssp126-1-2-1_gr1-GMNHSH_2015-2500.nc') # 2ºC pathway
-        none_flag = 1
-    elif scenario_name =='ssp126':
-        ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-IMAGE-ssp126-1-2-1_gr1-GMNHSH_2015-2500.nc') # 2ºC pathway
-    elif scenario_name == 'ssp245':
-        ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-MESSAGE-GLOBIOM-ssp245-1-2-1_gr1-GMNHSH_2015-2500.nc') # "middle of the road" scenario
-    elif scenario_name == 'ssp370':
-        ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-AIM-ssp370-1-2-1_gr1-GMNHSH_2015-2500.nc') # medium-high with "regional rivalry"
-    elif scenario_name == 'ssp370_NTCF':
-        ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-AIM-ssp370-1-2-1_gr1-GMNHSH_2015-2500.nc')# same as SSP3-7.0, but with reduced near-term climate forcers (i.e. methane)
-    elif scenario_name == 'ssp434':
-        ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-GCAM4-ssp434-1-2-1_gr1-GMNHSH_2015-2500.nc') # moderate mitigation
-    elif scenario_name == 'ssp460':
-        ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-GCAM4-ssp460-1-2-1_gr1-GMNHSH_2015-2500.nc') # "inequality" dominated world
-    elif scenario_name == 'ssp534_OS':
-        ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-REMIND-MAGPIE-ssp534-over-1-2-1_gr1-GMNHSH_2015-2500.nc')# "overshoot scenario", follows SSP5-8.5, then steep emissions cuts and negative emissions
-    elif scenario_name == 'ssp585':
-        ssp_data = xr.open_dataset(data_path + 'carbon-dioxide/future/CMIP6GHGConcentrationProjections_1_2_1/mole-fraction-of-carbon-dioxide-in-air_input4MIPs_GHGConcentrations_ScenarioMIP_UoM-REMIND-MAGPIE-ssp585-1-2-1_gr1-GMNHSH_2015-2500.nc') # high emissions scenario 
+
+    scenarios = {'none' : 1, 'ssp119' : 2, 'ssp126' : 3, 'ssp245' : 4, 'ssp370' : 5,
+                'ssp370_lowNTCF' : 6,'ssp434' : 7,'ssp460' : 8,'ssp534_OS' : 9}
+
+    if scenario not in list(scenarios.keys()):
+        raise ValueError(f"Invalid value: {scenario!r}. Must be one of: {', '.join(list(scenarios.keys()))}")
+
+    # open file, pull out scenario of interest
+
+    data_file = './src/utils/pyTRACE/pyTRACE/data/CO2TrajectoriesAdjusted.txt'
+    data = np.loadtxt(data_file)
+
+    CO2_data_years = data[:,0]
+    CO2_data = data[:,scenarios[scenario]]
+    print(len(CO2_data_years))
+    print(len(CO2_data))
+
+    if scenario != 'none':
+        # interpolate for times of interest
+        atmospheric_CO2 = np.interp(times, CO2_data_years, CO2_data)
+
     else:
-        raise ValueError("Emissions scenario must be one of the following strings: 'none', 'ssp126', 'ssp245', 'ssp370', 'ssp360_NTCF', 'ssp434', 'ssp460', 'ssp534_OS', 'ssp585'.")
-    
-    # pull out time stamps and emissions data
-    
-    # historical data
-    # pull out historical times in decimal years
-    #historical_time = np.asarray(historical['time'].values, dtype=float)
-    #was weird uploading from .nc file, so doing this manually (checked .csv files for correct times)
-    historical_time = np.arange(0, 2015)
-    
-    # pull out emissions over time, convert to xCO2 [mol CO2 (mol air)-1] from ppm
-    historical_xCO2 = historical_data.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
+        if times[0] >= 2020:
+            raise ValueError("'none' scenario chosen, but time > 2020 selected.")
         
-    # future scenario
-    # pull out future time in decimal years
-    ssp_time = []
-    for timestamp in ssp_data.time.values:
-        # start and end of the year in NoLeap calendar
-        year_start = cftime.DatetimeNoLeap(timestamp.year, 1, 1)
-        year_end   = cftime.DatetimeNoLeap(timestamp.year + 1, 1, 1)
-        
-        # 365 days in NoLeap
-        year_length = (year_end - year_start).days
-        fraction = (timestamp - year_start).days / year_length
-        
-        ssp_time.append(timestamp.year + fraction)
+        # return constant atmospheric CO2 based on start year & historical scenario
+        atmospheric_CO2 = np.interp(times[0], CO2_data_years, CO2_data) * np.ones_like(times)
 
-    ssp_time = np.array(ssp_time)
-    
-    # pull out emissions over time, convert to xCO2 [mol CO2 (mol air)-1] from ppm
-    ssp_xCO2 = ssp_data.mole_fraction_of_carbon_dioxide_in_air.values[:,0] * 1e-6 # [mol CO2 (mol air)-1]
-    
-    # combine into one historical + future array
-    time = np.concatenate((historical_time, ssp_time))
-    atmospheric_xCO2 = np.concatenate((historical_xCO2, ssp_xCO2))
-    
-    if none_flag == 1: atmospheric_xCO2 *= 0
-
-    return time, atmospheric_xCO2
+    return atmospheric_CO2
 
 def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
     

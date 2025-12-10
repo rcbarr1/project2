@@ -35,6 +35,8 @@ model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
 model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
 model_vols = model_data['vol'].to_numpy() # m^3
 
+model_data.close()
+
 # some other important numbers
 grid_cell_depth = model_data['wz'].to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
 z1 = grid_cell_depth[1, 0, 0] # depth of first model layer [m]
@@ -92,7 +94,7 @@ experiment_names = ['exp21_2025-11-05_t2_none',
                     'exp21NN_2025-11-05_t2_none']
 labels=['dt = 1 day (pyco2sys)', 'dt = 1 day (NN)']
 '''
-
+'''
 experiment_names = ['exp22_2025-12-01_t0_none',
                     'exp22_2025-12-01_t0_ssp126',
                     'exp22_2025-12-01_t0_ssp245',
@@ -138,6 +140,19 @@ experiment_names = ['exp22_2025-12-01_t0_none',
                     'exp22_2025-12-01_t2_ssp245',
                     'exp22_2025-12-01_t2_ssp534_OS',]
 
+experiment_names = ['exp23_2025-12-03_t0_none',
+                    'exp23_2025-12-03_t0_ssp126',
+                    'exp23_2025-12-03_t0_ssp245',
+                    'exp23_2025-12-03_t0_ssp534_OS',
+                    'exp23_2025-12-03_t1_none',
+                    'exp23_2025-12-03_t1_ssp126',
+                    'exp23_2025-12-03_t1_ssp245',
+                    'exp23_2025-12-03_t1_ssp534_OS',
+                    'exp23_2025-12-03_t2_none',
+                    'exp23_2025-12-03_t2_ssp126',
+                    'exp23_2025-12-03_t2_ssp245',
+                    'exp23_2025-12-03_t2_ssp534_OS',]
+
 scenarios = ['none',
              'ssp126',
              'ssp245',
@@ -158,19 +173,18 @@ labels = ['dt=1yr, no_ssp',
           'dt=1mon, no_ssp',
           'dt=1mon, ssp126',
           'dt=1mon, ssp245',
-          'dt=1mon, ssp534_OS'
-          'dt=1day, no_ssp'
+          'dt=1mon, ssp534_OS',
+          'dt=1day, no_ssp',
           'dt=1day, ssp126',
           'dt=1day, ssp245',
           'dt=1day, ssp534_OS']
           
 linestyles = ['-','-','-','-','--','--','--','--',':',':',':',':'] 
-linecolors = ['#023880', '#b8b2f0', '#1d7583', '#65b5d8', '#4a1999',
-              '#023880', '#b8b2f0', '#1d7583', '#65b5d8', '#4a1999',
-              '#023880', '#b8b2f0', '#1d7583', '#65b5d8', '#4a1999',]
+linecolors = ['#023880', '#96adcf', '#145a6a', '#2eceb7',
+              '#023880', '#96adcf', '#145a6a', '#2eceb7', 
+              '#023880', '#96adcf', '#145a6a', '#2eceb7',]
 ncol = 3
 start_year = 2015
-'''
 #%% pull in preindustrial baselines
 
 # get GLODAP data
@@ -186,7 +200,7 @@ T = p2.flatten(T_3D, ocnmask)
 Si = p2.flatten(Si_3D, ocnmask)
 P = p2.flatten(P_3D, ocnmask)
 
-# get TRACE data
+# get TRACE data (switch to interpolation for speed?)
 Canth_2002_3D = p2.calculate_canth('none', 2002, T_3D, S_3D, ocnmask, model_depth, model_lon, model_lat)
 Canth_3D = p2.calculate_canth('none', start_year, T_3D, S_3D, ocnmask, model_depth, model_lon, model_lat)
 
@@ -288,21 +302,23 @@ ax = fig.gca()
 
 # use xarray to open metadata of files of interest
 for exp_idx in range(len(experiment_names)):
-# create emissions scenario trajectory
-# pull from CO2TrajectoriesAdjusted.txt (maybe update get co2 trajectory function?)
-
     ds = xr.open_mfdataset(
         output_path + experiment_names[exp_idx] + '_*.nc',
         combine='by_coords',
         chunks={'time': 10},
         parallel=True)
-    
+
+    # get background atmospheric CO2 based on relevant CO2 scenario
+    atmospheric_CO2 = p2.get_CO2_scenario(scenarios[exp_idx], ds['time'].values)
+
     # only actually pull values into memory needed for plotting
-    ax.plot(ds['time'].values, ds['delxCO2'].values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
+    ax.plot(ds['time'].values, ds['delxCO2'].values + atmospheric_CO2, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
     
 plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
 plt.xlabel('year')
 plt.ylabel('atmospheric CO2 (ppm)')
+plt.title('atmospheric CO2 with maximum OAE')
+plt.ylim([310, 560])
 
 #%% change in DIC (surface)
 fig = plt.figure(figsize=(5,5), dpi=200)

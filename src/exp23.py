@@ -206,7 +206,7 @@ def set_experiment_parameters(test=False):
     return experiments
 
 def run_experiment(experiment):
-    experiment_name = 'exp22_' + experiment['tag']
+    experiment_name = 'TESTexp23_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
 
     # pull experimental parameters out of dictionary
@@ -238,7 +238,6 @@ def run_experiment(experiment):
 
     # calculate preindustrial DIC using TRACE
     Canth_2002_3D = p2.interp_TRACE(data_path, 2002, 'none', model_depth, model_lon, model_lat, ocnmask)
-    p2.plot_surface3d(model_lon, model_lat, Canth_2002_3D, 0, 0, 100, 'viridis', '')
 
     # calculate preindustrial pH from GLODAP DIC minus Canth to get preindustrial DIC and GLODAP TA, assuming steady state
     DIC_preind_3D = DIC_3D - Canth_2002_3D
@@ -422,13 +421,17 @@ def run_experiment(experiment):
         if scenario != 'none':
             Canth_3D = p2.interp_TRACE(data_path, start_year, scenario, model_depth, model_lon, model_lat, ocnmask)
             Canth = p2.flatten(Canth_3D, ocnmask)
+            print('new total Canth = ' + str(np.nansum(Canth)))
 
         # AT and DIC are equal to initial AT and DIC + whatever the change
         # in AT and DIC seen in previous time step are + whatever the 
         # anthropogenic carbon in this year is
         AT_current = AT + c[(m+1):(2*m+1), 0]
         DIC_current = DIC_preind + c[1:(m+1), 0] + Canth
-        
+
+        print('new current avg DIC (surf, unweighted)= ' + str(np.nanmean(DIC_current[surf_idx])))
+        print('new current avg DIC (unweighted) = ' + str(np.nanmean(DIC_current)))
+
         # calculate carbonate system
         # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
         # do this for only surface ocean grid cells
@@ -441,7 +444,9 @@ def run_experiment(experiment):
         pCO2 = co2sys_current['pCO2'] # pCO2 [µatm]
         aqueous_CO2 = co2sys_current['CO2'] # aqueous CO2 [µmol kg-1]
         R_C = co2sys_current['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
-    
+
+        print('new RC = ' + str(np.nanmean(R_C[surf_idx])))
+
         # calculate revelle factor w.r.t. AT [unitless]
         # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
         # to speed up, only calculating this in surface
@@ -453,6 +458,8 @@ def run_experiment(experiment):
         R_A_surf = ((pCO2_000001 - pCO2[surf_idx])/pCO2[surf_idx]) / (0.000001/AT[surf_idx])
         R_A = np.full(R_C.shape, np.nan)
         R_A[surf_idx] = R_A_surf
+        
+        print('new RA = ' + str(np.nanmean(R_A[surf_idx])))
         
         # calculate rest of Nowicki et al. parameters
         beta_C = DIC_current/aqueous_CO2 # [unitless]
