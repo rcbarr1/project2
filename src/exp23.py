@@ -635,7 +635,7 @@ def run_experiment(experiment):
         tracers['AT_added'][idx_file, :, :, :] = q_delAT_3D.astype('float32')
 
         # delete pyco2sys objects to avoid running out of memory
-        # if 'co2sys' in globals(): del co2sys
+        if 'co2sys' in globals(): del co2sys
         if 'co2sys_preind' in globals(): del co2sys_preind
         if 'co2sys_000001' in globals(): del co2sys_000001
         if 'co2sys_current' in globals(): del co2sys_current
