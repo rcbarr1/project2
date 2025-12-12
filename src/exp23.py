@@ -206,7 +206,7 @@ def set_experiment_parameters(test=False):
     return experiments
 
 def run_experiment(experiment):
-    experiment_name = 'TESTexp23_' + experiment['tag']
+    experiment_name = 'exp23_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
 
     # pull experimental parameters out of dictionary
@@ -419,7 +419,7 @@ def run_experiment(experiment):
         # do not recalculate if no scenario selected --> anthropogenic CO2 will remain at level
         # at specified start year
         if scenario != 'none':
-            Canth_3D = p2.interp_TRACE(data_path, start_year, scenario, model_depth, model_lon, model_lat, ocnmask)
+            Canth_3D = p2.interp_TRACE(data_path, t[idx] + start_year, scenario, model_depth, model_lon, model_lat, ocnmask)
             Canth = p2.flatten(Canth_3D, ocnmask)
             print('new total Canth = ' + str(np.nansum(Canth)))
 
@@ -635,7 +635,7 @@ def run_experiment(experiment):
         tracers['AT_added'][idx_file, :, :, :] = q_delAT_3D.astype('float32')
 
         # delete pyco2sys objects to avoid running out of memory
-        if 'co2sys' in globals(): del co2sys
+        # if 'co2sys' in globals(): del co2sys
         if 'co2sys_preind' in globals(): del co2sys_preind
         if 'co2sys_000001' in globals(): del co2sys_000001
         if 'co2sys_current' in globals(): del co2sys_current

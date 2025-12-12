@@ -194,7 +194,7 @@ def set_experiment_parameters(test=False):
     return experiments
 
 def run_experiment(experiment):
-    experiment_name = 'TESTexp21_' + experiment['tag']
+    experiment_name = 'exp21_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
 
     # pull experimental parameters out of dictionary

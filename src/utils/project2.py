@@ -881,6 +881,9 @@ def interp_TRACE(data_path, time, scenario, model_depth, model_lon, model_lat, o
     if scenario not in list(scenarios.keys()):
         raise ValueError(f"Invalid value: {scenario!r}. Must be one of: {', '.join(list(scenarios.keys()))}")
 
+    if time > 2500:
+        print('Warning: TRACE data only is available to 2500. Interpolating past this point is not advised.')
+
     if time >= 2020:
         if scenario == 'none':
             raise ValueError("'none' scenario chosen, but time > 2020 selected.")
@@ -1201,7 +1204,7 @@ def calculate_canth(scenario, year, T_3D, S_3D, ocnmask, model_depth, model_lon,
 
     if year > 2015 and scenario == 'none':
         raise ValueError('error: future year chosen (after 2015) but no emissions scenario selected')
-    
+
     # set up emissions scenario
     # note: none = no perturbation to atmospheric co2, NOT trace historical scenario. error is raised
     # if projections forward are attempted with none. GLODAP 2002 data is used as baseline and no

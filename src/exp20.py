@@ -206,9 +206,9 @@ experiment_attrs = ['adding max AT before reaching preind pH to all cells within
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 1%',
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1 (1 year) for 200 years with co2sys thresholding at 0%',
                     'adding max AT before reaching preind pH to all cells within mixed layer across full ocean surface using no emissions scenario and dt = 1/12 (1 month) for 200 years with co2sys thresholding at 0%',]
-exp_t = [exp3_t]
+exp_t = [exp0_t]
 
-experiment_names = ['TEST_exp20_2025-11-04_dt1day',]
+experiment_names = ['TEST_exp20_2025-12-10_dt1year',]
 
 thresholds = [0.0, 0.0, 0.0, 0.0]
 
