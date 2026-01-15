@@ -153,18 +153,18 @@ experiment_names = ['exp22_2025-12-10_t0_none',
                     'exp22_2025-12-10_t2_ssp245',
                     'exp22_2025-12-10_t2_ssp534_OS',]
 
-# experiment_names = ['exp23_2025-12-03_t0_none',
-#                     'exp23_2025-12-03_t0_ssp126',
-#                     'exp23_2025-12-03_t0_ssp245',
-#                     'exp23_2025-12-03_t0_ssp534_OS',
-#                     'exp23_2025-12-03_t1_none',
-#                     'exp23_2025-12-03_t1_ssp126',
-#                     'exp23_2025-12-03_t1_ssp245',
-#                     'exp23_2025-12-03_t1_ssp534_OS',
-#                     'exp23_2025-12-03_t2_none',
-#                     'exp23_2025-12-03_t2_ssp126',
-#                     'exp23_2025-12-03_t2_ssp245',
-#                     'exp23_2025-12-03_t2_ssp534_OS',]
+experiment_names = ['exp23_2026-01-06_t0_none',
+                    'exp23_2026-01-06_t0_ssp126',
+                    'exp23_2026-01-06_t0_ssp245',
+                    'exp23_2026-01-06_t0_ssp534_OS',
+                    'exp23_2026-01-06_t1_none',
+                    'exp23_2026-01-06_t1_ssp126',
+                    'exp23_2026-01-06_t1_ssp245',
+                    'exp23_2026-01-06_t1_ssp534_OS',
+                    'exp23_2026-01-06_t2_none',
+                    'exp23_2026-01-06_t2_ssp126',
+                    'exp23_2026-01-06_t2_ssp245',
+                    'exp23_2026-01-06_t2_ssp534_OS',]
 
 scenarios = ['none',
              'ssp126',
@@ -308,7 +308,6 @@ plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
 plt.xlabel('year')
 plt.ylabel('change in atmospheric CO2 (ppm)')
 #plt.ylim([-90, 0])
-plt.xlim([2015, 2021])
 
 #%% total atmospheric CO2 over time
 fig = plt.figure(figsize=(5,5), dpi=200)

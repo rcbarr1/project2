@@ -69,8 +69,8 @@ Naming convention for saving model runs (see .txt file for explanation of experi
 
 @author: Reese C. Barrett
 """
-
-import project2 as p2
+#%%
+from src.utils import project2 as p2
 import xarray as xr
 import numpy as np
 import PyCO2SYS as pyco2
@@ -83,8 +83,9 @@ import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 import matplotlib.animation as animation
 
-data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
-output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
+data_path = './data/'
+# output_path = './outputs/'
+output_path = '/Volumes/LaCie/outputs/'
 
 #%% load transport matrix (OCIM2-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
@@ -110,60 +111,91 @@ z1 = model_data['wz'].to_numpy()[1, 0, 0]
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
 
 #%% define regional masks (these are ROUGH approximations of burt paper)
+# global
 ocnmask_GLOBAL = ocnmask[0, :, :].copy()
+ocnmask_GLOBAL[:, 0:15] = 0
+ocnmask_GLOBAL[:, 76:90] = 0
 
 # subpolar north atlantic
 ocnmask_SPNA = ocnmask[0, :, :].copy()
 ocnmask_SPNA[0:150, :] = 0
 ocnmask_SPNA[174:180, :] = 0
 ocnmask_SPNA[:, 0:69] = 0
-ocnmask_SPNA[:, 80:90] = 0
+ocnmask_SPNA[:, 80:91] = 0
 
 # subpolar north pacific
 ocnmask_SPNP = ocnmask[0, :, :].copy()
 ocnmask_SPNP[0:69, :] = 0
 ocnmask_SPNP[118:180, :] = 0
 ocnmask_SPNP[:, 0:68] = 0
-ocnmask_SPNP[:, 78:90] = 0
+ocnmask_SPNP[:, 78:91] = 0
 
 # subtropical north atlantic
 ocnmask_STNA = ocnmask[0, :, :].copy()
 ocnmask_STNA[0:139, :] = 0
 ocnmask_STNA[177:180, :] = 0
 ocnmask_STNA[:, 0:57] = 0
-ocnmask_STNA[:, 69:90] = 0
+ocnmask_STNA[:, 69:91] = 0
 
 # subtropical north pacific
 ocnmask_STNP = ocnmask[0, :, :].copy()
 ocnmask_STNP[0:60, :] = 0
 ocnmask_STNP[125:180, :] = 0
 ocnmask_STNP[:, 0:53] = 0
-ocnmask_STNP[:, 68:90] = 0
+ocnmask_STNP[:, 68:91] = 0
 
 # indian ocean
 ocnmask_IND = ocnmask[0, :, :].copy()
 ocnmask_IND[0:20, :] = 0
 ocnmask_IND[50:180, :] = 0
 ocnmask_IND[:, 0:39] = 0
-ocnmask_IND[:, 61:90] = 0
+ocnmask_IND[:, 61:91] = 0
 
 # subtropical south atlantic
 ocnmask_STSA = ocnmask[0, :, :].copy()
 ocnmask_STSA[6:145, :] = 0
 ocnmask_STSA[:, 0:18] = 0
-ocnmask_STSA[:, 37:90] = 0
+ocnmask_STSA[:, 37:91] = 0
 
 # subtropical south pacific
 ocnmask_STSP = ocnmask[0, :, :].copy()
 ocnmask_STSP[0:77, :] = 0
 ocnmask_STSP[138:180, :] = 0
 ocnmask_STSP[:, 0:25] = 0
-ocnmask_STSP[:, 40:90] = 0
+ocnmask_STSP[:, 40:91] = 0
 
 # southern ocean
 ocnmask_SO = ocnmask[0, :, :].copy()
 ocnmask_SO[:, 0:13] = 0
-ocnmask_SO[:, 15:90] = 0
+ocnmask_SO[:, 15:91] = 0
+
+# adjust model lat to go from 20 - 380 (to match Burt figure)
+model_lon_shifted = model_lon.copy()
+model_lon_shifted[model_lon_shifted < 20] += 360
+
+# adjust ocnmasks to follow new lon conventions
+lon_order = np.argsort(model_lon_shifted)
+ocnmask_shifted = ocnmask[0,:,:].copy()
+ocnmask_GLOBAL_shifted = ocnmask_GLOBAL.copy()
+ocnmask_SPNA_shifted = ocnmask_SPNA.copy()
+ocnmask_SPNP_shifted = ocnmask_SPNP.copy()
+ocnmask_STNA_shifted = ocnmask_STNA.copy()
+ocnmask_STNP_shifted = ocnmask_STNP.copy()
+ocnmask_IND_shifted = ocnmask_IND.copy()
+ocnmask_STSA_shifted = ocnmask_STSA.copy()
+ocnmask_STSP_shifted = ocnmask_STSP.copy()
+ocnmask_SO_shifted = ocnmask_SO.copy()
+
+ocnmask_shifted = ocnmask_shifted[lon_order, :]
+ocnmask_GLOBAL_shifted = ocnmask_GLOBAL_shifted[lon_order, :]
+ocnmask_SPNA_shifted = ocnmask_SPNA_shifted[lon_order, :]
+ocnmask_SPNP_shifted = ocnmask_SPNP_shifted[lon_order, :]
+ocnmask_STNA_shifted = ocnmask_STNA_shifted[lon_order, :]
+ocnmask_STNP_shifted = ocnmask_STNP_shifted[lon_order, :]
+ocnmask_IND_shifted = ocnmask_IND_shifted[lon_order, :]
+ocnmask_STSA_shifted = ocnmask_STSA_shifted[lon_order, :]
+ocnmask_STSP_shifted = ocnmask_STSP_shifted[lon_order, :]
+ocnmask_SO_shifted = ocnmask_SO_shifted[lon_order, :]
 
 # plot mask locations
 fig, ax = plt.subplots(figsize=(12, 6))
@@ -171,71 +203,91 @@ extent = [0, 360, -90, 90]
 alpha = 0.6
 
 # plot land/ocean background
-rgba_land = np.zeros((model_lat.size, model_lon.size, 4))
+rgba_land = np.zeros((model_lat.size, model_lon_shifted.size, 4))
 rgba_land[..., :3] = 0.5  # gray color
-rgba_land[..., 3] = 1 - ocnmask[0, :, :].T  # opaque where land_mask == 0 (i.e., land)
+rgba_land[..., 3] = 1 - ocnmask_shifted.T  # opaque where land_mask == 0 (i.e., land)
 ax.imshow(rgba_land, origin='lower', extent=extent)
 
 # set up colors for each region
-color_hex_list = ["#6e7cb9", "#7bbcd5", "#d0e2af", "#f5db99", "#e89c81",
-                  "#d2848d", "#2c6184", "#d7b1c5"]
+# color_hex_list = ["#6e7cb9", "#7bbcd5", "#d0e2af", "#f5db99", "#e89c81",
+#                   "#d2848d", "#2c6184", "#d7b1c5"]
+color_hex_list = ["#d901d2", "#9d009c",
+                  "#01dcdf",  "#0ca1a3", "#02595a",
+                  "#d6d801", "#979701", "#4e4a07"]
 rgba_list = [mcolors.to_rgba(c, alpha=1) for c in color_hex_list]
 
 # plot each region
-rgba_ocnmask_SPNA = np.zeros((model_lat.size, model_lon.size, 4))
-rgba_ocnmask_SPNA[..., :] =  rgba_list[0]
-rgba_ocnmask_SPNA[..., 3] *= ocnmask_SPNA.T # alpha channel
-ax.imshow(rgba_ocnmask_SPNA, origin='lower', extent=extent)
+model_lon_plot = np.mod(model_lon_shifted, 360)
+sort_idx = np.argsort(model_lon_plot)
+model_lon_plot = model_lon_plot[sort_idx]
+ocnmask_plot = ocnmask_GLOBAL_shifted[sort_idx, :]
 
-rgba_ocnmask_SPNP = np.zeros((model_lat.size, model_lon.size, 4))
-rgba_ocnmask_SPNP[..., :] =  rgba_list[1]
-rgba_ocnmask_SPNP[..., 3] = ocnmask_SPNP.T # alpha channel
-ax.imshow(rgba_ocnmask_SPNP, origin='lower', extent=extent)
+ax.contourf(model_lon_plot, model_lat, ocnmask_plot.T,
+            levels=[0.5, 1.5],
+            colors='none',
+            hatches=['xx'])
 
-rgba_ocnmask_STNA = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
-rgba_ocnmask_STNA[..., :] =  rgba_list[2]
-rgba_ocnmask_STNA[..., 3] = ocnmask_STNA.T # alpha channel
-ax.imshow(rgba_ocnmask_STNA, origin='lower', extent=extent)
-
-rgba_ocnmask_STNP = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
-rgba_ocnmask_STNP[..., :] =  rgba_list[3]
-rgba_ocnmask_STNP[..., 3] = ocnmask_STNP.T # alpha channel
-ax.imshow(rgba_ocnmask_STNP, origin='lower', extent=extent)
-
-rgba_ocnmask_IND = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
-rgba_ocnmask_IND[..., :] =  rgba_list[4]
-rgba_ocnmask_IND[..., 3] = ocnmask_IND.T  # alpha channel
+rgba_ocnmask_IND = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
+rgba_ocnmask_IND[..., :] =  rgba_list[0]
+rgba_ocnmask_IND[..., 3] = ocnmask_IND_shifted.T  # alpha channel
 ax.imshow(rgba_ocnmask_IND, origin='lower', extent=extent)
 
-rgba_ocnmask_STSA = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
-rgba_ocnmask_STSA[..., :] =  rgba_list[5]
-rgba_ocnmask_STSA[..., 3] = ocnmask_STSA.T  # alpha channel
-ax.imshow(rgba_ocnmask_STSA, origin='lower', extent=extent)
-
-rgba_ocnmask_STSP = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
-rgba_ocnmask_STSP[..., :] =  rgba_list[6]
-rgba_ocnmask_STSP[..., 3] = ocnmask_STSP.T  # alpha channel
-ax.imshow(rgba_ocnmask_STSP, origin='lower', extent=extent)
-
-rgba_ocnmask_SO = np.zeros((model_lat.size, model_lon.size, 4))  # blue mask
-rgba_ocnmask_SO[..., :] =  rgba_list[7]
-rgba_ocnmask_SO[..., 3] = ocnmask_SO.T  # alpha channel
+rgba_ocnmask_SO = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
+rgba_ocnmask_SO[..., :] =  rgba_list[1]
+rgba_ocnmask_SO[..., 3] = ocnmask_SO_shifted.T  # alpha channel
 ax.imshow(rgba_ocnmask_SO, origin='lower', extent=extent)
 
+rgba_ocnmask_SPNP = np.zeros((model_lat.size, model_lon_shifted.size, 4))
+rgba_ocnmask_SPNP[..., :] =  rgba_list[2]
+rgba_ocnmask_SPNP[..., 3] = ocnmask_SPNP_shifted.T # alpha channel
+ax.imshow(rgba_ocnmask_SPNP, origin='lower', extent=extent)
+
+rgba_ocnmask_STNP = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
+rgba_ocnmask_STNP[..., :] =  rgba_list[3]
+rgba_ocnmask_STNP[..., 3] = ocnmask_STNP_shifted.T # alpha channel
+ax.imshow(rgba_ocnmask_STNP, origin='lower', extent=extent)
+
+rgba_ocnmask_STSP = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
+rgba_ocnmask_STSP[..., :] =  rgba_list[4]
+rgba_ocnmask_STSP[..., 3] = ocnmask_STSP_shifted.T  # alpha channel
+ax.imshow(rgba_ocnmask_STSP, origin='lower', extent=extent)
+
+rgba_ocnmask_SPNA = np.zeros((model_lat.size, model_lon_shifted.size, 4))
+rgba_ocnmask_SPNA[..., :] =  rgba_list[5]
+rgba_ocnmask_SPNA[..., 3] *= ocnmask_SPNA_shifted.T # alpha channel
+ax.imshow(rgba_ocnmask_SPNA, origin='lower', extent=extent)
+
+rgba_ocnmask_STNA = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
+rgba_ocnmask_STNA[..., :] =  rgba_list[6]
+rgba_ocnmask_STNA[..., 3] = ocnmask_STNA_shifted.T # alpha channel
+ax.imshow(rgba_ocnmask_STNA, origin='lower', extent=extent)
+
+rgba_ocnmask_STSA = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
+rgba_ocnmask_STSA[..., :] =  rgba_list[7]
+rgba_ocnmask_STSA[..., 3] = ocnmask_STSA_shifted.T  # alpha channel
+ax.imshow(rgba_ocnmask_STSA, origin='lower', extent=extent)
+
 # create legend
-region_names = ['SPNA', 'SPNP', 'STNA', 'STNP', 'IND', 'STSA', 'STSP', 'SO', 'GLOBAL']
+region_names = ['GLOBAL', 'Indian Ocean (IND)', 'Southern Ocean (SO)', 'Subpolar North Pacific (SPNP)', 'Subtropical North Pacific (STNP)', 'Subtropical South Pacific (STSP)', 'Subpolar North Atlantic (SPNA)', 'Subtropical North Atlantic (STNA)', 'Subtropical South Atlantic (STSA)']
 legend_patches = [
-    mpatches.Patch(color=color_hex_list[i], label=region_names[i])
+    mpatches.Patch(color=color_hex_list[i], label=region_names[i+1])
     for i in range(8)
 ]
+global_patch = mpatches.Patch(facecolor='none', edgecolor='k', hatch='xx', label='GLOBAL')
+legend_patches.insert(0, global_patch)
 
 ax.legend(
     handles=legend_patches,
     loc="upper center",
     frameon=True,
     bbox_to_anchor=(0.5, -0.05),
-    ncol=4
+    ncol=3,
+    fontsize=12
 )
+
+# remove axis numbering
+ax.get_xaxis().set_visible(False)
+ax.get_yaxis().set_visible(False)
 
 #%% set up air-sea gas exchange (Wanninkhof 2014)
 
@@ -651,61 +703,66 @@ ani.save('output_movie2.mp4', writer=writer, dpi=200)
 
 #%% calculate metrics to compare with burt results
 
-experiment_names = ['exp15_2025-08-30-SPNA.nc',
-                    'exp15_2025-08-30-SPNP.nc',
+experiment_names = ['exp15_2025-08-30-GLOBAL.nc',
+                    'exp15_2025-08-30-SPNA.nc',
                     'exp15_2025-08-30-STNA.nc',
-                    'exp15_2025-08-30-STNP.nc',
-                    'exp15_2025-08-30-IND.nc',
                     'exp15_2025-08-30-STSA.nc',
+                    'exp15_2025-08-30-SPNP.nc',
+                    'exp15_2025-08-30-STNP.nc',
                     'exp15_2025-08-30-STSP.nc',
-                    'exp15_2025-08-30-SO.nc',
-                    'exp15_2025-08-30-GLOBAL.nc']
+                    'exp15_2025-08-30-IND.nc',
+                    'exp15_2025-08-30-SO.nc']
 
-region_names = ['SPNA', 'SPNP', 'STNA', 'STNP', 'IND', 'STSA', 'STSP', 'SO', 'GLOBAL']
+region_names = ['GLOBAL', 'SPNA', 'STNA', 'STSA', 'SPNP', 'STNP', 'STSP', 'IND', 'SO']
+
+color_hex_list = ["#000000", 
+                  "#d6d801", "#979701", "#4e4a07",
+                  "#01dcdf",  "#0ca1a3", "#02595a",
+                  "#d901d2", "#9d009c"]
+
+linestyle = ['--', '-', '-',
+            '-', '-', '-',
+            '-', '-', '-']
+
 
 #%% DIC figure 4
-fig = plt.figure(figsize=(6,5), dpi=200)
+fig = plt.figure(figsize=(4.5,4.5), dpi=200)
 ax = fig.gca()
 
-# broadcast model_vols to convert ∆DIC from per kg to total
-#model_vols_broadcast = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat})
-
 for exp_idx in range(0, len(experiment_names)):
-#for exp_idx in range(0, 1):
     data = xr.open_dataset(output_path + experiment_names[exp_idx])
     model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆DIC from per kg to total
     Pg_del_DIC = data['delDIC'] * model_vols_xr * rho * 1e-6 * 12.01 * 1e-15 #  µmol kg-1 DIC to Pg C
-    ax.plot(data.time.values, Pg_del_DIC.sum(dim=['depth', 'lon', 'lat'], skipna=True), label=region_names[exp_idx])
+    ax.plot(data.time.values, Pg_del_DIC.sum(dim=['depth', 'lon', 'lat'], skipna=True), label=region_names[exp_idx], c=color_hex_list[exp_idx], ls=linestyle[exp_idx])
 
 ax.set_xlabel('Time (yr)')
 ax.set_ylabel('Total ∆DIC Inventory (Pg C)')
 ax.set_xlim([0, 75])
 ax.set_ylim([0, 180])
 ax.legend(
-    loc="upper center",
-    bbox_to_anchor=(0.5, -0.12),
-    ncol=4
+    loc="upper left",
+    ncol=1,
+    frameon=False
 )
 
 #%% AT figure 5a
-fig = plt.figure(figsize=(6,5), dpi=200)
+fig = plt.figure(figsize=(4.5,4.5), dpi=200)
 ax = fig.gca()
 
 for exp_idx in range(0, len(experiment_names)):
-#for exp_idx in range(0, 1):
     data = xr.open_dataset(output_path + experiment_names[exp_idx])
     model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆DIC from per kg to total
     Pg_del_AT = data['delAT'].isel(depth=0) * model_vols_xr.isel(depth=0) * rho * 1e-6 * 1e-15 #  µmol kg-1 AT to Pmol C
-    ax.plot(data.time.values, Pg_del_AT.sum(dim=['lon', 'lat'], skipna=True), label=region_names[exp_idx])
+    ax.plot(data.time.values, Pg_del_AT.sum(dim=['lon', 'lat'], skipna=True), label=region_names[exp_idx], c=color_hex_list[exp_idx], ls=linestyle[exp_idx])
 
 ax.set_xlabel('Time (yr)')
 ax.set_ylabel('Total Surface ∆AT Inventory (Pmol)')
 ax.set_xlim([0, 75])
 ax.set_ylim([0, 0.8])
 ax.legend(
-    loc="upper center",
-    bbox_to_anchor=(0.5, -0.12),
-    ncol=4
+    loc="upper left",
+    ncol=1,
+    frameon=False
 )
 
 
