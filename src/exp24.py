@@ -508,9 +508,13 @@ def run_experiment(experiment):
         if t[idx] + start_year == (start_CDR + dt[1]):
             # for now, assuming NaOH (no change in DIC)
             
-            # add 10 mol m-2 yr of AT to surface ocean for first time step only
+            # add 10 mol m-2 yr of AT to surface ocean for one month only
             # must convert to µmol kg-1 yr-1
-            del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) * (10 * 1e6 / z1 / rho)   
+
+            if dt[1] == 1:
+                del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) * (10 * 1e6 / z1 / rho) / 12 # divide by 12 if year-long time step
+            elif dt[1] == 1/12:
+               del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) * (10 * 1e6 / z1 / rho) 
 
             # add in source/sink vectors for ∆AT to q vector
             q[(m+1):(2*m+1)] = del_q_CDR_AT
