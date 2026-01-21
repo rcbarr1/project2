@@ -578,10 +578,10 @@ def run_experiment(experiment):
         q_delDIC_3D = np.full(ocnmask.shape, np.nan)
         q_delAT_3D = np.full(ocnmask.shape, np.nan)
         
-        c_delDIC_3D[ocnmask == 1] = np.reshape(c_delDIC, (-1,), order='F')
-        c_delAT_3D[ocnmask == 1] = np.reshape(c_delAT, (-1,), order='F')
-        q_delDIC_3D[ocnmask == 1] = np.reshape(q_delDIC, (-1,), order='F')
-        q_delAT_3D[ocnmask == 1] = np.reshape(q_delAT, (-1,), order='F')
+        c_delDIC_3D = p2.make_3D(c_delDIC, ocnmask)
+        c_delAT_3D = p2.make_3D(c_delAT, ocnmask)
+        q_delDIC_3D = p2.make_3D(q_delDIC, ocnmask)
+        q_delAT_3D = p2.make_3D(q_delAT, ocnmask)
             
         # write data to xarray
         ds.variables['time'][idx_file] = t[idx] + 2015

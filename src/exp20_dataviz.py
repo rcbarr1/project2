@@ -13,6 +13,7 @@ from src.utils import project2 as p2
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import PyCO2SYS as pyco2
 from tqdm import tqdm
 
@@ -198,6 +199,27 @@ linecolors = ['#023880', '#96adcf', '#145a6a', '#2eceb7',
               '#023880', '#96adcf', '#145a6a', '#2eceb7',]
 ncol = 3
 start_year = 2015
+
+#%% figures for OSM talk
+
+experiment_names = ['exp23_2026-01-16_t1_none',
+                    'exp23_2026-01-16_t1_ssp126',
+                    'exp23_2026-01-16_t1_ssp245',
+                    'exp23_2026-01-16_t1_ssp534_OS',]
+
+linestyles = ['-','-','-','-']
+linecolors = ['#00429d', '#7a64a8', '#bf89b6', '#ffb0de']
+labels = ['No emissions', 'SSP1-2.6', 'SSP2-4.5', 'SSP5-3.4OS']
+ncol = 1
+start_year = 2015
+mpl.rcParams['font.family'] = 'Calibri'
+textcolor = '#595959'
+mpl.rcParams['text.color'] = textcolor
+mpl.rcParams['axes.labelcolor'] = textcolor
+mpl.rcParams['xtick.color'] = textcolor
+mpl.rcParams['ytick.color'] = textcolor
+mpl.rcParams['font.weight'] = 'bold'
+
 #%% pull in preindustrial baselines
 
 # get GLODAP data
@@ -240,7 +262,7 @@ pH_preind = co2sys['pH']
 pH_preind_3D = p2.make_3D(pH_preind, ocnmask)
 
 #%% cumulative AT added
-fig = plt.figure(figsize=(5,5), dpi=200)
+fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
 
 # use xarray to open metadata of files of interest
@@ -261,12 +283,16 @@ for exp_idx in range(len(experiment_names)):
     # only actually pull values into memory needed for plotting
     ax.plot(ds['time'].values, AT_added_cum.compute().values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
     
-plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
-plt.xlabel('year')
-plt.ylabel('cumulative AT added to mixed layer (mol)')
+#plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
+plt.xlabel('Year', fontsize=11.5, weight='bold')
+plt.ylabel('Cumulative $A_{\mathbf{T}}$ added to mixed layer (mol)', fontsize=11.5, weight='bold')
+ax.spines['bottom'].set_color(textcolor)
+ax.spines['top'].set_color(textcolor)
+ax.spines['left'].set_color(textcolor)
+ax.spines['right'].set_color(textcolor)
 #plt.ylim([0, 6.5e16])
 #%% normal AT added
-fig = plt.figure(figsize=(5,5), dpi=200)
+fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
 
 # use xarray to open metadata of files of interest
@@ -285,12 +311,17 @@ for exp_idx in range(len(experiment_names)):
     
     ax.plot(ds['time'].values, AT_added.compute().values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
     
-plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
-plt.xlabel('year')
-plt.ylabel('AT added to mixed layer (mol)') 
+plt.legend(loc='upper right', ncol=ncol, fontsize=11.5)
+plt.xlabel('Year', fontsize=11.5, weight='bold')
+plt.ylabel('Instantaneous $A_{\mathbf{T}}$ added to mixed layer (mol)', fontsize=11.5, weight='bold') 
+ax.spines['bottom'].set_color(textcolor)
+ax.spines['top'].set_color(textcolor)
+ax.spines['left'].set_color(textcolor)
+ax.spines['right'].set_color(textcolor)
+
 
 #%% change in atmospheric CO2
-fig = plt.figure(figsize=(5,5), dpi=200)
+fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
 
 # use xarray to open metadata of files of interest
@@ -304,13 +335,17 @@ for exp_idx in range(len(experiment_names)):
     # only actually pull values into memory needed for plotting
     ax.plot(ds['time'].values, ds['delxCO2'].values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
     
-plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
-plt.xlabel('year')
-plt.ylabel('change in atmospheric CO2 (ppm)')
+plt.legend(loc='lower left', ncol=ncol)
+plt.xlabel('Year', fontsize=11.5, weight='bold')
+plt.ylabel('Change in atmospheric CO$_{2}$ (ppm)', fontsize=11.5, weight='bold')
+ax.spines['bottom'].set_color(textcolor)
+ax.spines['top'].set_color(textcolor)
+ax.spines['left'].set_color(textcolor)
+ax.spines['right'].set_color(textcolor)
 #plt.ylim([-90, 0])
 
 #%% total atmospheric CO2 over time
-fig = plt.figure(figsize=(5,5), dpi=200)
+fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
 
 # use xarray to open metadata of files of interest
@@ -326,26 +361,31 @@ for exp_idx in range(len(experiment_names)):
 
     # only actually pull values into memory needed for plotting
     ax.plot(ds['time'].values, ds['delxCO2'].values + atmospheric_CO2, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
+    ax.plot(ds['time'].values, atmospheric_CO2, label=labels[exp_idx], c=linecolors[exp_idx], ls='--')
     
-plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
-plt.xlabel('year')
-plt.ylabel('atmospheric CO2 (ppm)')
-plt.title('atmospheric CO2 with maximum OAE')
-plt.ylim([310, 560])
+#plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
+plt.xlabel('Year', fontsize=11.5, weight='bold')
+plt.ylabel('Atmospheric CO$_{2}$ (ppm)', fontsize=11.5, weight='bold')
+#plt.title('atmospheric CO2 with maximum OAE')
+#plt.ylim([310, 560])
+ax.spines['bottom'].set_color(textcolor)
+ax.spines['top'].set_color(textcolor)
+ax.spines['left'].set_color(textcolor)
+ax.spines['right'].set_color(textcolor)
 
 #%% change in DIC (surface)
-fig = plt.figure(figsize=(5,5), dpi=200)
+fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
 
 # plot preindustrial baseline
-ax.axhline(np.average(DIC_preind[surf_idx], weights=p2.flatten(model_vols,ocnmask)[surf_idx]), c='black', linestyle='--', label='preindustrial dic')
+ax.axhline(np.average(DIC_preind[surf_idx], weights=p2.flatten(model_vols,ocnmask)[surf_idx]), c='black', linestyle='--', label='Preindustrial DIC')
 
 # store DIC and model_vols in xarray for broadcasting
 DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
 model_vols_ds = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
 
 # use xarray to open metadata of files of interest
-for exp_idx in range(len(experiment_names)):
+for exp_idx in tqdm(range(len(experiment_names))):
     ds = xr.open_mfdataset(
         output_path + experiment_names[exp_idx] + '_*.nc',
         combine='by_coords',
@@ -360,20 +400,24 @@ for exp_idx in range(len(experiment_names)):
 
     ax.plot(ds['time'].values, DIC_weighted_mean.values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
 
-plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
-plt.xlabel('year')
-plt.ylabel('weighted average surface ocean DIC (µmol kg$^{-1}$)')
+#plt.legend(loc='lower right', ncol=ncol)
+plt.xlabel('Year', fontsize=11.5, weight='bold')
+plt.ylabel('Average surface ocean DIC (µmol kg$^{-1}$)', fontsize=11.5, weight='bold')
+ax.spines['bottom'].set_color(textcolor)
+ax.spines['top'].set_color(textcolor)
+ax.spines['left'].set_color(textcolor)
+ax.spines['right'].set_color(textcolor)
 
 #%% change in DIC (full ocean)
-fig = plt.figure(figsize=(5,5), dpi=200)
+fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
 DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
 
 # plot preindustrial baseline
-ax.axhline(np.average(DIC_preind, weights=p2.flatten(model_vols,ocnmask)), c='black', linestyle='--', label='preindustrial DIC')
+ax.axhline(np.average(DIC_preind, weights=p2.flatten(model_vols,ocnmask)), c='black', linestyle='--', label='Preindustrial DIC')
 
 # use xarray to open metadata of files of interest
-for exp_idx in range(len(experiment_names)):
+for exp_idx in tqdm(range(len(experiment_names))):
     ds = xr.open_mfdataset(
         output_path + experiment_names[exp_idx] + '_*.nc',
         combine='by_coords',
@@ -389,19 +433,22 @@ for exp_idx in range(len(experiment_names)):
 
     ax.plot(ds['time'].values, DIC_weighted_mean.values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
 
-plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
-plt.xlabel('year')
-plt.ylabel('weighted average ocean DIC (µmol kg$^{-1}$)')
-
+plt.legend(loc='upper left', ncol=ncol)
+plt.xlabel('Year', fontsize=11.5, weight='bold')
+plt.ylabel('Average ocean DIC (µmol kg$^{-1}$)', fontsize=11.5, weight='bold')
+ax.spines['bottom'].set_color(textcolor)
+ax.spines['top'].set_color(textcolor)
+ax.spines['left'].set_color(textcolor)
+ax.spines['right'].set_color(textcolor)
 
 #%% change in pH (surface)
-fig = plt.figure(figsize=(5,5), dpi=200)
+fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
 DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
 AT_ds = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
 
 # plot preindustrial baseline
-ax.axhline(np.average(pH_preind[surf_idx], weights=p2.flatten(model_vols,ocnmask)[surf_idx]), c='black', linestyle='--', label='preindustrial pH')
+ax.axhline(np.average(pH_preind[surf_idx], weights=p2.flatten(model_vols,ocnmask)[surf_idx]), c='black', linestyle='--', label='Preindustrial pH')
 
 # use xarray to open metadata of files of interest
 for exp_idx in range(len(experiment_names)):
@@ -438,18 +485,21 @@ for exp_idx in range(len(experiment_names)):
         
     ax.plot(ds['time'].values, avg_pH_modeled_surf, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
 
-plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
-plt.xlabel('year')
-plt.ylabel('weighted average surface ocean pH (µmol kg$^{-1}$)')
+plt.xlabel('Year', fontsize=11.5, weight='bold')
+plt.ylabel('Average surface ocean pH (µmol kg$^{-1}$)', fontsize=11.5, weight='bold')
+ax.spines['bottom'].set_color(textcolor)
+ax.spines['top'].set_color(textcolor)
+ax.spines['left'].set_color(textcolor)
+ax.spines['right'].set_color(textcolor)
 
 #%% change in pH (full ocean)
-fig = plt.figure(figsize=(5,5), dpi=200)
+fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
 DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
 AT_ds = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
 
 # plot preindustrial baseline
-ax.axhline(np.average(pH_preind, weights=p2.flatten(model_vols,ocnmask)), c='black', linestyle='--', label='preindustrial pH')
+ax.axhline(np.average(pH_preind, weights=p2.flatten(model_vols,ocnmask)), c='black', linestyle='--', label='Preindustrial pH')
 
 # use xarray to open metadata of files of interest
 for exp_idx in range(len(experiment_names)):
@@ -486,10 +536,14 @@ for exp_idx in range(len(experiment_names)):
     
     ax.plot(ds['time'].values, avg_pH_modeled, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
 
-plt.legend(loc='lower center', ncol=ncol, bbox_to_anchor=(0.5, -0.39))
-plt.xlabel('year')
-plt.ylabel('weighted average ocean pH (µmol kg$^{-1}$)')
-    
+plt.legend(loc='upper left', ncol=ncol)
+plt.xlabel('Year', fontsize=11.5, weight='bold')
+plt.ylabel('Average ocean pH (µmol kg$^{-1}$)', fontsize=11.5, weight='bold')
+ax.spines['bottom'].set_color(textcolor)
+ax.spines['top'].set_color(textcolor)
+ax.spines['left'].set_color(textcolor)
+ax.spines['right'].set_color(textcolor)
+
 #%% line plot of pressure by index
 vmin = -50
 vmax = 6000

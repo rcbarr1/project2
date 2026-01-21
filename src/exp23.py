@@ -543,19 +543,7 @@ def run_experiment(experiment):
             AT_to_offset[AT_to_offset < 0] = 0 # 
 
             # from this offset, calculate rate at which AT must be applied
-            # by solving discretized equation for q(t)
-            # OCIM manual eqn. 40: (I - dt * TR) * c_t = c_(t-dt) + dt * q(t)
-            # solve for q(t): q(t) = [(I - dt * TR) * c_t - c_(t-dt)] / dt
-            # --> define c_t as modern DIC + whatever AT required to get to
-            #     preind pH
-            # --> define c_(t-1) as preindustrial DIC + preindustrial AT (which
-            #     we are saying is the same as GLODAP AT)
-            # set CDR perturbation equal to this RATE in mixed layer only
-            # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
-            #del_q_CDR_AT = (((sparse.eye(TR.shape[0], format="csr") - dt[idx] * TR) * (AT + AT_to_offset) - AT)) / dt[idx]
-            #del_q_CDR_AT *= p2.flatten(q_AT_locations_mask, ocnmask) # apply in mixed layer only
-            
-            # this doesn't work... try q(t) = AT_to_offset / dt [µmol AT kg-1 yr-1]??
+            # q(t) = AT_to_offset / dt [µmol AT kg-1 yr-1]
             del_q_CDR_AT = AT_to_offset / dt[idx]        
     
             # add in source/sink vectors for ∆AT to q vector
@@ -620,11 +608,11 @@ def run_experiment(experiment):
         q_delDIC_3D = np.full(ocnmask.shape, np.nan)
         q_delAT_3D = np.full(ocnmask.shape, np.nan)
         
-        c_delDIC_3D[ocnmask == 1] = np.reshape(c_delDIC, (-1,), order='F')
-        c_delAT_3D[ocnmask == 1] = np.reshape(c_delAT, (-1,), order='F')
-        q_delDIC_3D[ocnmask == 1] = np.reshape(q_delDIC, (-1,), order='F')
-        q_delAT_3D[ocnmask == 1] = np.reshape(q_delAT, (-1,), order='F')
-            
+        c_delDIC_3D = p2.make_3D(c_delDIC, ocnmask)
+        c_delAT_3D = p2.make_3D(c_delAT, ocnmask)
+        q_delDIC_3D = p2.make_3D(q_delDIC, ocnmask)
+        q_delAT_3D = p2.make_3D(q_delAT, ocnmask)
+
         # write data to xarray
         ds.variables['time'][idx_file] = t[idx] + 2015
         tracers['delxCO2'][idx_file] = c_delxCO2.astype('float32')
@@ -635,11 +623,11 @@ def run_experiment(experiment):
         tracers['AT_added'][idx_file, :, :, :] = q_delAT_3D.astype('float32')
 
         # delete pyco2sys objects to avoid running out of memory
-        if 'co2sys' in globals(): del co2sys
-        if 'co2sys_preind' in globals(): del co2sys_preind
-        if 'co2sys_000001' in globals(): del co2sys_000001
-        if 'co2sys_current' in globals(): del co2sys_current
-        if 'co2sys_desired' in globals(): del co2sys_desired
+        if 'co2sys' in globals(): del globals()['co2sys']
+        if 'co2sys_preind' in globals(): del globals()['co2sys_preind']
+        if 'co2sys_000001' in globals(): del globals()['co2sys_000001']
+        if 'co2sys_current' in globals(): del globals()['co2sys_current']
+        if 'co2sys_desired' in globals(): del globals()['co2sys_desired']
         gc.collect()
         jax.clear_caches()
 
