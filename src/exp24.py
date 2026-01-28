@@ -116,16 +116,15 @@ def set_experiment_parameters(test=False):
     # another with dt = 1/8640 (1 hour) time steps
     exp3_t = np.arange(0,16,dt0) 
 
-    # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
-    t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
-    t1 = np.arange(1, 5, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
-    t2 = np.arange(5, 10, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
-    t3 = np.arange(10, 50, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
-    exp4_t = np.concatenate((t0, t1, t2, t3))
+    # daily timestep for first 90 days, a monthly until year 5,  annual until year 15
+    t0 = np.arange(0, 0.25, dt1) # use a 1 day time step for the first 90 days
+    t1 = np.arange(0.25, 5, dt2) # use a 1 month time step until the 5th year
+    t2 = np.arange(5, 15, dt3) # use a 1 year time step through the 15th year
+    exp4_t = np.concatenate((t0, t1, t2))
 
-    exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-    exp_ts = [exp0_t, exp1_t]
-    exp_t_names = ['t0', 't1']
+    #exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
+    exp_ts = [exp4_t]
+    exp_t_names = ['t-mixed']
 
     # DEPTHS OF ADDITION
 
@@ -399,7 +398,7 @@ def run_experiment(experiment):
         if scenario != 'none':
             Canth_3D = p2.interp_TRACE(data_path, t[idx] + start_year, scenario, model_depth, model_lon, model_lat, ocnmask)
             Canth = p2.flatten(Canth_3D, ocnmask)
-            print('new total Canth = ' + str(np.nansum(Canth)))
+            # print('new total Canth = ' + str(np.nansum(Canth)))
 
         # AT and DIC are equal to initial AT and DIC + whatever the change
         # in AT and DIC seen in previous time step are + whatever the 
@@ -407,8 +406,8 @@ def run_experiment(experiment):
         AT_current = AT + c[(m+1):(2*m+1), 0]
         DIC_current = DIC_preind + c[1:(m+1), 0] + Canth
 
-        print('new current avg DIC (surf, unweighted)= ' + str(np.nanmean(DIC_current[surf_idx])))
-        print('new current avg DIC (unweighted) = ' + str(np.nanmean(DIC_current)))
+        # print('new current avg DIC (surf, unweighted)= ' + str(np.nanmean(DIC_current[surf_idx])))
+        # print('new current avg DIC (unweighted) = ' + str(np.nanmean(DIC_current)))
 
         # calculate carbonate system
         # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
@@ -423,7 +422,7 @@ def run_experiment(experiment):
         aqueous_CO2 = co2sys_current['CO2'] # aqueous CO2 [µmol kg-1]
         R_C = co2sys_current['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
 
-        print('new RC = ' + str(np.nanmean(R_C[surf_idx])))
+        # print('new RC = ' + str(np.nanmean(R_C[surf_idx])))
 
         # calculate revelle factor w.r.t. AT [unitless]
         # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
@@ -437,7 +436,7 @@ def run_experiment(experiment):
         R_A = np.full(R_C.shape, np.nan)
         R_A[surf_idx] = R_A_surf
         
-        print('new RA = ' + str(np.nanmean(R_A[surf_idx])))
+        # print('new RA = ' + str(np.nanmean(R_A[surf_idx])))
         
         # calculate rest of Nowicki et al. parameters
         beta_C = DIC_current/aqueous_CO2 # [unitless]
@@ -505,18 +504,17 @@ def run_experiment(experiment):
         # calculate left hand side according to Euler backward method
         LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
     
-        if t[idx] + start_year == (start_CDR + dt[1]):
-            # for now, assuming NaOH (no change in DIC)
-            
-            # add 10 mol m-2 yr of AT to surface ocean for one month only
-            # must convert to µmol kg-1 yr-1
-
-            if dt[1] == 1:
-                del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) * (10 * 1e6 / z1 / rho) / 12 # divide by 12 if year-long time step
-            elif dt[1] == 1/12:
-               del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) * (10 * 1e6 / z1 / rho) 
-
-            # add in source/sink vectors for ∆AT to q vector
+        # for now, assuming NaOH (no change in DIC)
+        # add 10 mol m-2 yr of AT to surface ocean for one month only
+        # must convert to µmol kg-1 yr-1
+        if dt[idx] == 1 and t[idx] <= 1:
+            del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) * (10 * 1e6 / z1 / rho) / 12 # divide by 12 if year-long time step to only add one month's worth
+            q[(m+1):(2*m+1)] = del_q_CDR_AT # add in source/sink vectors for ∆AT to q vector
+        elif dt[idx] > 0.5/12 and dt[idx] < 1.5/12 and t[idx] <= 31/360:            
+            del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) * (10 * 1e6 / z1 / rho) 
+            q[(m+1):(2*m+1)] = del_q_CDR_AT # add in source/sink vectors for ∆AT to q vector
+        elif dt[idx] > 0.5/360 and dt[idx] < 1.5/360 and t[idx] <= 30.5/360:
+            del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) * (10 * 1e6 / z1 / rho) # add in source/sink vectors for ∆AT to q vector
             q[(m+1):(2*m+1)] = del_q_CDR_AT
         
         # calculate right hand side according to Euler backward method

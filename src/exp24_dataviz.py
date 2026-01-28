@@ -22,8 +22,8 @@ from tqdm import tqdm
 
 # load model architecture
 data_path = './data/'
-output_path = './outputs/'
-#output_path = '/Volumes/LaCie/outputs/'
+#output_path = './outputs/exp24/'
+output_path = '/Volumes/LaCie/outputs/exp24/'
 
 # open data associated with transport matrix
 model_data = xr.open_dataset(data_path + 'OCIM2_48L_base/OCIM2_48L_base_data.nc')
@@ -40,15 +40,15 @@ model_data.close()
 t_per_file = 2000 # number of time steps 
 #%% pull in all experiments (AT release from an individual grid cell across all grid cells)
 experiment_names = []
-for i in range(2000, 2001):
-    experiment_names.append('exp24_2026-01-16_t0_' + str(i))
+for i in range(1110, 1600):
+    experiment_names.append('exp24_2026-01-27_t-mixed_' + str(i))
 
 # set up array to save nu in
 nus_5years = np.full(ocnmask[0, :, :].shape, np.nan)
 nus_15years = np.full(ocnmask[0, :, :].shape, np.nan)
 
 # calculate nu for each experiment
-for exp_idx in range(len(experiment_names)):
+for exp_idx in tqdm(range(len(experiment_names))):
     ds = xr.open_mfdataset(
         output_path + experiment_names[exp_idx] + '_*.nc',
         combine='by_coords',
@@ -65,10 +65,22 @@ for exp_idx in range(len(experiment_names)):
     # find lat and lon of alkalinity release, store nu in array of nus at correct location
     alk_location = np.argwhere(ds.AT_added.isel(time=1).values > 0)
     nus_5years[alk_location[0][1], alk_location[0][2]] = nu_5years 
-    nus_15years[alk_location[0][1], alk_location[0][2]] = nu_15years 
+    nus_15years[alk_location[0][1], alk_location[0][2]] = nu_15years
+
+#%% used to combine two separate runs shown above into one output array
+
+#nus_5years_old = np.load(output_path + 'nus5yrs_dt1yr.npy')
+#nus_15years_old = np.load(output_path + 'nus15yrs_dt1yr.npy')
+
+#nus_5years_full = np.nansum(np.dstack((nus_5years,nus_5years_old)),2)
+#nus_15years_full = np.nansum(np.dstack((nus_15years, nus_15years_old)),2)
+
+#np.save(output_path + 'nus15yrs_dt1yr.npy', nus_15years_full)
+#np.save(output_path + 'nus5yrs_dt1yr.npy', nus_5years_full)
      
 #%% plot efficiency
-p2.plot_surface2d(model_lon, model_lat, nus_5years, 0, 1, 'viridis', 'efficiency at t = 5 years')
-p2.plot_surface2d(model_lon, model_lat, nus_15years, 0, 1, 'viridis', 'efficiency at t = 15 years')
+cmap = plt.get_cmap("viridis", 11)
+p2.plot_surface2d(model_lon, model_lat, nus_5years, 0, 1, cmap, 'efficiency at t = 5 years')
+p2.plot_surface2d(model_lon, model_lat, nus_15years, 0, 1, cmap, 'efficiency at t = 15 years')
 
 # %%

@@ -1338,8 +1338,8 @@ def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
     #c.set_label('mol DIC m$^{-2}$ yr$^{-1}$', fontsize=12)
 
     # overlay black for land
-    zero_mask = (variable == 0).astype(float)
-    ax.contourf(lons, lats, zero_mask.T, levels=[0.5, 1.5], colors='black', alpha=1.0)
+    #zero_mask = (variable == 0).astype(float)
+    #ax.contourf(lons, lats, zero_mask.T, levels=[0.5, 1.5], colors='black', alpha=1.0)
     
     plt.xlabel('longitude (ºE)')
     plt.ylabel('latitude (ºN)')
@@ -1350,7 +1350,7 @@ def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
 
 
 def plot_surface3d(lons, lats, variable, depth_level, vmin, vmax, cmap, title, logscale=None, lon_lims=None):
-    fig = plt.figure(figsize=(10,7))
+    fig = plt.figure(figsize=(10,7), dpi=200)
     ax = fig.gca()
     
     if logscale:

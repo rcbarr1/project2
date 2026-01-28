@@ -207,6 +207,11 @@ experiment_names = ['exp23_2026-01-16_t1_none',
                     'exp23_2026-01-16_t1_ssp245',
                     'exp23_2026-01-16_t1_ssp534_OS',]
 
+scenarios = ['none',
+             'ssp126',
+             'ssp245',
+             'ssp534_OS']
+
 linestyles = ['-','-','-','-']
 linecolors = ['#00429d', '#7a64a8', '#bf89b6', '#ffb0de']
 labels = ['No emissions', 'SSP1-2.6', 'SSP2-4.5', 'SSP5-3.4OS']
@@ -319,13 +324,47 @@ ax.spines['top'].set_color(textcolor)
 ax.spines['left'].set_color(textcolor)
 ax.spines['right'].set_color(textcolor)
 
+#%% surface AT added
+# use xarray to open metadata of files of interest
+for exp_idx in range(len(experiment_names)):
+    ds = xr.open_mfdataset(
+        output_path + experiment_names[exp_idx] + '_*.nc',
+        combine='by_coords',
+        chunks={'time': 10},
+        parallel=True)
+    
+    for idx in [15, 21, 31]:
+        DIC = p2.flatten(ds['delDIC'].isel(time=idx).values, ocnmask) + p2.flatten(DIC_start_3D, ocnmask) 
+        AT = p2.flatten(ds['delAT'].isel(time=idx).values, ocnmask) + p2.flatten(AT_3D, ocnmask)  
+        co2sys = pyco2.sys(
+                alkalinity=AT,
+                dic=DIC,
+                salinity=S,
+                temperature=T,
+                pressure=pressure,
+                total_silicate=Si,
+                total_phosphate=P) 
+        
+        co2sys_start = pyco2.sys(
+                alkalinity=AT,
+                dic=p2.flatten(DIC_start_3D, ocnmask), 
+                salinity=S,
+                temperature=T,
+                pressure=pressure,
+                total_silicate=Si,
+                total_phosphate=P) 
+        
+        delpH = p2.make_3D(co2sys['pH'] - co2sys_start['pH'], ocnmask)
+        
+        p2.plot_surface3d(model_lon, model_lat, delpH, 0, -0.2, 0.2, 'viridis', 'delpH in ' + str(ds['time'].isel(time=idx).values))
 
 #%% change in atmospheric CO2
 fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
 
 # use xarray to open metadata of files of interest
-for exp_idx in range(len(experiment_names)):
+#for exp_idx in range(len(experiment_names)):
+for exp_idx in range(0,1):
     ds = xr.open_mfdataset(
         output_path + experiment_names[exp_idx] + '_*.nc',
         combine='by_coords',
