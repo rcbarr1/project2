@@ -119,7 +119,7 @@ def set_experiment_parameters(test=False):
     # daily timestep for first 90 days, a monthly until year 5,  annual until year 15
     t0 = np.arange(0, 0.25, dt1) # use a 1 day time step for the first 90 days
     t1 = np.arange(0.25, 5, dt2) # use a 1 month time step until the 5th year
-    t2 = np.arange(5, 15, dt3) # use a 1 year time step through the 15th year
+    t2 = np.arange(5, 16, dt3) # use a 1 year time step through the 15th year
     exp4_t = np.concatenate((t0, t1, t2))
 
     #exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
@@ -549,17 +549,34 @@ def run_experiment(experiment):
         # check for convergence 
         if ksp.getConvergedReason() < 0:
             raise RuntimeError(
-                f"Solver failed to converge! "
-                f"Reason code: {ksp.getConvergedReason()}, "
-                f"Iterations: {ksp.getIterationNumber()}, "
-                f"Residual: {ksp.getResidualNorm():.2e}"
+                f'solver failed to converge '
+                f'reason code: {ksp.getConvergedReason()}, '
+                f'iterations: {ksp.getIterationNumber()}, '
+                f'residual: {ksp.getResidualNorm():.2e} '
             )
 
+        # fix tracer drift (transport matrix is not perfectly conservative)
+        # calculate amount erroneously added between time steps, subtract off mean of this for each box
+        # weights = p2.flatten(model_vols, ocnmask)
+        
+        # sum_DIC0 = np.sum(c[1:(m+1), 0] * rho * weights) # amount of DIC at previous time step [µmol]
+        # sum_DIC1 = np.sum(c[1:(m+1), 1] * rho * weights) # amount of DIC at current time step [µmol]
+        # flux_q_DIC = np.sum(dt[idx] * q[1:(m+1)] * rho * weights) # amount of DIC added on purpose [µmol]
+        # #flux_A_DIC = np.sum(-1 * c[0, 1] * Ma) # amount of DIC added via air-sea gas exchange [µmol]
+        # drift_DIC = (sum_DIC1 - sum_DIC0 - flux_q_DIC) / np.sum(rho * weights)
+        # c[1:(m+1), 1] -= drift_DIC
+        
+        # sum_AT0 = np.sum(c[(m+1):(2*m+1), 0] * rho * weights) # amount of AT at previous time step [µmol]
+        # sum_AT1 = np.sum(c[(m+1):(2*m+1), 1] * rho * weights) # amount of AT at current time step [µmol]
+        # flux_AT = np.sum(dt[idx] * q[(m+1):(2*m+1)] * rho * weights) # amount of AT added on purpose [µmol]
+        # drift_AT = (sum_AT1 - sum_AT0 - flux_AT) / np.sum(rho * weights)
+        # c[(m+1):(2*m+1), 1] -= drift_AT
+        
         # partition "c" into xCO2, DIC, and AT
         c_delxCO2 = c[0, 1]
         c_delDIC  = c[1:(m+1), 1]
         c_delAT   = c[(m+1):(2*m+1), 1]
-    
+
         # partition "q" into xCO2, DIC, and AT
         # convert from flux (amount yr-1) to amount by multiplying by dt [yr]
         q_delxCO2 = q[0] * dt[idx]
