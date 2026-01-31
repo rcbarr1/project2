@@ -61,6 +61,7 @@ import argparse
 import jax
 import gc
 from pyTRACE import trace
+from scipy.ndimage import uniform_filter
 
 # load model architecture
 data_path = './data/'
@@ -421,16 +422,12 @@ def run_experiment(experiment):
         if scenario != 'none':
             Canth_3D = p2.interp_TRACE(data_path, t[idx] + start_year, scenario, model_depth, model_lon, model_lat, ocnmask)
             Canth = p2.flatten(Canth_3D, ocnmask)
-            print('new total Canth = ' + str(np.nansum(Canth)))
 
         # AT and DIC are equal to initial AT and DIC + whatever the change
         # in AT and DIC seen in previous time step are + whatever the 
         # anthropogenic carbon in this year is
         AT_current = AT + c[(m+1):(2*m+1), 0]
         DIC_current = DIC_preind + c[1:(m+1), 0] + Canth
-
-        print('new current avg DIC (surf, unweighted)= ' + str(np.nanmean(DIC_current[surf_idx])))
-        print('new current avg DIC (unweighted) = ' + str(np.nanmean(DIC_current)))
 
         # calculate carbonate system
         # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
@@ -445,8 +442,6 @@ def run_experiment(experiment):
         aqueous_CO2 = co2sys_current['CO2'] # aqueous CO2 [µmol kg-1]
         R_C = co2sys_current['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
 
-        print('new RC = ' + str(np.nanmean(R_C[surf_idx])))
-
         # calculate revelle factor w.r.t. AT [unitless]
         # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
         # to speed up, only calculating this in surface
@@ -458,8 +453,6 @@ def run_experiment(experiment):
         R_A_surf = ((pCO2_000001 - pCO2[surf_idx])/pCO2[surf_idx]) / (0.000001/AT[surf_idx])
         R_A = np.full(R_C.shape, np.nan)
         R_A[surf_idx] = R_A_surf
-        
-        print('new RA = ' + str(np.nanmean(R_A[surf_idx])))
         
         # calculate rest of Nowicki et al. parameters
         beta_C = DIC_current/aqueous_CO2 # [unitless]
@@ -534,12 +527,19 @@ def run_experiment(experiment):
             # using DIC at previous time step (initial DIC + modeled change in DIC) and preindustrial pH
             # apply mask (q_AT_locations_mask) at this step to choose which grid cells AT is added to
 
+            # average DIC & AT across surrounding grid cells to mitigate splotchiness due to transport matrix
+            DIC_current_smooth = p2.smooth_tracer3D(DIC_current, ocnmask)
+            AT_current_smooth = p2.smooth_tracer3D(AT_current, ocnmask)
+
+            DIC_current_smooth = DIC_current
+            AT_current_smooth = AT_current
+            
             # solve for AT to add
-            co2sys_desired = pyco2.sys(dic=DIC_current, pH=pH_preind,
+            co2sys_desired = pyco2.sys(dic=DIC_current_smooth, pH=pH_preind,
                                     salinity=S, temperature=T, pressure=pressure,
                                     total_silicate=Si, total_phosphate=P)
             AT_desired = co2sys_desired['alkalinity']
-            AT_to_offset = (AT_desired - AT_current) * p2.flatten(q_AT_locations_mask, ocnmask) # only add AT where mask is 1, rest is 0
+            AT_to_offset = (AT_desired - AT_current_smooth) * p2.flatten(q_AT_locations_mask, ocnmask) # only add AT where mask is 1, rest is 0
             AT_to_offset[AT_to_offset < 0] = 0 # 
 
             # from this offset, calculate rate at which AT must be applied

@@ -41,8 +41,8 @@ rho = 1025 # seawater density for volume to mass [kg m-3]
 t_per_file = 2000 # number of time steps 
 #%% pull in all experiments (AT release from an individual grid cell across all grid cells)
 experiment_names = []
-for i in range(1110, 1600):
-    experiment_names.append('exp24_2026-01-28_t-mixed_' + str(i))
+for i in range(0, 501):
+    experiment_names.append('exp24_2026-01-30_10deg_' + str(i))
 
 # set up array to save nu in
 nus_5years = np.full(ocnmask[0, :, :].shape, np.nan)
@@ -72,8 +72,9 @@ for exp_idx in tqdm(range(len(experiment_names))):
 
     # find lat and lon of alkalinity release, store nu in array of nus at correct location
     alk_location = np.argwhere(ds.AT_added.isel(time=1).values > 0)
-    nus_5years[alk_location[0][1], alk_location[0][2]] = nu_5years 
-    nus_15years[alk_location[0][1], alk_location[0][2]] = nu_15years
+    _, lons, lats = alk_location.T
+    nus_5years[lons, lats] = nu_5years
+    nus_15years[lons, lats] = nu_15years
 
 #%% used to combine two separate runs shown above into one output array
 
@@ -87,12 +88,12 @@ for exp_idx in tqdm(range(len(experiment_names))):
 #np.save(output_path + 'nus5yrs_dt1yr.npy', nus_5years_full)
      
 #%% plot efficiency
-cmap = plt.get_cmap("viridis", 11)
+cmap = plt.get_cmap('viridis')
 p2.plot_surface2d(model_lon, model_lat, nus_5years, 0.3, 0.9, cmap, 'efficiency at t = 5 years')
 p2.plot_surface2d(model_lon, model_lat, nus_15years, 0.3, 0.9, cmap, 'efficiency at t = 15 years')
 
 # %% watch what happens with single time step
-ds = xr.open_dataset('./outputs/exp24_2026-01-28_t-mixed_1116_000.nc')
+ds = xr.open_dataset('./outputs/exp24_TEST_000.nc')
 
 alk_location = np.argwhere(ds.AT_added.isel(time=1).values > 0)
 AT_lon = alk_location[0][1]

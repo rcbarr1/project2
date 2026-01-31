@@ -123,18 +123,45 @@ def set_experiment_parameters(test=False):
     exp4_t = np.concatenate((t0, t1, t2))
 
     #exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-    exp_ts = [exp4_t]
-    exp_t_names = ['t-mixed']
+    exp_ts = [exp0_t]
+    exp_t_names = ['6deg']
 
     # DEPTHS OF ADDITION
 
     # to do addition in first (or first two, or first three, etc.) model layer(s)
-    q_AT_depths = ocnmask.copy()
-    q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
+    #q_AT_depths = ocnmask.copy()
+    #q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
 
     # to do all ocean lat/lons individually
-    ocn_idxs = np.argwhere(q_AT_depths == 1) # find the indices where mask == 1
-    grid_cell_idxs = np.arange(len(q_AT_depths[q_AT_depths == 1]))
+    #ocn_idxs = np.argwhere(q_AT_depths == 1) # find the indices where mask == 1
+    #grid_cell_idxs = np.arange(len(q_AT_depths[q_AT_depths == 1]))
+
+    # to do chunks in surface of ~5x5 model cells at at time
+    chunks = []
+    lat_chunk = 3
+    lon_chunk = 3
+
+    for lat0 in range(0, len(model_lat), lat_chunk):
+        for lon0 in range(0, len(model_lon), lon_chunk):
+
+            # handle edge of model grid
+            lat1 = min(lat0 + lat_chunk, len(model_lat))
+            lon1 = min(lon0 + lon_chunk, len(model_lon))
+
+            block = ocnmask[0, lon0:lon1, lat0:lat1]
+            
+            # filter out blocks with no ocean
+            if not np.any(block):
+                continue
+
+            lon_idx, lat_idx = np.where(block)
+            lon_idx += lon0
+            lat_idx += lat0
+
+            depth_idx = np.zeros_like(lon_idx)
+
+            q_AT_location = (depth_idx, lon_idx, lat_idx)
+            chunks.append(q_AT_location)
 
     # to constrain lat/lon of addition to LME(s)
     # get masks for each large marine ecosystem (LME)
@@ -161,21 +188,23 @@ def set_experiment_parameters(test=False):
     # test experiment
     if test:
         for exp_t in [np.arange(0,6,1)]: # 5 years, dt = 1 year
-            for ocn_idx, grid_cell_idxs in zip([ocn_idxs[0]], [grid_cell_idxs[0]]):
+            #for ocn_idx, grid_cell_idxs in zip([ocn_idxs[0]], [grid_cell_idxs[0]]):
+            for chunk in [chunks[2]]:
                 for scenario in ['none']:
-                        experiments.append({'exp_t': exp_t,
-                                            'q_AT_location': ocn_idx,
-                                            'scenario': scenario,
-                                            'start_year': 2002,
-                                            'start_CDR' : 2002,
-                                            'tag': 'TEST'})
+                    experiments.append({'exp_t': exp_t,
+                                        'q_AT_location': chunk,
+                                        'scenario': scenario,
+                                        'start_year': 2002,
+                                        'start_CDR' : 2002,
+                                        'tag': 'TEST'})
     # real experiments
     else:
         for exp_t, exp_t_name in zip(exp_ts, exp_t_names):
-            for ocn_idx, grid_cell_idx in zip(ocn_idxs, grid_cell_idxs):
+            #for ocn_idx, grid_cell_idx in zip(ocn_idxs, grid_cell_idxs):
+            for grid_cell_idx, chunk in enumerate(chunks):
                 for scenario in scenarios:
                         experiments.append({'exp_t': exp_t,
-                                            'q_AT_location': ocn_idx,
+                                            'q_AT_location': chunk,
                                             'scenario': scenario,
                                             'start_year' : start_year,
                                             'start_CDR' : start_CDR,
@@ -192,7 +221,7 @@ def run_experiment(experiment):
     dt = np.diff(t, prepend=np.nan) # difference between each time step [yr]
     q_AT_location = experiment['q_AT_location']
     q_AT_locations_mask = np.zeros(ocnmask.shape)
-    q_AT_locations_mask[tuple(q_AT_location)] = 1
+    q_AT_locations_mask[q_AT_location] = 1
     start_year = experiment['start_year']
     start_CDR = experiment['start_CDR']
     scenario = experiment['scenario']

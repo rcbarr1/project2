@@ -32,6 +32,7 @@ import torch
 import torch.nn as nn
 import joblib
 from pyTRACE import trace
+from scipy.ndimage import uniform_filter
 
 def loadmat(filename):
     '''
@@ -179,6 +180,35 @@ def make_3D(e_flat, ocnmask):
     e_3D = e_3D_flat.reshape(ocnmask.shape, order='F') 
     
     return e_3D
+
+def smooth_tracer3D(e_flat, ocnmask):
+    '''
+    Smooths tracer distribution by averaging each cell with the cells surrounding it in all dimensions.
+
+    :param e_flat: Flattened matrix representing tracer values.
+    :param ocnmask: Mask representing land (0) and ocean (1) grid cells
+    '''
+    e_flat_3D = make_3D(e_flat,ocnmask)
+    e_flat_3D = np.nan_to_num(e_flat_3D, nan=0.0) # make land cells == 0 for averaging
+
+    # add pad for longitude wrapping
+    e_flat_pad_3D = np.pad(e_flat_3D, ((0,0), (2,2), (0,0)), mode='wrap') 
+    ocnmask_pad = np.pad(ocnmask, ((0,0), (2,2), (0,0)), mode='wrap') 
+    
+    # sum tracer across 3x3x3 neighborhood to get average of nearest cells
+    e_sum_pad_3D = uniform_filter(e_flat_pad_3D * ocnmask_pad, size=(5,5,5), mode='constant', cval=0)
+
+    # count ocean cells used in each neighborhood
+    ocnmask_pad_count = uniform_filter(ocnmask_pad.astype(float), size=(5,5,5), mode='constant', cval=0)
+
+    ocnmask_pad_count[ocnmask_pad_count == 0] = np.nan # avoid division by zero
+    e_smooth_pad_3D = e_sum_pad_3D / ocnmask_pad_count # calculate average AT
+    
+    # remove pad and flatten
+    e_flat_smooth_3D = e_smooth_pad_3D[:, 2:-2, :]
+    e_flat_smooth = flatten(e_flat_smooth_3D, ocnmask)
+
+    return e_flat_smooth
 
 def get_depth_idx(ocnmask, depth_level):
     '''
