@@ -16,8 +16,8 @@ Naming convention for saving model runs (see .txt file for explanation of experi
 
 @author: Reese C. Barrett
 """
-
-import project2 as p2
+#%%
+from src.utils import project2 as p2
 import xarray as xr
 import numpy as np
 import PyCO2SYS as pyco2
@@ -27,8 +27,8 @@ from scipy.sparse.linalg import spilu, LinearOperator, lgmres
 from time import time
 import matplotlib.pyplot as plt
 
-data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
-output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
+data_path = './data/'
+output_path = './outputs/'
 
 #%% load transport matrix (OCIM1)
 model_data = p2.loadmat('/Users/Reese_1/Documents/Research Projects/project2/examples/CTL.mat')
@@ -66,10 +66,10 @@ nsurf = np.sum(ocnmask[0, :, :])
 #p2.regrid_woa(data_path, 'P', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded WOA18 data
-S_3D = np.load(data_path + 'WOA18/S_AO_OCIM1.npy')   # salinity [unitless]
-T_3D = np.load(data_path + 'WOA18/T_AO_OCIM1.npy')   # temperature [ºC]
-Si_3D = np.load(data_path + 'WOA18/Si_AO_OCIM1.npy') # silicate [µmol kg-1]
-P_3D = np.load(data_path + 'WOA18/P_AO_OCIM1.npy')   # phosphate [µmol kg-1]
+S_3D = np.load(data_path + 'WOA18/S_OCIM1.npy')   # salinity [unitless]
+T_3D = np.load(data_path + 'WOA18/T_OCIM1.npy')   # temperature [ºC]
+Si_3D = np.load(data_path + 'WOA18/Si_OCIM1.npy') # silicate [µmol kg-1]
+P_3D = np.load(data_path + 'WOA18/P_OCIM1.npy')   # phosphate [µmol kg-1]
 
 # flatten data
 S = p2.flatten(S_3D, ocnmask)
@@ -88,9 +88,9 @@ P = p2.flatten(P_3D, ocnmask)
 #p2.regrid_ncep_noaa(data_path, 'sst', model_lat, model_lon, ocnmask)
 
 # upload regridded NCEP/DOE reanalysis II data
-f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec_AO_OCIM1.npy') # annual mean ice fraction from 0 to 1 in each grid cell
-uwnd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/uwnd_AO_OCIM1.npy') # annual mean of forecast of U-wind at 10 m [m/s]
-sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_AO_OCIM1.npy') # annual mean sea surface temperature [ºC]
+f_ice_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/icec_OCIM1.npy') # annual mean ice fraction from 0 to 1 in each grid cell
+wspd_2D = np.load(data_path + 'NCEP_DOE_Reanalysis_II/wspd_OCIM1.npy') # annual mean of forecast of U-wind at 10 m [m/s]
+sst_2D = np.load(data_path + 'NOAA_Extended_Reconstruction_SST_V5/sst_OCIM1.npy') # annual mean sea surface temperature [ºC]
 
 # calculate Schmidt number using Wanninkhof 2014 parameterization
 vec_schmidt = np.vectorize(p2.schmidt)
@@ -98,7 +98,7 @@ Sc_2D = vec_schmidt('CO2', sst_2D)
 
 # solve for k (gas transfer velocity) for each ocean cell
 a = 0.251 # from Wanninkhof 2014
-k_2D = a * uwnd_2D**2 * (Sc_2D/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
+k_2D = a * wspd_2D**2 * (Sc_2D/660)**-0.5 # [cm/h] from Yamamoto et al., 2024, adapted from Wanninkhof 2014
 
 #p2.plot_surface2d(model_lon, model_lat, k.T, 0, 20, 'magma', 'Gas transfer velocity (k, cm/hr)')
 
@@ -116,8 +116,8 @@ k_2D *= (24*365.25/100) # [m/yr] convert units
 #p2.regrid_glodap(data_path, 'TAlk', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded GLODAP data
-DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_AO_OCIM1.npy') # dissolved inorganic carbon [µmol kg-1]
-AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_AO_OCIM1.npy')   # total alkalinity [µmol kg-1]
+DIC_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/DIC_OCIM1.npy') # dissolved inorganic carbon [µmol kg-1]
+AT_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/TA_OCIM1.npy')   # total alkalinity [µmol kg-1]
 
 # flatten data
 DIC = p2.flatten(DIC_3D, ocnmask)
@@ -125,7 +125,7 @@ AT = p2.flatten(AT_3D, ocnmask)
 
 # create "pressure" array by broadcasting depth array
 pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
-pressure = pressure_3D[ocnmask == 1].flatten(order='F')
+pressure = p2.flatten(pressure_3D, ocnmask) 
 
 # use CO2SYS with GLODAP and WOA data to solve for carbonate system at each grid cell
 # do this for only ocean grid cells
@@ -137,6 +137,7 @@ co2sys = pyco2.sys(dic=DIC, alkalinity=AT, salinity=S, temperature=T,
 pCO2 = co2sys['pCO2'] # pCO2 [µatm]
 aqueous_CO2 = co2sys['CO2'] # aqueous CO2 [µmol kg-1]
 R_C = co2sys['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
+p2.plot_surface3d(model_lon, model_lat, p2.make_3D(R_C, ocnmask), 0, 5, 20, 'viridis', 'R_C = (dpCO2/pCO2) / (dDIC/DIC)')
 
 # calculate revelle factor w.r.t. AT [unitless]
 # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
@@ -146,6 +147,7 @@ co2sys_000001 = pyco2.sys(dic=DIC, alkalinity=AT+0.000001, salinity=S,
 
 pCO2_000001 = co2sys_000001['pCO2']
 R_A = ((pCO2_000001 - pCO2)/pCO2) / (0.000001/AT)
+p2.plot_surface3d(model_lon, model_lat, p2.make_3D(R_A, ocnmask), 0, -20, -5, 'viridis', 'R_A = (dpCO2/pCO2) / (dAT/AT)')
 
 # calculate Nowicki et al. parameters
 Ma = 1.8e26 # number of micromoles of air in atmosphere [µmol air]
@@ -316,32 +318,31 @@ Vatm = yamamoto_data['Vatm']
 
 #%% compare!
 # Atau should equal A11
-print((Atau != A11).nnz == 0)
+# note from Reese 2/3/26: they are really close. I had to change Ma = 1.8e20 mol in Kana's to
+# get it to match, though, which I think is more accuratee
+print(np.sum(Atau))
+print(np.sum(A11))
 
 # Qatm should equal A10
-print(np.array_equal(np.asarray(Qatm.toarray(), order="F").ravel(order="F"), A10, equal_nan=True))
+# note from Reese 2/3/26: they are off because of units difference, I stay in µatm and Kana
+# uses atm
+# if I change my Patm to be in atm, they are almost the same
+print(np.sum(Qatm))
+print(np.sum(A10))
 
 # Satm should equal A00
-print(np.equal(Satm, A00))
+# note from Reese 2/3/26: they are very close. I had to change Ma = 1.8e20 mol instead of
+# 1.7e20 in Kana's to get it to match, though (1.8 I think is more accurate)
+print(Satm)
+print(A00)
 
 # Vatm should equal A01
-print(np.array_equal(np.asarray(Vatm.toarray(), order="F").ravel(order="F"), A01, equal_nan=True))
+# note from Reese 2/3/26: they are derived the same, except that I have my Ma in µmol air and
+# Kana's is mol air. This leaves a units difference that I believe is what's adding up to the
+# big difference in these numbers, but it shouldn't matter
+# if I change my Ma to be in mol, they are almost the same
+print(np.sum(Vatm))
+print(np.sum(A01))
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# %%

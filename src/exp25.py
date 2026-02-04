@@ -2,16 +2,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Dec 3 2025
+Created on Thu Jan 15 2026
 
-EXP23: Attempting maximum alkalinity calculation with parallel sparse matrix solve and emissions scenario
-- SAME AS EXP22, EXCEPT INTERPOLATING FROM TRACE PRODUCT INSTEAD OF DOING NEW TRACE SOLVE EACH TIME
-- Import anthropogenic carbon prediction at each grid cell using TRACEv1 to be initial ∆DIC conditions
-- From ∆DIC and gridded GLODAP pH and DIC, calculate how much ∆pH or ∆pCO2 to get back to preindustrial surface conditions
-- With this, calculate ∆AT required to offset
-- Add this ∆AT as a surface perturbation (globally for now, but eventually do this for each large marine ecosystem)
-- Also, add the relevant ∆xCO2 for the time step given the emissions scenario of interest?
-- Repeat for each LMES & maybe a few combinations of LMES?
+EXP24: Attempting to replicate map of relative efficiency from Yamamoto et al., 2024
+https://iopscience.iop.org/article/10.1088/1748-9326/ad7477/meta
+- experimental setup: removing DIC at rate of 1 μmol kg−1 yr−1 for first 30 days, then run for 100 years
+- daily time steps for first 90 days, then monthly until year 5, then annual until year 100
+- then, plot maximum cumulative additionality observed during the course of the simulation for each grid cell
+- cumulative additionality = (delxCO2 * Ma) / (DIC_added_total * model_vols * rho)
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [µatm CO2 (µatm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -61,7 +59,6 @@ import argparse
 import jax
 import gc
 from pyTRACE import trace
-from scipy.ndimage import uniform_filter
 
 # load model architecture
 data_path = './data/'
@@ -110,72 +107,47 @@ def set_experiment_parameters(test=False):
     dt3 = 1 # 1 year
 
     # just year time steps
-    exp0_t = np.arange(0,50,dt3)
+    exp0_t = np.arange(0,16,dt3)
     
     # experiment with dt = 1/12 (1 month) time steps
-    exp1_t = np.arange(0,50,dt2)
+    exp1_t = np.arange(0,16,dt2)
 
     # experiment with dt = 1/360 (1 day) time steps
-    exp2_t = np.arange(0,50,dt1) 
+    exp2_t = np.arange(0,16,dt1) 
 
     # another with dt = 1/8640 (1 hour) time steps
-    exp3_t = np.arange(0,50,dt0) 
+    exp3_t = np.arange(0,16,dt0) 
 
-    # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
-    t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
-    t1 = np.arange(1, 5, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
-    t2 = np.arange(5, 10, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
-    t3 = np.arange(10, 50, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
-    exp4_t = np.concatenate((t0, t1, t2, t3))
+    # daily timestep for first 90 days, a monthly until year 5,  annual until year 100
+    t0 = np.arange(0, 0.25, dt1) # use a 1 day time step for the first 90 days
+    t1 = np.arange(0.25, 5, dt2) # use a 1 month time step until the 5th year
+    t2 = np.arange(5, 101, dt3) # use a 1 year time step through the 15th year
+    exp4_t = np.concatenate((t0, t1, t2))
 
-    exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-    exp_ts = [exp0_t, exp1_t, exp2_t]
-    exp_t_names = ['t0', 't1', 't2']
+    #exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
+    exp_ts = [exp4_t]
+    exp_t_names = ['t-mixed']
 
     # DEPTHS OF ADDITION
 
-    # to do addition in mixed layer...
-    # pull mixed layer depth at each lat/lon from OCIM model data, then create mask
-    # of ocean cells that are at or below the mixed layer depth
-    mld = model_data.mld.values # [m]
-    # create 3D mask where for each grid cell, mask is set to 1 if the depth in the
-    # grid cell depths array is less than the mixed layer depth for that column
-    # note: this does miss cells where the MLD is close but does not reach the
-    # depth of the next grid cell below (i.e. MLD = 40 m, grid cell depths are at
-    # 30 m and 42 m, see lon_idx, lat_idx = 20, 30). I am intentionally leaving
-    # this for now to ensure what enters the ocean stays mostly within the mixed
-    # layer, but the code could be changed to a different method if needed.exp2_t
-
-    mldmask = (grid_cell_depth < mld[None, :, :]).astype(int)
-    q_AT_depths = [mldmask]
-
     # to do addition in first (or first two, or first three, etc.) model layer(s)
-    #q_AT_depths = ocnmask.copy()
-    #q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
-    #q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
-    #q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
+    q_AT_depths = ocnmask.copy()
+    q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
 
-    # to do all lat/lons
-    q_AT_latlons = [ocnmask.copy()]
-
-    # to constrain lat/lon of addition to LME(s)
-    # get masks for each large marine ecosystem (LME)
-    #lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
-    #p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
-    #lme_idx = [22,52] # subset of LMEs
-    #lme_idx = list(lme_masks.keys()) # all LMES
-    #q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
+    # to do all ocean lat/lons individually
+    ocn_idxs = np.argwhere(q_AT_depths == 1) # find the indices where mask == 1
+    grid_cell_idxs = np.arange(len(q_AT_depths[q_AT_depths == 1]))
 
     # EMISSIONS SCENARIOS
     # no emissions scenario
     #q_emissions = np.zeros(nt)
 
     # with starting year
-    start_year = 2015 # year to start simulation
-    start_CDR = 2030 # year to start CDR deployment
+    start_year = 2002 # year to start simulation
+    start_CDR = 2002 # year to start CDR deployment
 
     # with emissions scenario
-    scenarios = ['none', 'ssp126', 'ssp245', 'ssp534_OS'] 
+    scenarios = ['none'] 
 
     # set up experiments to run 
     experiments = []
@@ -183,38 +155,38 @@ def set_experiment_parameters(test=False):
     # test experiment
     if test:
         for exp_t in [np.arange(0,6,1)]: # 5 years, dt = 1 year
-            for q_AT_depth in q_AT_depths:
-                for q_AT_latlon in q_AT_latlons:
-                    for scenario in ['none']:
-                            experiments.append({'exp_t': exp_t,
-                                                'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
-                                                'scenario': 'ssp126',
-                                                'start_year': 2002,
-                                                'start_CDR' : 2002,
-                                                'tag': 'TEST'})
+            for ocn_idx, grid_cell_idxs in zip([ocn_idxs[0]], [grid_cell_idxs[0]]):
+                for scenario in ['none']:
+                    experiments.append({'exp_t': exp_t,
+                                        'q_AT_location': ocn_idx,
+                                        'scenario': scenario,
+                                        'start_year': 2002,
+                                        'start_CDR' : 2002,
+                                        'tag': 'TEST'})
     # real experiments
     else:
         for exp_t, exp_t_name in zip(exp_ts, exp_t_names):
-            for q_AT_depth in q_AT_depths:
-                for q_AT_latlon in q_AT_latlons:
-                    for scenario in scenarios:
-                            experiments.append({'exp_t': exp_t,
-                                                'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
-                                                'scenario': scenario,
-                                                'start_year' : start_year,
-                                                'start_CDR' : start_CDR,
-                                                'tag': datetime.now().strftime("%Y-%m-%d") + '_' + exp_t_name + '_' + scenario})
+            for ocn_idx, grid_cell_idx in zip(ocn_idxs, grid_cell_idxs):
+                for scenario in scenarios:
+                        experiments.append({'exp_t': exp_t,
+                                            'q_AT_location': ocn_idx,
+                                            'scenario': scenario,
+                                            'start_year' : start_year,
+                                            'start_CDR' : start_CDR,
+                                            'tag': datetime.now().strftime("%Y-%m-%d") + '_' + exp_t_name + '_' + str(grid_cell_idx)})
     return experiments
 
 def run_experiment(experiment):
-    experiment_name = 'exp23_' + experiment['tag']
+    experiment_name = 'exp25_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
 
     # pull experimental parameters out of dictionary
-    t = experiment['exp_t'] # time steps (starting from zero) [yr]
+    t = experiment['exp_t'] # time steps (starting from zero) [yr] 
     nt = len(t) # total number of time steps
     dt = np.diff(t, prepend=np.nan) # difference between each time step [yr]
-    q_AT_locations_mask = experiment['q_AT_locations_mask']
+    q_AT_location = experiment['q_AT_location']
+    q_AT_locations_mask = np.zeros(ocnmask.shape)
+    q_AT_locations_mask[tuple(q_AT_location)] = 1
     start_year = experiment['start_year']
     start_CDR = experiment['start_CDR']
     scenario = experiment['scenario']
@@ -246,7 +218,6 @@ def run_experiment(experiment):
     # pyCO2SYS v2
     co2sys_preind = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
                     pressure=pressure, total_silicate=Si, total_phosphate=P)
-    pH_preind = co2sys_preind['pH']
 
     # calculate anthropogenic carbon at starting year with TRACE
     Canth_3D = p2.interp_TRACE(data_path, start_year, scenario, model_depth, model_lon, model_lat, ocnmask)
@@ -292,7 +263,6 @@ def run_experiment(experiment):
     gammaC = -1 * k * (1 - f_ice) / z1
     
     # set up file saving rules (multiple files to avoid running out of working memory)
-    nfiles = nt // t_per_file + (nt % t_per_file > 0) # number of files for this simulation
     ds = None
     file_number = -1
     
@@ -422,12 +392,16 @@ def run_experiment(experiment):
         if scenario != 'none':
             Canth_3D = p2.interp_TRACE(data_path, t[idx] + start_year, scenario, model_depth, model_lon, model_lat, ocnmask)
             Canth = p2.flatten(Canth_3D, ocnmask)
+            # print('new total Canth = ' + str(np.nansum(Canth)))
 
         # AT and DIC are equal to initial AT and DIC + whatever the change
         # in AT and DIC seen in previous time step are + whatever the 
         # anthropogenic carbon in this year is
         AT_current = AT + c[(m+1):(2*m+1), 0]
         DIC_current = DIC_preind + c[1:(m+1), 0] + Canth
+
+        # print('new current avg DIC (surf, unweighted)= ' + str(np.nanmean(DIC_current[surf_idx])))
+        # print('new current avg DIC (unweighted) = ' + str(np.nanmean(DIC_current)))
 
         # calculate carbonate system
         # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
@@ -442,6 +416,8 @@ def run_experiment(experiment):
         aqueous_CO2 = co2sys_current['CO2'] # aqueous CO2 [µmol kg-1]
         R_C = co2sys_current['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
 
+        # print('new RC = ' + str(np.nanmean(R_C[surf_idx])))
+
         # calculate revelle factor w.r.t. AT [unitless]
         # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
         # to speed up, only calculating this in surface
@@ -453,6 +429,8 @@ def run_experiment(experiment):
         R_A_surf = ((pCO2_000001 - pCO2[surf_idx])/pCO2[surf_idx]) / (0.000001/AT[surf_idx])
         R_A = np.full(R_C.shape, np.nan)
         R_A[surf_idx] = R_A_surf
+        
+        # print('new RA = ' + str(np.nanmean(R_A[surf_idx])))
         
         # calculate rest of Nowicki et al. parameters
         beta_C = DIC_current/aqueous_CO2 # [unitless]
@@ -520,36 +498,11 @@ def run_experiment(experiment):
         # calculate left hand side according to Euler backward method
         LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
     
-        if t[idx] + start_year >= start_CDR:
-            # for now, assuming NaOH (no change in DIC)
-            
-            # calculate AT required to return to preindustrial pH
-            # using DIC at previous time step (initial DIC + modeled change in DIC) and preindustrial pH
-            # apply mask (q_AT_locations_mask) at this step to choose which grid cells AT is added to
-
-            # average DIC & AT across surrounding grid cells to mitigate splotchiness due to transport matrix
-            DIC_current_smooth = p2.smooth_tracer3D(DIC_current, ocnmask)
-            AT_current_smooth = p2.smooth_tracer3D(AT_current, ocnmask)
-            #DIC_current_smooth = DIC_current
-            #AT_current_smooth = AT_current
-            
-            # set "gain" parameter to stabilize model
-            gain = 0.2
-
-            # solve for AT to add
-            co2sys_desired = pyco2.sys(dic=DIC_current_smooth, pH=pH_preind,
-                                    salinity=S, temperature=T, pressure=pressure,
-                                    total_silicate=Si, total_phosphate=P)
-            AT_desired = co2sys_desired['alkalinity']
-            AT_to_offset = gain * (AT_desired - AT_current_smooth) * p2.flatten(q_AT_locations_mask, ocnmask) # only add AT where mask is 1, rest is 0
-            AT_to_offset[AT_to_offset < 0] = 0 # 
-
-            # from this offset, calculate rate at which AT must be applied
-            # q(t) = AT_to_offset / dt [µmol AT kg-1 yr-1]
-            del_q_CDR_AT = AT_to_offset / dt[idx]        
-    
-            # add in source/sink vectors for ∆AT to q vector
-            q[(m+1):(2*m+1)] = del_q_CDR_AT
+        # removing DIC at rate of 1 μmol kg−1 yr−1 for first 30 days
+        # must convert to µmol kg-1 yr-1
+        if t[idx] < 0.0834:
+            del_q_CDR_DIC = p2.flatten(q_AT_locations_mask, ocnmask) * -1
+            q[1:(m+1)] = del_q_CDR_DIC # add in source/sink vectors for ∆DIC to q vector
         
         # calculate right hand side according to Euler backward method
         RHS = c[:,0] + np.squeeze(dt[idx] * q)
@@ -583,17 +536,34 @@ def run_experiment(experiment):
         # check for convergence 
         if ksp.getConvergedReason() < 0:
             raise RuntimeError(
-                f"Solver failed to converge! "
-                f"Reason code: {ksp.getConvergedReason()}, "
-                f"Iterations: {ksp.getIterationNumber()}, "
-                f"Residual: {ksp.getResidualNorm():.2e}"
+                f'solver failed to converge '
+                f'reason code: {ksp.getConvergedReason()}, '
+                f'iterations: {ksp.getIterationNumber()}, '
+                f'residual: {ksp.getResidualNorm():.2e} '
             )
 
+        # fix tracer drift (transport matrix is not perfectly conservative)
+        # calculate amount erroneously added between time steps, subtract off mean of this for each box
+        # weights = p2.flatten(model_vols, ocnmask)
+        
+        # sum_DIC0 = np.sum(c[1:(m+1), 0] * rho * weights) # amount of DIC at previous time step [µmol]
+        # sum_DIC1 = np.sum(c[1:(m+1), 1] * rho * weights) # amount of DIC at current time step [µmol]
+        # flux_q_DIC = np.sum(dt[idx] * q[1:(m+1)] * rho * weights) # amount of DIC added on purpose [µmol]
+        # #flux_A_DIC = np.sum(-1 * c[0, 1] * Ma) # amount of DIC added via air-sea gas exchange [µmol]
+        # drift_DIC = (sum_DIC1 - sum_DIC0 - flux_q_DIC) / np.sum(rho * weights)
+        # c[1:(m+1), 1] -= drift_DIC
+        
+        # sum_AT0 = np.sum(c[(m+1):(2*m+1), 0] * rho * weights) # amount of AT at previous time step [µmol]
+        # sum_AT1 = np.sum(c[(m+1):(2*m+1), 1] * rho * weights) # amount of AT at current time step [µmol]
+        # flux_AT = np.sum(dt[idx] * q[(m+1):(2*m+1)] * rho * weights) # amount of AT added on purpose [µmol]
+        # drift_AT = (sum_AT1 - sum_AT0 - flux_AT) / np.sum(rho * weights)
+        # c[(m+1):(2*m+1), 1] -= drift_AT
+        
         # partition "c" into xCO2, DIC, and AT
         c_delxCO2 = c[0, 1]
         c_delDIC  = c[1:(m+1), 1]
         c_delAT   = c[(m+1):(2*m+1), 1]
-    
+
         # partition "q" into xCO2, DIC, and AT
         # convert from flux (amount yr-1) to amount by multiplying by dt [yr]
         q_delxCO2 = q[0] * dt[idx]
@@ -614,7 +584,7 @@ def run_experiment(experiment):
         c_delAT_3D = p2.make_3D(c_delAT, ocnmask)
         q_delDIC_3D = p2.make_3D(q_delDIC, ocnmask)
         q_delAT_3D = p2.make_3D(q_delAT, ocnmask)
-
+            
         # write data to xarray
         ds.variables['time'][idx_file] = t[idx] + start_year
         tracers['delxCO2'][idx_file] = c_delxCO2.astype('float32')
@@ -625,11 +595,11 @@ def run_experiment(experiment):
         tracers['AT_added'][idx_file, :, :, :] = q_delAT_3D.astype('float32')
 
         # delete pyco2sys objects to avoid running out of memory
-        if 'co2sys' in globals(): del globals()['co2sys']
-        if 'co2sys_preind' in globals(): del globals()['co2sys_preind']
-        if 'co2sys_000001' in globals(): del globals()['co2sys_000001']
-        if 'co2sys_current' in globals(): del globals()['co2sys_current']
-        if 'co2sys_desired' in globals(): del globals()['co2sys_desired']
+        if 'co2sys' in globals(): del co2sys
+        if 'co2sys_preind' in globals(): del co2sys_preind
+        if 'co2sys_000001' in globals(): del co2sys_000001
+        if 'co2sys_current' in globals(): del co2sys_current
+        if 'co2sys_desired' in globals(): del co2sys_desired
         gc.collect()
         jax.clear_caches()
 

@@ -398,7 +398,7 @@ def run_experiment(experiment):
         # if first iteration, add baseline state to file (should all be zeros)
         if idx == 1:
             
-            ds.variables['time'][idx_file] = t[idx] + 2015
+            ds.variables['time'][idx_file] = t[idx] + start_year
             tracers['delxCO2'][idx_file] = c[0, 0].astype('float32')
             tracers['delDIC'][idx_file, :, :, :] = p2.make_3D(c[1:(m+1), 0],ocnmask).astype('float32')
             tracers['delAT'][idx_file, :, :, :] = p2.make_3D(c[(m+1):(2*m+1), 0],ocnmask).astype('float32')
@@ -613,7 +613,7 @@ def run_experiment(experiment):
         q_delAT_3D = p2.make_3D(q_delAT, ocnmask)
 
         # write data to xarray
-        ds.variables['time'][idx_file] = t[idx] + 2015
+        ds.variables['time'][idx_file] = t[idx] + start_year
         tracers['delxCO2'][idx_file] = c_delxCO2.astype('float32')
         tracers['delDIC'][idx_file, :, :, :] = c_delDIC_3D.astype('float32')
         tracers['delAT'][idx_file, :, :, :] = c_delAT_3D.astype('float32')

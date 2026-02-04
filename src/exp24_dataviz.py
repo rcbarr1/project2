@@ -41,40 +41,49 @@ rho = 1025 # seawater density for volume to mass [kg m-3]
 t_per_file = 2000 # number of time steps 
 #%% pull in all experiments (AT release from an individual grid cell across all grid cells)
 experiment_names = []
-for i in range(0, 501):
-    experiment_names.append('exp24_2026-01-30_10deg_' + str(i))
+for i in range(0, 1298):
+    experiment_names.append('exp24_2026-01-30_6deg_' + str(i))
 
 # set up array to save nu in
 nus_5years = np.full(ocnmask[0, :, :].shape, np.nan)
 nus_15years = np.full(ocnmask[0, :, :].shape, np.nan)
+failed_experiments = []
 
 # calculate nu for each experiment
 for exp_idx in tqdm(range(len(experiment_names))):
-    ds = xr.open_mfdataset(
-        output_path + experiment_names[exp_idx] + '_*.nc',
-        combine='by_coords',
-        chunks={'time': 10},
-        parallel=True)
-    
-    model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
+    experiment_name = experiment_names[exp_idx]
+    try:
+        ds = xr.open_mfdataset(
+            output_path + experiment_name + '_*.nc',
+            combine='by_coords',
+            chunks={'time': 10},
+            parallel=True)
+        
+        model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
 
-    # convert delDIC from µmol kg-1 to mol
-    delDIC = ds.delDIC * rho * model_vols_xr * 1e-6 # mol
-    delDIC = delDIC.sum(dim=['depth', 'lon', 'lat'], skipna=True)
+        # convert delDIC from µmol kg-1 to mol
+        delDIC = ds.delDIC * rho * model_vols_xr * 1e-6 # mol
+        delDIC = delDIC.sum(dim=['depth', 'lon', 'lat'], skipna=True)
 
-    # convert delAT from µmol kg-1 to mol
-    delAT = ds.delAT * rho * model_vols_xr * 1e-6 # mol
-    delAT = delAT.sum(dim=['depth', 'lon', 'lat'], skipna=True)
-    
-    nu = delDIC / delAT
-    nu_5years = nu.sel(time=2020).values
-    nu_15years = nu.sel(time=2030).values
+        # convert delAT from µmol kg-1 to mol
+        delAT = ds.delAT * rho * model_vols_xr * 1e-6 # mol
+        delAT = delAT.sum(dim=['depth', 'lon', 'lat'], skipna=True)
+        
+        nu = delDIC / delAT
+        nu_5years = nu.sel(time=2020).values
+        nu_15years = nu.sel(time=2030).values
 
-    # find lat and lon of alkalinity release, store nu in array of nus at correct location
-    alk_location = np.argwhere(ds.AT_added.isel(time=1).values > 0)
-    _, lons, lats = alk_location.T
-    nus_5years[lons, lats] = nu_5years
-    nus_15years[lons, lats] = nu_15years
+        # find lat and lon of alkalinity release, store nu in array of nus at correct location
+        alk_location = np.argwhere(ds.AT_added.isel(time=1).values > 0)
+        _, lons, lats = alk_location.T
+        nus_5years[lons, lats] = nu_5years
+        nus_15years[lons, lats] = nu_15years
+        ds.close()
+    except Exception as e:
+        ds.close()
+        print(f"Failed: {experiment_name} -> {e}")
+        failed_experiments.append(experiment_name)
+        continue
 
 #%% used to combine two separate runs shown above into one output array
 
@@ -84,8 +93,8 @@ for exp_idx in tqdm(range(len(experiment_names))):
 #nus_5years_full = np.nansum(np.dstack((nus_5years,nus_5years_old)),2)
 #nus_15years_full = np.nansum(np.dstack((nus_15years, nus_15years_old)),2)
 
-#np.save(output_path + 'nus15yrs_dt1yr.npy', nus_15years_full)
-#np.save(output_path + 'nus5yrs_dt1yr.npy', nus_5years_full)
+np.save(output_path + 'nus15yrs_dt1yr_6deg.npy', nus_15years)
+np.save(output_path + 'nus5yrs_dt1yr_6deg.npy', nus_5years)
      
 #%% plot efficiency
 cmap = plt.get_cmap('viridis')

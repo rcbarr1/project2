@@ -202,10 +202,10 @@ start_year = 2015
 
 #%% figures for OSM talk
 
-experiment_names = ['exp23_2026-01-16_t1_none',
-                    'exp23_2026-01-16_t1_ssp126',
-                    'exp23_2026-01-16_t1_ssp245',
-                    'exp23_2026-01-16_t1_ssp534_OS',]
+experiment_names = ['exp23_2026-02-02_t1_none_B',
+                    'exp23_2026-02-02_t1_ssp126_B',
+                    'exp23_2026-02-02_t1_ssp245_B',
+                    'exp23_2026-02-02_t1_ssp534_OS_B',]
 
 scenarios = ['none',
              'ssp126',
@@ -364,7 +364,7 @@ ax = fig.gca()
 
 # use xarray to open metadata of files of interest
 #for exp_idx in range(len(experiment_names)):
-for exp_idx in range(0,1):
+for exp_idx in range(len(experiment_names)):
     ds = xr.open_mfdataset(
         output_path + experiment_names[exp_idx] + '_*.nc',
         combine='by_coords',
