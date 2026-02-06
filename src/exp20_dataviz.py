@@ -29,20 +29,20 @@ TR = TR['TR']
 
 # open up rest of data associated with transport matrix
 model_data = xr.open_dataset(data_path + 'OCIM2_48L_base/OCIM2_48L_base_data.nc')
-ocnmask = model_data['ocnmask'].to_numpy()
+ocnmask = model_data['ocnmask'].transpose('latitude', 'longitude', 'depth').to_numpy()
 
-model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
-model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
-model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
-model_vols = model_data['vol'].to_numpy() # m^3
-
-model_data.close()
+model_lat = model_data['tlat'].isel(depth=0, longitude=0).to_numpy()    # ºN
+model_lon = model_data['tlon'].isel(depth=0, latitude=0).to_numpy()     # ºE
+model_depth = model_data['tz'].isel(longitude=0, latitude=0).to_numpy() # m below sea surface
+model_vols = model_data['vol'].transpose('latitude', 'longitude', 'depth').to_numpy() # m^3
 
 # some other important numbers
-grid_cell_depth = model_data['wz'].to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
-z1 = grid_cell_depth[1, 0, 0] # depth of first model layer [m]
+grid_cell_depth = model_data['wz'].transpose('latitude', 'longitude', 'depth').to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
+z1 = grid_cell_depth[0, 0, 1] # depth of first model layer [m]
 rho = 1025 # seawater density for volume to mass [kg m-3]
 surf_idx = p2.get_depth_idx(ocnmask,0) # indicies of surface grid cells in 3D array flattened by p2.flatten()
+
+model_data.close()
 
 # rules for saving files
 t_per_file = 2000 # number of time steps 
@@ -128,44 +128,32 @@ linecolors = ['#023880', '#96adcf', '#145a6a', '#2eceb7','#023880', '#96adcf', '
 ncol = 2
 start_year = 2015
 '''
-experiment_names = ['exp22_2025-12-01_t0_none',
-                    'exp22_2025-12-01_t0_ssp126',
-                    'exp22_2025-12-01_t0_ssp245',
-                    'exp22_2025-12-01_t0_ssp534_OS',
-                    'exp22_2025-12-01_t1_none',
-                    'exp22_2025-12-01_t1_ssp126',
-                    'exp22_2025-12-01_t1_ssp245',
-                    'exp22_2025-12-01_t1_ssp534_OS',
-                    'exp22_2025-12-01_t2_none',
-                    'exp22_2025-12-01_t2_ssp126',
-                    'exp22_2025-12-01_t2_ssp245',
-                    'exp22_2025-12-01_t2_ssp534_OS',]
 
-experiment_names = ['exp22_2025-12-10_t0_none',
-                    'exp22_2025-12-10_t0_ssp126',
-                    'exp22_2025-12-10_t0_ssp245',
-                    'exp22_2025-12-10_t0_ssp534_OS',
-                    'exp22_2025-12-10_t1_none',
-                    'exp22_2025-12-10_t1_ssp126',
-                    'exp22_2025-12-10_t1_ssp245',
-                    'exp22_2025-12-10_t1_ssp534_OS',
-                    'exp22_2025-12-10_t2_none',
-                    'exp22_2025-12-10_t2_ssp126',
-                    'exp22_2025-12-10_t2_ssp245',
-                    'exp22_2025-12-10_t2_ssp534_OS',]
+experiment_names = ['exp22_2026-02-05_t0_none',
+                    'exp22_2026-02-05_t0_ssp126',
+                    'exp22_2026-02-05_t0_ssp245',
+                    'exp22_2026-02-05_t0_ssp534_OS',
+                    'exp22_2026-02-05_t1_none',
+                    'exp22_2026-02-05_t1_ssp126',
+                    'exp22_2026-02-05_t1_ssp245',
+                    'exp22_2026-02-05_t1_ssp534_OS',
+                    'exp22_2026-02-05_t2_none',
+                    'exp22_2026-02-05_t2_ssp126',
+                    'exp22_2026-02-05_t2_ssp245',
+                    'exp22_2026-02-05_t2_ssp534_OS',]
 
-experiment_names = ['exp23_2026-01-06_t0_none',
-                    'exp23_2026-01-06_t0_ssp126',
-                    'exp23_2026-01-06_t0_ssp245',
-                    'exp23_2026-01-06_t0_ssp534_OS',
-                    'exp23_2026-01-06_t1_none',
-                    'exp23_2026-01-06_t1_ssp126',
-                    'exp23_2026-01-06_t1_ssp245',
-                    'exp23_2026-01-06_t1_ssp534_OS',
-                    'exp23_2026-01-06_t2_none',
-                    'exp23_2026-01-06_t2_ssp126',
-                    'exp23_2026-01-06_t2_ssp245',
-                    'exp23_2026-01-06_t2_ssp534_OS',]
+experiment_names = ['exp23_2026-02-05_t0_none',
+                    'exp23_2026-02-05_t0_ssp126',
+                    'exp23_2026-02-05_t0_ssp245',
+                    'exp23_2026-02-05_t0_ssp534_OS',
+                    'exp23_2026-02-05_t1_none',
+                    'exp23_2026-02-05_t1_ssp126',
+                    'exp23_2026-02-05_t1_ssp245',
+                    'exp23_2026-02-05_t1_ssp534_OS',]
+                    # 'exp23_2026-02-05_t2_none',
+                    # 'exp23_2026-02-05_t2_ssp126',
+                    # 'exp23_2026-02-05_t2_ssp245',
+                    # 'exp23_2026-02-05_t2_ssp534_OS',]
 
 scenarios = ['none',
              'ssp126',
@@ -241,8 +229,8 @@ Si = p2.flatten(Si_3D, ocnmask)
 P = p2.flatten(P_3D, ocnmask)
 
 # get TRACE data (switch to interpolation for speed?)
-Canth_2002_3D = p2.calculate_canth('none', 2002, T_3D, S_3D, ocnmask, model_depth, model_lon, model_lat)
-Canth_3D = p2.calculate_canth('none', start_year, T_3D, S_3D, ocnmask, model_depth, model_lon, model_lat)
+Canth_2002_3D = p2.calculate_canth('none', 2002, T_3D, S_3D, ocnmask, model_lat, model_lon, model_depth)
+Canth_3D = p2.calculate_canth('none', start_year, T_3D, S_3D, ocnmask, model_lat, model_lon, model_depth)
 
 # calculate preindustrial DIC by subtracting anthropogenic carbon
 DIC_preind_3D = DIC_3D - Canth_2002_3D
@@ -251,8 +239,8 @@ DIC_preind = p2.flatten(DIC_preind_3D, ocnmask)
 DIC_start_3D = DIC_preind_3D + Canth_3D
 
 # create "pressure" array by broadcasting depth array
-pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
-pressure = p2.flatten(pressure_3D, ocnmask)
+pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[0], ocnmask.shape[1])).transpose([1, 2, 0])
+pressure = p2.flatten(pressure_3D, ocnmask) 
 
 # calculate preindustrial pH assuming steady state alkalinity
 co2sys = pyco2.sys(dic=DIC_preind,
@@ -279,10 +267,10 @@ for exp_idx in range(len(experiment_names)):
         parallel=True)
     
     # broadcast model_vols to convert ∆AT from per kg to total
-    model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
+    model_vols_xr = xr.DataArray(model_vols, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
     
     AT_added = ds['AT_added'] * model_vols_xr * rho * 1e-6
-    AT_added = AT_added.sum(dim=['depth', 'lon', 'lat'], skipna=True)
+    AT_added = AT_added.sum(dim=['lat', 'lon', 'depth'], skipna=True)
     AT_added_cum = AT_added.cumsum(dim='time')
     
     # only actually pull values into memory needed for plotting
@@ -309,10 +297,10 @@ for exp_idx in range(len(experiment_names)):
         parallel=True)
     
     # broadcast model_vols to convert ∆AT from per kg to total
-    model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
+    model_vols_xr = xr.DataArray(model_vols, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
     
     AT_added = ds['AT_added'] * model_vols_xr * rho * 1e-6
-    AT_added = AT_added.sum(dim=['depth', 'lon', 'lat'], skipna=True)
+    AT_added = AT_added.sum(dim=['lat', 'lon', 'depth'], skipna=True)
     
     ax.plot(ds['time'].values, AT_added.compute().values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
     
@@ -356,7 +344,7 @@ for exp_idx in range(len(experiment_names)):
         
         delpH = p2.make_3D(co2sys['pH'] - co2sys_start['pH'], ocnmask)
         
-        p2.plot_surface3d(model_lon, model_lat, delpH, 0, -0.2, 0.2, 'viridis', 'delpH in ' + str(ds['time'].isel(time=idx).values))
+        p2.plot_surface3d(model_lat, model_lon, delpH, 0, -0.2, 0.2, 'viridis', 'delpH in ' + str(ds['time'].isel(time=idx).values))
 
 #%% change in atmospheric CO2
 fig = plt.figure(figsize=(3.5,3.5), dpi=200)
@@ -420,8 +408,8 @@ ax = fig.gca()
 ax.axhline(np.average(DIC_preind[surf_idx], weights=p2.flatten(model_vols,ocnmask)[surf_idx]), c='black', linestyle='--', label='Preindustrial DIC')
 
 # store DIC and model_vols in xarray for broadcasting
-DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
-model_vols_ds = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
+DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
+model_vols_ds = xr.DataArray(model_vols, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
 
 # use xarray to open metadata of files of interest
 for exp_idx in tqdm(range(len(experiment_names))):
@@ -435,7 +423,7 @@ for exp_idx in tqdm(range(len(experiment_names))):
     DIC_modeled_3D = ds['delDIC'] + DIC_start_ds
     
     # wrap model_vols in xarray dataset to convert from concentration to amount or use in weighted average
-    DIC_weighted_mean = DIC_modeled_3D.isel(depth=0).weighted(model_vols_xr.isel(depth=0)).mean(dim=['lon', 'lat'], skipna=True)
+    DIC_weighted_mean = DIC_modeled_3D.isel(depth=0).weighted(model_vols_xr.isel(depth=0)).mean(dim=['lat', 'lon'], skipna=True)
 
     ax.plot(ds['time'].values, DIC_weighted_mean.values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
 
@@ -450,7 +438,7 @@ ax.spines['right'].set_color(textcolor)
 #%% change in DIC (full ocean)
 fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
-DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
+DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
 
 # plot preindustrial baseline
 ax.axhline(np.average(DIC_preind, weights=p2.flatten(model_vols,ocnmask)), c='black', linestyle='--', label='Preindustrial DIC')
@@ -467,8 +455,8 @@ for exp_idx in tqdm(range(len(experiment_names))):
     DIC_modeled_3D = ds['delDIC'] + DIC_start_ds
     
     # wrap model_vols in xarray dataset to convert from concentration to amount or use in weighted average
-    model_vols_ds = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
-    DIC_weighted_mean = DIC_modeled_3D.weighted(model_vols_xr).mean(dim=['depth','lon', 'lat'])
+    model_vols_ds = xr.DataArray(model_vols, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
+    DIC_weighted_mean = DIC_modeled_3D.weighted(model_vols_xr).mean(dim=['lat','lon', 'depth'])
 
     ax.plot(ds['time'].values, DIC_weighted_mean.values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
 
@@ -483,8 +471,8 @@ ax.spines['right'].set_color(textcolor)
 #%% change in pH (surface)
 fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
-DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
-AT_ds = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
+DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
+AT_ds = xr.DataArray(AT_3D, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
 
 # plot preindustrial baseline
 ax.axhline(np.average(pH_preind[surf_idx], weights=p2.flatten(model_vols,ocnmask)[surf_idx]), c='black', linestyle='--', label='Preindustrial pH')
@@ -534,8 +522,8 @@ ax.spines['right'].set_color(textcolor)
 #%% change in pH (full ocean)
 fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
-DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
-AT_ds = xr.DataArray(AT_3D, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
+DIC_start_ds = xr.DataArray(DIC_start_3D, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
+AT_ds = xr.DataArray(AT_3D, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
 
 # plot preindustrial baseline
 ax.axhline(np.average(pH_preind, weights=p2.flatten(model_vols,ocnmask)), c='black', linestyle='--', label='Preindustrial pH')

@@ -173,9 +173,9 @@ def set_experiment_parameters(test=False):
                                             'scenario': scenario,
                                             'start_year' : start_year,
                                             'start_CDR' : start_CDR,
-                                            'tag': datetime.now().strftime("%Y-%m-%d") + '_' + exp_t_name + '_' + str(grid_cell_idx)})
+                                            'tag': datetime.now().strftime("%Y-%m-%d") + '_' + exp_t_name + '_' + f'{grid_cell_idx:05d}'})
     return experiments
-#%%
+
 def run_experiment(experiment):
     experiment_name = 'exp25_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
