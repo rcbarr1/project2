@@ -132,7 +132,7 @@ def set_experiment_parameters(test=False):
 
     # to do addition in first (or first two, or first three, etc.) model layer(s)
     q_AT_depths = ocnmask.copy()
-    q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
+    q_AT_depths[:, :, 1::] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
 
     # to do all ocean lat/lons individually
     ocn_idxs = np.argwhere(q_AT_depths == 1) # find the indices where mask == 1
@@ -175,7 +175,7 @@ def set_experiment_parameters(test=False):
                                             'start_CDR' : start_CDR,
                                             'tag': datetime.now().strftime("%Y-%m-%d") + '_' + exp_t_name + '_' + str(grid_cell_idx)})
     return experiments
-
+#%%
 def run_experiment(experiment):
     experiment_name = 'exp25_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
