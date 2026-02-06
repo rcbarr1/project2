@@ -71,16 +71,16 @@ TR = TR['TR']
 
 # open up rest of data associated with transport matrix
 model_data = xr.open_dataset(data_path + 'OCIM2_48L_base/OCIM2_48L_base_data.nc')
-ocnmask = model_data['ocnmask'].to_numpy()
+ocnmask = model_data['ocnmask'].transpose('latitude', 'longitude', 'depth').to_numpy()
 
-model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
-model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
-model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
-model_vols = model_data['vol'].to_numpy() # m^3
+model_lat = model_data['tlat'].isel(depth=0, longitude=0).to_numpy()    # ºN
+model_lon = model_data['tlon'].isel(depth=0, latitude=0).to_numpy()     # ºE
+model_depth = model_data['tz'].isel(longitude=0, latitude=0).to_numpy() # m below sea surface
+model_vols = model_data['vol'].transpose('latitude', 'longitude', 'depth').to_numpy() # m^3
 
 # some other important numbers
-grid_cell_depth = model_data['wz'].to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
-z1 = grid_cell_depth[1, 0, 0] # depth of first model layer [m]
+grid_cell_depth = model_data['wz'].transpose('latitude', 'longitude', 'depth').to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
+z1 = grid_cell_depth[0, 0, 1] # depth of first model layer [m]
 rho = 1025 # seawater density for volume to mass [kg m-3]
 surf_idx = p2.get_depth_idx(ocnmask,0) # indicies of surface grid cells in 3D array flattened by p2.flatten()
 
@@ -206,11 +206,11 @@ def run_experiment(experiment):
     P = p2.flatten(P_3D, ocnmask)
 
     # create "pressure" array by broadcasting depth array
-    pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
-    pressure = pressure_3D[ocnmask == 1].flatten(order='F')
+    pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[0], ocnmask.shape[1])).transpose([1, 2, 0])
+    pressure = p2.flatten(pressure_3D, ocnmask) 
 
     # calculate preindustrial DIC using TRACE
-    Canth_2002_3D = p2.interp_TRACE(data_path, 2002, 'none', model_depth, model_lon, model_lat, ocnmask)
+    Canth_2002_3D = p2.interp_TRACE(data_path, 2002, 'none', model_lat, model_lon, model_depth, ocnmask)
 
     # calculate preindustrial pH from GLODAP DIC minus Canth to get preindustrial DIC and GLODAP TA, assuming steady state
     DIC_preind_3D = DIC_3D - Canth_2002_3D
@@ -220,7 +220,7 @@ def run_experiment(experiment):
                     pressure=pressure, total_silicate=Si, total_phosphate=P)
 
     # calculate anthropogenic carbon at starting year with TRACE
-    Canth_3D = p2.interp_TRACE(data_path, start_year, scenario, model_depth, model_lon, model_lat, ocnmask)
+    Canth_3D = p2.interp_TRACE(data_path, start_year, scenario, model_lat, model_lon, model_depth, ocnmask)
     Canth = p2.flatten(Canth_3D, ocnmask)
 
     # set up air-sea gas exchange (Wanninkhof, 2014)
@@ -252,11 +252,11 @@ def run_experiment(experiment):
 
     # add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
     k_3D = np.full(ocnmask.shape, np.nan)
-    k_3D[0, :, :] = k_2D
+    k_3D[:, :, 0] = k_2D
     k = p2.flatten(k_3D, ocnmask)
 
     f_ice_3D = np.full(ocnmask.shape, np.nan)
-    f_ice_3D[0, :, :] = f_ice_2D
+    f_ice_3D[:, :, 0] = f_ice_2D
     f_ice = p2.flatten(f_ice_3D, ocnmask)
 
     gammax = k * V * (1 - f_ice) / Ma / z1
@@ -322,24 +322,24 @@ def run_experiment(experiment):
             ds = Dataset(fname, "w", format="NETCDF4")
         
             ds.createDimension('time', None)
-            ds.createDimension('depth', len(model_depth))
-            ds.createDimension('lon', len(model_lon))
             ds.createDimension('lat', len(model_lat))
+            ds.createDimension('lon', len(model_lon))
+            ds.createDimension('depth', len(model_depth))
             
             time_var = ds.createVariable('time', 'f8', ('time',))
             time_var.units = 'year'
             
-            depth_var = ds.createVariable('depth', 'f4', ('depth',))
-            depth_var[:] = model_depth
-            depth_var.units = 'meters'
+            lat_var = ds.createVariable('lat', 'f4', ('lat',))
+            lat_var[:] = model_lat
+            lat_var.units = 'degrees_north'
             
             lon_var = ds.createVariable('lon', 'f4', ('lon',))
             lon_var[:] = model_lon
             lon_var.units = 'degrees_east'
             
-            lat_var = ds.createVariable('lat', 'f4', ('lat',))
-            lat_var[:] = model_lat
-            lat_var.units = 'degrees_north'
+            depth_var = ds.createVariable('depth', 'f4', ('depth',))
+            depth_var[:] = model_depth
+            depth_var.units = 'meters'
         
             # create 4D variables
             tracers = {}
@@ -348,10 +348,10 @@ def run_experiment(experiment):
                 tracers[tracer] = ds.createVariable(
                     tracer,
                     'f4',
-                    ('time', 'depth', 'lon', 'lat',),
+                    ('time', 'lat', 'lon', 'depth', ),
                     zlib=True,
                     complevel=4,
-                    chunksizes=(1, len(model_depth), len(model_lon), len(model_lat)),)
+                    chunksizes=(1, len(model_lat), len(model_lon), len(model_depth),))
             
             # create 1D variables
             tracers_1D = {'delxCO2', 'xCO2_added'}
@@ -390,18 +390,14 @@ def run_experiment(experiment):
         # do not recalculate if no scenario selected --> anthropogenic CO2 will remain at level
         # at specified start year
         if scenario != 'none':
-            Canth_3D = p2.interp_TRACE(data_path, t[idx] + start_year, scenario, model_depth, model_lon, model_lat, ocnmask)
+            Canth_3D = p2.interp_TRACE(data_path, t[idx] + start_year, scenario, model_lat, model_lon, model_depth, ocnmask)
             Canth = p2.flatten(Canth_3D, ocnmask)
-            # print('new total Canth = ' + str(np.nansum(Canth)))
 
         # AT and DIC are equal to initial AT and DIC + whatever the change
         # in AT and DIC seen in previous time step are + whatever the 
         # anthropogenic carbon in this year is
         AT_current = AT + c[(m+1):(2*m+1), 0]
         DIC_current = DIC_preind + c[1:(m+1), 0] + Canth
-
-        # print('new current avg DIC (surf, unweighted)= ' + str(np.nanmean(DIC_current[surf_idx])))
-        # print('new current avg DIC (unweighted) = ' + str(np.nanmean(DIC_current)))
 
         # calculate carbonate system
         # use CO2SYS with GLODAP data to solve for carbonate system at each grid cell
@@ -416,8 +412,6 @@ def run_experiment(experiment):
         aqueous_CO2 = co2sys_current['CO2'] # aqueous CO2 [µmol kg-1]
         R_C = co2sys_current['revelle_factor'] # revelle factor w.r.t. DIC [unitless]
 
-        # print('new RC = ' + str(np.nanmean(R_C[surf_idx])))
-
         # calculate revelle factor w.r.t. AT [unitless]
         # must calculate manually, R_AT defined as (dpCO2/pCO2) / (dAT/AT)
         # to speed up, only calculating this in surface
@@ -429,8 +423,6 @@ def run_experiment(experiment):
         R_A_surf = ((pCO2_000001 - pCO2[surf_idx])/pCO2[surf_idx]) / (0.000001/AT[surf_idx])
         R_A = np.full(R_C.shape, np.nan)
         R_A[surf_idx] = R_A_surf
-        
-        # print('new RA = ' + str(np.nanmean(R_A[surf_idx])))
         
         # calculate rest of Nowicki et al. parameters
         beta_C = DIC_current/aqueous_CO2 # [unitless]
@@ -542,28 +534,11 @@ def run_experiment(experiment):
                 f'residual: {ksp.getResidualNorm():.2e} '
             )
 
-        # fix tracer drift (transport matrix is not perfectly conservative)
-        # calculate amount erroneously added between time steps, subtract off mean of this for each box
-        # weights = p2.flatten(model_vols, ocnmask)
-        
-        # sum_DIC0 = np.sum(c[1:(m+1), 0] * rho * weights) # amount of DIC at previous time step [µmol]
-        # sum_DIC1 = np.sum(c[1:(m+1), 1] * rho * weights) # amount of DIC at current time step [µmol]
-        # flux_q_DIC = np.sum(dt[idx] * q[1:(m+1)] * rho * weights) # amount of DIC added on purpose [µmol]
-        # #flux_A_DIC = np.sum(-1 * c[0, 1] * Ma) # amount of DIC added via air-sea gas exchange [µmol]
-        # drift_DIC = (sum_DIC1 - sum_DIC0 - flux_q_DIC) / np.sum(rho * weights)
-        # c[1:(m+1), 1] -= drift_DIC
-        
-        # sum_AT0 = np.sum(c[(m+1):(2*m+1), 0] * rho * weights) # amount of AT at previous time step [µmol]
-        # sum_AT1 = np.sum(c[(m+1):(2*m+1), 1] * rho * weights) # amount of AT at current time step [µmol]
-        # flux_AT = np.sum(dt[idx] * q[(m+1):(2*m+1)] * rho * weights) # amount of AT added on purpose [µmol]
-        # drift_AT = (sum_AT1 - sum_AT0 - flux_AT) / np.sum(rho * weights)
-        # c[(m+1):(2*m+1), 1] -= drift_AT
-        
         # partition "c" into xCO2, DIC, and AT
         c_delxCO2 = c[0, 1]
         c_delDIC  = c[1:(m+1), 1]
         c_delAT   = c[(m+1):(2*m+1), 1]
-
+    
         # partition "q" into xCO2, DIC, and AT
         # convert from flux (amount yr-1) to amount by multiplying by dt [yr]
         q_delxCO2 = q[0] * dt[idx]
@@ -584,7 +559,7 @@ def run_experiment(experiment):
         c_delAT_3D = p2.make_3D(c_delAT, ocnmask)
         q_delDIC_3D = p2.make_3D(q_delDIC, ocnmask)
         q_delAT_3D = p2.make_3D(q_delAT, ocnmask)
-            
+
         # write data to xarray
         ds.variables['time'][idx_file] = t[idx] + start_year
         tracers['delxCO2'][idx_file] = c_delxCO2.astype('float32')
@@ -633,7 +608,7 @@ def main():
     if args.list:
         print(f"total experiments: {len(experiments)}")
         for i, experiment in enumerate(experiments):
-            print(f"  {i}: exp21_{experiment['tag']}")
+            print(f"  {i}: exp25_{experiment['tag']}")
         return
     
     # validate exp_id

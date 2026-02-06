@@ -36,13 +36,13 @@ model_vols = model_data['vol'].to_numpy() # m^3
 
 model_data.close()
 rho = 1025 # seawater density for volume to mass [kg m-3]
-Ma = 1.8e26 # number of micromoles of air in atmosphere [µmol air]
+Ma = 1.8e20 # number of moles of air in atmosphere [mol air]
 
 # rules for saving files
 t_per_file = 2000 # number of time steps 
 #%% pull in all experiments (AT release from an individual grid cell across all grid cells)
 experiment_names = []
-for i in range(290, 3487):
+for i in range(8383, 9522):
     experiment_names.append('exp25_2026-02-03_t-mixed_' + str(i))
 
 # set up array to save maximum cumulative additionality in
@@ -60,14 +60,14 @@ for exp_idx in tqdm(range(len(experiment_names))):
             parallel=True)
 
         # check that there is data until model year 100
-        ds.delxCO2.sel(time=2115).values
+        ds.delxCO2.sel(time=2102).values
 
         # calculate cumulative additionality (alpha) at each time step
         model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
         cum_DIC_added = ds.DIC_added.cumsum(dim='time')
 
-        # alpha = (µmol air * (µmol CO2 / mol air) * (mol / µmol)) / (µmol CO2 kg-1 * m3 * kg * m-3)
-        alpha = (Ma * ds.delxCO2 / 1e6) / (cum_DIC_added * model_vols_xr * rho).sum(dim=['lat', 'lon', 'depth']) * 100
+        # alpha = (mol air * (µmol CO2 / mol air)) / (µmol CO2 kg-1 * m3 * kg * m-3)
+        alpha = (Ma * ds.delxCO2) / (cum_DIC_added * model_vols_xr * rho).sum(dim=['lat', 'lon', 'depth']) * 100
 
         # find maximum alpha across time
         max_alpha = np.max(alpha)

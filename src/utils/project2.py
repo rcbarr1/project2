@@ -85,7 +85,7 @@ def loadmat(filename):
     data = spio.loadmat(filename, struct_as_record=False, squeeze_me=True)
     return _check_keys(data)
     
-def save_model_output(filename, time, depth, lon, lat, tracers, tracer_dims=[('time', 'depth', 'lon', 'lat')], tracer_names=None, tracer_units=None, global_attrs=None):
+def save_model_output(filename, time, lat, lon, depth, tracers, tracer_dims=[('time', 'lat', 'lon', 'depth')], tracer_names=None, tracer_units=None, global_attrs=None):
     '''
     Save model output to a NetCDF file.
     
@@ -93,9 +93,9 @@ def save_model_output(filename, time, depth, lon, lat, tracers, tracer_dims=[('t
     ----------
     filename (str): Name of the NetCDF file to create.
     time (list or array): Time values (e.g., in years).
-    depth (list or array): Depth values.
-    lon (list or array): Longitude values.
     lat (list or array): Latitude values.
+    lon (list or array): Longitude values.
+    depth (list or array): Depth values.
     tracers (list of arrays): List of arrays for each variable of interest.
     tracer_dims (list of tuples): List of dimension tuples corresponding to each tracer (e.g., ('time', 'depth', 'lat', 'lon')).
     tracer_names (list of str, optional): Names of the tracers corresponding to each tracer set in `tracers`.
@@ -123,27 +123,27 @@ def save_model_output(filename, time, depth, lon, lat, tracers, tracer_dims=[('t
     with h5netcdf.File('./outputs/' + filename, 'w', invalid_netcdf=True) as ncfile:
         # Create dimensions
         ncfile.dimensions['time'] = len(time)
-        ncfile.dimensions['depth'] = len(depth)
-        ncfile.dimensions['lon'] = len(lon)
         ncfile.dimensions['lat'] = len(lat)
+        ncfile.dimensions['lon'] = len(lon)
+        ncfile.dimensions['depth'] = len(depth)
 
         # Create coordinate variables
         nc_time = ncfile.create_variable('time', ('time',), dtype='f8')
-        nc_depth = ncfile.create_variable('depth', ('depth',), dtype='f8')
-        nc_lon = ncfile.create_variable('lon', ('lon',), dtype='f8')
         nc_lat = ncfile.create_variable('lat', ('lat',), dtype='f8')
+        nc_lon = ncfile.create_variable('lon', ('lon',), dtype='f8')
+        nc_depth = ncfile.create_variable('depth', ('depth',), dtype='f8')
 
         # Set units and descriptions for coordinate variables
         nc_time.attrs['units'] = 'years'
-        nc_depth.attrs['units'] = 'meters'
-        nc_lon.attrs['units'] = 'degrees_east'
         nc_lat.attrs['units'] = 'degrees_north'
+        nc_lon.attrs['units'] = 'degrees_east'
+        nc_depth.attrs['units'] = 'meters'
 
         # Write coordinate data
         nc_time[:] = time
-        nc_depth[:] = depth
-        nc_lon[:] = lon
         nc_lat[:] = lat
+        nc_lon[:] = lon
+        nc_depth[:] = depth
 
         # Create and write tracer variables
         for tracer_name, tracer_data, tracer_dim, tracer_unit in zip(tracer_names, tracers, tracer_dims, tracer_units):
@@ -215,18 +215,14 @@ def get_depth_idx(ocnmask, depth_level):
     returns indicies in 3D array flattened using flatten() above that correspond to 
     values at a depth level represented by depth_idx
     '''
+    surf_mask = np.zeros_like(ocnmask)
+    surf_mask[:, :, 0] = 1
 
-    nz, ny, nx = ocnmask.shape
-
-    depth_index_full = np.tile(np.arange(nz), ny * nx) # fortran ordering
-
-    mask = ocnmask.flatten(order='F').astype(bool)
-    depth_index = depth_index_full[mask]
-
-    return np.where(depth_index == depth_level)[0]
+    ocn_surf_mask = ocnmask * surf_mask
+    return np.argwhere(flatten(ocn_surf_mask, ocnmask)==1)
 
 
-def find_MLD(model_lon, model_lat, ocnmask, MLD_da, latm, lonm, type_flag):
+def find_MLD(model_lat, model_lon, ocnmask, MLD_da, latm, lonm, type_flag):
     """
     Reads in the Holte et al. monthly mixed layer climatology and interpolates
     it. Currently set up to interpolate the maximum or average monthly mixed
@@ -236,8 +232,8 @@ def find_MLD(model_lon, model_lat, ocnmask, MLD_da, latm, lonm, type_flag):
     calculations.
     
     Keyword arguments:
-        model_lon = longitudes of interest
         model_lat = latitudes of interest
+        model_lon = longitudes of interest
         MLD_da = mixed layer depth from density algorithm from Holte et al.
                 (should be mld_da_max or mld_da_mean)
         latm = from Holte et al.
@@ -279,13 +275,13 @@ def find_MLD(model_lon, model_lat, ocnmask, MLD_da, latm, lonm, type_flag):
     MLDs = np.hstack([MLDs[:, 0:1], MLDs, MLDs[:, -1:]])
 
     # create interpolator
-    interp = RegularGridInterpolator((lonm[:,0], latm[0,:]), MLDs, bounds_error=False, fill_value=None)
+    interp = RegularGridInterpolator((latm[:,0], lonm[0,:]), MLDs, bounds_error=False, fill_value=None)
 
     # create meshgrid for OCIM grid
-    lon, lat = np.meshgrid(model_lon, model_lat, indexing='ij')
+    lat, lon = np.meshgrid(model_lat, model_lon, indexing='ij')
 
     # reshape meshgrid points into a list of coordinates to interpolate to
-    query_points = np.array([lon.ravel(), lat.ravel()]).T
+    query_points = np.array([lat.ravel(), lon.ravel()]).T
 
     # perform interpolation (regrid WOA data to match OCIM grid)
     var = interp(query_points)
@@ -294,134 +290,10 @@ def find_MLD(model_lon, model_lat, ocnmask, MLD_da, latm, lonm, type_flag):
     var = var.reshape(lon.shape)
 
     # inpaint nans
-    interp_MLDs = inpaint_nans2d(var, mask=ocnmask[0,:,:].astype(bool))
+    interp_MLDs = inpaint_nans2d(var, mask=ocnmask[:,:,0].astype(bool))
 
     return interp_MLDs
     
-def inpaint_nans3d_OLD(array_3d, mask=None, iterations=100):
-    '''
-    adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
-    to incorporate nan mask so inpainting doesn't happen over land 
-    
-    array_3d : 3-dimensional array of data to interpolate
-    mask : boolean mask of land points (True) and ocean points (False)
-    iterations : number of times to perform interpolation
-    
-    returns
-    -------
-    interpolated_data : data interpolated to fill in NaNs, masked to remove interpolations over land if mask provided
-    '''
-    # dimensions of input
-    size = array_3d.shape
-    
-    # get index of NaN in data
-    nan_index = np.isnan(array_3d).nonzero()
-    interpolated_data = array_3d.copy()
-    
-    # make an initial guess for the interpolated data using the mean of the non-NaN values
-    interpolated_data[nan_index] = np.nanmean(array_3d)
-    
-    # returns the sign of the neighbor to be averaged for boundary elements
-    def sign(index, max_index):
-        if index == 0:
-            return [1, 0]
-        elif index == max_index - 1:
-            return [-1, 0]
-        else:
-            return [-1, 1]
-    
-    # calculate the sign for each dimension separately
-    nan_index_X, nan_index_Y, nan_index_Z = nan_index[0], nan_index[1], nan_index[2]
-    signs_X = np.array([sign(x, size[0]) for x in nan_index_X])
-    signs_Y = np.array([sign(y, size[1]) for y in nan_index_Y])
-    signs_Z = np.array([sign(z, size[2]) for z in nan_index_Z])
-    
-    # gauss seidel iteration to interpolate NaN values with neighbors
-    for _ in tqdm(range(iterations)):
-        for i in range(len(nan_index_X)):
-            x, y, z = nan_index_X[i], nan_index_Y[i], nan_index_Z[i]
-            dx, dy, dz = signs_X[i], signs_Y[i], signs_Z[i]
-            
-            neighbors = []
-            if dx[0] != 0: # can average with the previous X neighbor
-                neighbors.append(interpolated_data[np.clip(x + dx[0], 0, size[0] - 1), y, z])
-            if dx[1] != 0: # can average with the next X neighbor
-                neighbors.append(interpolated_data[np.clip(x + dx[1], 0, size[0] - 1), y, z])
-            
-            if dy[0] != 0: # can average with the previous Y neighbor
-                neighbors.append(interpolated_data[x, np.clip(y + dy[0], 0, size[1] - 1), z])
-            if dy[1] != 0: # can average with the next Y neighbor
-                neighbors.append(interpolated_data[x, np.clip(y + dy[1], 0, size[1] - 1), z])
-                
-            if dz[0] != 0: # can average with the previous Z neighbor
-                neighbors.append(interpolated_data[x, y, np.clip(z + dz[0], 0, size[2] - 1)])
-            if dz[1] != 0: # can average with the next Z neighbor
-                neighbors.append(interpolated_data[x, y, np.clip(z + dz[1], 0, size[2] - 1)])
-        
-    # average the neighbors to interpolate the NaN value
-    interpolated_data[x, y, z] = np.nanmean(neighbors)
-    
-    # mask out land values if mask provided
-    if mask is not None:
-        interpolated_data[mask == False] = np.NaN
-    
-    return interpolated_data
-
-def inpaint_nans2d_OLD(array_2d, mask=None, iterations=100):
-    '''
-    adapted from https://stackoverflow.com/questions/73206073/interpolation-of-missing-values-in-3d-data-array-in-python
-    to incorporate nan mask so inpainting doesn't happen over land 
-    '''
-    # dimensions of input
-    size = array_2d.shape
-
-    # get index of NaN in data
-    nan_index = np.isnan(array_2d).nonzero()
-    interpolated_data = array_2d.copy()
-
-    # make an initial guess for the interpolated data using the mean of the non NaN values
-    interpolated_data[nan_index] = np.nanmean(array_2d)
-
-    # returns the sign of the neighbor to be averaged for boundary elements
-    def sign(index, max_index):
-        # pass additional max_index to this func as this is now a variable
-        if index == 0:
-            return [1, 0]
-        elif index == max_index - 1:
-            return [-1, 0]
-        else:
-            return [-1, 1]
-
-    # calculate the sign for each dimension separately
-    nan_index_X, nan_index_Y = nan_index[0], nan_index[1]
-    signs_X = np.array([sign(x, size[0]) for x in nan_index_X])
-    signs_Y = np.array([sign(y, size[1]) for y in nan_index_Y])
-            
-    for _ in tqdm(range(iterations)):
-        for i in range(len(nan_index_X)):
-            x, y = nan_index_X[i], nan_index_Y[i]
-            dx, dy = signs_X[i], signs_Y[i]
-
-            neighbors = []
-            if dx[0] != 0:  # can average with the previous x neighbor
-                neighbors.append(interpolated_data[np.clip(x + dx[0], 0, size[0] - 1), y])
-            if dx[1] != 0:  # can average with the next x neighbor
-                neighbors.append(interpolated_data[np.clip(x + dx[1], 0, size[0] - 1), y])
-
-            if dy[0] != 0:
-                neighbors.append(interpolated_data[x, np.clip(y + dy[0], 0, size[1] - 1)])
-            if dy[1] != 0:
-                neighbors.append(interpolated_data[x, np.clip(y + dy[1], 0, size[1] - 1)])
-
-            # average the neighbors to interpolate the NaN value
-            interpolated_data[x, y] = np.nanmean(neighbors)
-    
-    # mask out land values if mask provided
-    if mask is not None:
-        interpolated_data[mask == False] = np.NaN
-    
-    return interpolated_data
-
 def inpaint_nans3d(array_3d, iterations=10, mask=None):
         
     # copy input
@@ -505,7 +377,7 @@ def inpaint_nans2d(array_2d, iterations=10, mask=None):
 
     return interpolated
 
-def regrid_glodap(data_path, glodap_var, model_depth, model_lat, model_lon, ocnmask):
+def regrid_glodap(data_path, glodap_var, model_lat, model_lon, model_depth, ocnmask):
     '''
     regrid glodap data to model grid, inpaint nans, save as .npy file
 
@@ -513,9 +385,9 @@ def regrid_glodap(data_path, glodap_var, model_depth, model_lat, model_lon, ocnm
     ----------
     data_path : path to folder which contains GLODAPv2.2016b.MappedProduct folder from https://glodap.info/index.php/mapped-data-product/
     glodap_var : variable to regrid as named in GLODAP (dimensions: depth, longitude, latitude)
-    model_depth : array of model depth levels
     model_lat : array pf model latitudes
     model_lon : array of model longitudes
+    model_depth : array of model depth levels
     ocnmask : mask same shape as glodap_var where 1 marks an ocean cell and 0 marks land
 
     '''
@@ -526,27 +398,24 @@ def regrid_glodap(data_path, glodap_var, model_depth, model_lat, model_lon, ocnm
     glodap_data = xr.open_dataset(data_path + 'GLODAPv2.2016b.MappedProduct/GLODAPv2.2016b.' + glodap_var + '.nc')
 
     # pull out arrays of depth, latitude, and longitude from GLODAP
-    glodap_depth = glodap_data['Depth'].to_numpy() # m below sea surface
-    glodap_lon = glodap_data['lon'].to_numpy()     # ºE
     glodap_lat = glodap_data['lat'].to_numpy()     # ºN
+    glodap_lon = glodap_data['lon'].to_numpy()     # ºE
+    glodap_depth = glodap_data['Depth'].to_numpy() # m below sea surface
 
     # pull out values of DIC and TA from GLODAP
-    var = glodap_data[glodap_var].copy().values
-
-    # switch order of GLODAP dimensions to match OCIM dimensions
-    var = np.transpose(var, (0, 2, 1))
+    var = glodap_data[glodap_var].transpose('lat', 'lon', 'depth_surface').copy().values # switch order of GLODAP dimensions to match OCIM dimensions
     
     # create interpolator
-    interp = RegularGridInterpolator((glodap_depth, glodap_lon, glodap_lat), var, bounds_error=False, fill_value=None)
+    interp = RegularGridInterpolator((glodap_lat, glodap_lon, glodap_depth), var, bounds_error=False, fill_value=None)
 
     # transform model_lon for anything < 20 (because GLODAP goes from 20ºE - 380ºE)
     model_lon[model_lon < 20] += 360
 
     # create meshgrid for OCIM grid
-    depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
+    lat, lon, depth = np.meshgrid(model_lat, model_lon, model_depth, indexing='ij')
 
     # reshape meshgrid points into a list of coordinates to interpolate to
-    query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
+    query_points = np.array([lat.ravel(), lon.ravel(), depth.ravel()]).T
 
     # perform interpolation (regrid GLODAP data to match OCIM grid)
     var = interp(query_points)
@@ -576,7 +445,7 @@ def regrid_glodap(data_path, glodap_var, model_depth, model_lat, model_lon, ocnm
     print('\tregrid complete in ' + str(round(end_time - start_time,3)) + ' s')
 
 
-def regrid_woa(data_path, woa_var, model_depth, model_lat, model_lon, ocnmask):
+def regrid_woa(data_path, woa_var, model_lat, model_lon, model_depth, ocnmask):
     '''
     regrid woa data to model grid, inpaint nans
 
@@ -591,7 +460,6 @@ def regrid_woa(data_path, woa_var, model_depth, model_lat, model_lon, ocnmask):
     Returns
     -------
     woa_var : regridded to model grid
-
     '''
     
     # load WOA18 data
@@ -615,32 +483,28 @@ def regrid_woa(data_path, woa_var, model_depth, model_lat, model_lon, ocnmask):
     data = data.sortby('lon') # resort
     
     # pull out arrays of depth, latitude, and longitude from WOA
-    data_lon = data['lon'].to_numpy()     # ºE
     data_lat = data['lat'].to_numpy()     # ºN
+    data_lon = data['lon'].to_numpy()     # ºE
     data_depth = data['depth'].to_numpy()     # m
     
     # pull out data variable from WOA (now that coordinates are correct)
     if woa_var == 'S': # salinity [unitless]
-        var = data.s_an.isel(time=0).values
-        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format (depth, lon, lat)
+        var = data.s_an.isel(time=0).transpose('lat', 'lon', 'depth').values # transpose to match OCIM format (depth, lon, lat)
     elif woa_var == 'T': # temperature [ºC]
-        var = data.t_an.isel(time=0).values
-        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format (depth, lon, lat)
+        var = data.t_an.isel(time=0).transpose('lat', 'lon', 'depth').values # transpose to match OCIM format (depth, lon, lat)
     elif woa_var == 'Si': # silicate [µmol kg-1]
-        var = data.i_an.isel(time=0).values
-        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format (depth, lon, lat)
+        var = data.i_an.isel(time=0).transpose('lat', 'lon', 'depth').values # transpose to match OCIM format (depth, lon, lat)
     elif woa_var == 'P': # phosphate [µmol kg-1]
-        var = data.p_an.isel(time=0).values
-        var = np.transpose(var, (0, 2, 1)) # transpose to match OCIM format (depth, lon, lat)
+        var = data.p_an.isel(time=0).transpose('lat', 'lon', 'depth').values # transpose to match OCIM format (depth, lon, lat)
 
     # create interpolator
-    interp = RegularGridInterpolator((data_depth, data_lon, data_lat), var, bounds_error=False, fill_value=None)
+    interp = RegularGridInterpolator((data_lat, data_lon, data_depth), var, bounds_error=False, fill_value=None)
 
     # create meshgrid for OCIM grid
-    depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
+    lat, lon, depth = np.meshgrid(model_lat, model_lon, model_depth, indexing='ij')
 
     # reshape meshgrid points into a list of coordinates to interpolate to
-    query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
+    query_points = np.array([lat.ravel(), lon.ravel(), depth.ravel()]).T
 
     # perform interpolation (regrid WOA data to match OCIM grid)
     var = interp(query_points)
@@ -701,17 +565,17 @@ def regrid_ncep_noaa(data_path, ncep_var, model_lat, model_lon, ocnmask):
     start_time = time.time()
     
     # pull out arrays of depth, latitude, and longitude from NCEP
-    data_lon = data['lon'].to_numpy()     # ºE
     data_lat = data['lat'].to_numpy()     # ºN
-    
+    data_lon = data['lon'].to_numpy()     # ºE
+   
     # create interpolator
-    interp = RegularGridInterpolator((data_lon, data_lat), var.T, bounds_error=False, fill_value=None)
+    interp = RegularGridInterpolator((data_lat, data_lon), var, bounds_error=False, fill_value=None)
 
     # create meshgrid for OCIM grid
-    lon, lat = np.meshgrid(model_lon, model_lat, indexing='ij')
+    lat, lon = np.meshgrid(model_lat, model_lon, indexing='ij')
 
     # reshape meshgrid points into a list of coordinates to interpolate to
-    query_points = np.array([lon.ravel(), lat.ravel()]).T
+    query_points = np.array([lat.ravel(), lon.ravel()]).T
 
     # perform interpolation (regrid GLODAP data to match OCIM grid)
     var = interp(query_points)
@@ -720,7 +584,7 @@ def regrid_ncep_noaa(data_path, ncep_var, model_lat, model_lon, ocnmask):
     var = var.reshape(lon.shape)
 
     # inpaint nans
-    var = inpaint_nans2d(var, mask=ocnmask[0, :, :].astype(bool))
+    var = inpaint_nans2d(var, mask=ocnmask[:, :, 0].astype(bool))
 
     # save regridded data
     if ncep_var == 'icec':
@@ -733,70 +597,16 @@ def regrid_ncep_noaa(data_path, ncep_var, model_lat, model_lon, ocnmask):
     end_time = time.time()
     print('\tregrid complete in ' + str(round(end_time - start_time,3)) + ' s')
 
-def regrid_pH(data_path, data, model_lat, model_lon, ocnmask):
-    '''
-    calculate annual average, regrid data to model grid, inpaint nans, save
-    Preindustrial pH data from Jiang et al. (2019)
-
-    Parameters
-    ----------
-    data_path : path to folder which contains pH data from https://www.ncei.noaa.gov/access/metadata/landing-page/bin/iso?id=gov.noaa.nodc:0206289
-    data : xarray decoded Surface_pH_1770_2000.nc
-    model_lat : array pf model latitudes
-    model_lon : array of model longitudes
-    ocnmask : mask same shape as OCIM grid where 1 marks an ocean cell and 0 marks land
-    '''
-    
-    print('begin regrid of preindustrial pH')
-    start_time = time.time()
-
-    # pull out arrays of depth, latitude, and longitude from WOA
-    data_lon = data.Longitude[0, :].to_numpy()    # ºE
-    data_lat = data.Latitude[:, 0].to_numpy()     # ºN
-    
-    var = data.pH.sel(year=0).mean(dim='month').values # year 1770
-    
-    # create interpolator
-    interp = RegularGridInterpolator((data_lon, data_lat), var.T, bounds_error=False, fill_value=None)
-
-    # transform model_lon for anything < 20 (because GLODAP goes from 20ºE - 380ºE)
-    model_lon[model_lon < 20] += 360
-
-    # create meshgrid for OCIM grid
-    lon, lat = np.meshgrid(model_lon, model_lat, indexing='ij')
-
-    # reshape meshgrid points into a list of coordinates to interpolate to
-    query_points = np.array([lon.ravel(), lat.ravel()]).T
-
-    # perform interpolation (regrid GLODAP data to match OCIM grid)
-    var = interp(query_points)
-
-    # transform results back to model grid shape
-    var = var.reshape(lon.shape)
-
-    # inpaint nans
-    var = inpaint_nans2d(var, mask=ocnmask[0, :, :].astype(bool))
-
-    # transform model_lon and meshgrid back for anything > 360
-    model_lon[model_lon > 360] -= 360
-
-    # save data
-    np.save(data_path + 'pH_1770/pH_1770.npy', var)
-        
-    end_time = time.time()
-    print('\tregrid complete in ' + str(round(end_time - start_time,3)) + ' s')
-
-
-def regrid_cobalt(cobalt_vrbl, model_depth, model_lat, model_lon, ocnmask, data_path):
+def regrid_cobalt(cobalt_vrbl, model_lat, model_lon, model_depth, ocnmask, data_path):
     '''
     regrid COBALT data to model grid, inpaint nans, save as .npy file
     
     Parameters
     ----------
     cobalt_vrbl : variable from COBALT model to regrid
-    model_depth : array of model depth levels
     model_lat : array of model latitudes
     model_lon : array of model longitudes
+    model_depth : array of model depth levels
     ocnmask : mask same shape as glodap_var where 1 marks an ocean cell and 0 marks land
     data_path : where data is stored
     
@@ -826,34 +636,25 @@ def regrid_cobalt(cobalt_vrbl, model_depth, model_lat, model_lon, ocnmask, data_
     print('\tlongitude converted to OCIM coordinates: ' + str(round(end_time - start_time,3)) + ' s')
 
     # pull out arrays of depth, latitude, and longitude from COBALT
-    cobalt_depth = cobalt_var['zl'].to_numpy() # m below sea surface
-    cobalt_lon = cobalt_var['xh'].to_numpy()     # ºE (originally -300 to +60, now 0 to 360)
     cobalt_lat = cobalt_var['yh'].to_numpy()     # ºN (-80 to +90)
+    cobalt_lon = cobalt_var['xh'].to_numpy()     # ºE (originally -300 to +60, now 0 to 360)
+    cobalt_depth = cobalt_var['zl'].to_numpy() # m below sea surface
 
     # pull out values from COBALT
     start_time = time.time()
-    var = cobalt_var.values
+    var = cobalt_var.transpose('yh', 'xh', 'zl').values # switch order of COBALT dimensions to match OCIM
     end_time = time.time()
     print('\tvalues extracted to numpy: ' + str(round(end_time - start_time,3)) + ' s')
 
-    # switch order of COBALT dimensions (originally depth, lat, lon) to match
-    # OCIM dimensions (depth, lon, lat)
-    start_time = time.time()
-    var = np.transpose(var, (0, 2, 1))
-
-    #np.save(output_path + var_name + '_averaged.npy', var)  
-    end_time = time.time()
-    print('\tvalues transposed: ' + str(round(end_time - start_time,3)) + ' s')
-
     # create interpolator
     start_time = time.time()
-    interp = RegularGridInterpolator((cobalt_depth, cobalt_lon, cobalt_lat), var, method='linear', bounds_error=False, fill_value=None)
+    interp = RegularGridInterpolator((cobalt_lat, cobalt_lon, cobalt_depth), var, method='linear', bounds_error=False, fill_value=None)
 
     # create meshgrid for OCIM grid
-    depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
+    lat, lon, depth = np.meshgrid(model_lat, model_lon, model_depth, indexing='ij')
 
     # reshape meshgrid points into a list of coordinates to interpolate to
-    query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
+    query_points = np.array([lat.ravel(), lon.ravel(), depth.ravel()]).T
 
     # perform interpolation (regrid COBALT data to match OCIM grid)
     var_interped = interp(query_points)
@@ -876,7 +677,7 @@ def regrid_cobalt(cobalt_vrbl, model_depth, model_lat, model_lon, ocnmask, data_
     np.save(data_path + 'COBALT_regridded/' + var_name + '.npy', var_inpainted)
     print('\tfinal regridded array saved')
 
-def interp_TRACE(data_path, time, scenario, model_depth, model_lon, model_lat, ocnmask):
+def interp_TRACE(data_path, time, scenario, model_lat, model_lon, model_depth, ocnmask):
     '''
     Given a time and an emissions scenario, interpolate TRACE gridded product
     (downloaded from https://zenodo.org/records/15003059) to return a 3-D array
@@ -925,28 +726,25 @@ def interp_TRACE(data_path, time, scenario, model_depth, model_lon, model_lat, o
     trace_data = trace_data.interp(time=time)
 
     # pull out arrays of depth, latitude, and longitude from TRACE gridded product
-    trace_depth = trace_data['depth'].to_numpy() # m below sea surface
-    trace_lon = trace_data['lon'].to_numpy()     # ºE
     trace_lat = trace_data['lat'].to_numpy()     # ºN
+    trace_lon = trace_data['lon'].to_numpy()     # ºE
+    trace_depth = trace_data['depth'].to_numpy() # m below sea surface
 
-    # pull out values of DIC and TA from TRACE
-    canth = trace_data['canth'].copy().values
-
-    # switch order of TRACE dimensions to match OCIM dimensions
-    canth = np.transpose(canth, (0, 2, 1))
+    # pull out values of DIC and TA from TRACE, switch order of TRACE dimensions to match OCIM dimensions
+    canth = trace_data['canth'].transpose('lat', 'lon', 'depth').copy().values
     
     # create interpolator
-    interp = RegularGridInterpolator((trace_depth, trace_lon, trace_lat), canth, bounds_error=False, fill_value=None)
+    interp = RegularGridInterpolator((trace_lat, trace_lon, trace_depth), canth, bounds_error=False, fill_value=None)
 
     # transform model_lon for anything < 20 (because TRACE goes from 20ºE - 380ºE)
     model_lon[model_lon < 20] += 360
 
     # create meshgrid for OCIM grid
-    depth, lon, lat = np.meshgrid(model_depth, model_lon, model_lat, indexing='ij')
+    lat, lon, depth = np.meshgrid(model_lat, model_lon, model_depth, indexing='ij')
 
     # reshape meshgrid points into a list of coordinates to interpolate to
-    query_points = np.array([depth.ravel(), lon.ravel(), lat.ravel()]).T
-
+    query_points = np.array([lat.ravel(), lon.ravel(), depth.ravel()]).T
+    
     # perform interpolation (regrid TRACE data to match OCIM grid)
     canth = interp(query_points)
 
@@ -1098,118 +896,7 @@ def calculate_AT_to_add(pH_preind, DIC, AT, T, S, pressure, Si, P, AT_mask=None,
     
     return AT_to_offset
 
-def estimate_AT_to_add(model_path, pH_preind, DIC, AT, T, S, pressure, Si, P, AT_mask=None):
-    '''
-    Estimate the amount of alkalinity to add to the surface ocean in order to
-    reach preindustrial pH in the surface. This estimation is done using a neural
-    network that is trained on results obtained by applying calculate_AT_to_add
-    to the mixed layer for many time steps. 
-
-    Parameters
-    ----------
-    model_path : String
-        Path to where model weights and scaling are stored
-    pH_preind : Array of floats.
-        Preindustrial pH values at each ocean grid cell [unitless]
-    DIC : Array of floats.
-        Present-day dissolved inorganic carbon values at each ocean grid cell
-        [µmol kg-1]
-    AT : Array of floats.
-        Present-day alkalinity values at each ocean grid cell [µmol kg-1]
-    T : Array of floats.
-        Present-day temperature values at each ocean grid cell [ºC]
-    S : Array of floats.
-        Present-day salinity values at each ocean grid cell [unitless]
-    pressure : Array of floats.
-        Present-day pressure values at each ocean grid cell [dbar]
-    Si : Array of floats.
-        Present-day total silicate values at each ocean grid cell [µmol kg-1]
-    P : Array of floats.
-        Present-day total phosphate values at each ocean grid cell [µmol kg-1].
-    AT_mask : Mask same shape as pH/DIC/AT, etc. where 1 marks an cell that
-        recieves AT and 0 marks cells that do not get AT (i.e. scenario in
-        which AT is added to surface only)
-
-    Returns
-    -------
-    AT_to_offset: Array of floats.
-        Amount of AT to apply at each present-day ocean grid cell in order to
-        reach preindustrial pH in the surface ocean [µmol kg-1]
-    '''
-    # check which grid cells have pH < pH_preind
-    co2sys_init = pyco2.sys(dic=DIC, alkalinity=AT, salinity=S,
-                            temperature=T, pressure=pressure, 
-                            total_silicate=Si, total_phosphate=P)
-    pH_init = co2sys_init['pH']
-    
-    # mask for grid cells that will have AT added
-    gets_AT = pH_init < pH_preind
-    
-    # combine with AT_mask if provided
-    if AT_mask is not None:
-        gets_AT = gets_AT & (AT_mask == 1)
-
-    # extract only cells that need AT for faster processing
-    DIC_gets_AT = np.expand_dims(DIC[gets_AT],1)
-    AT_gets_AT = np.expand_dims(AT[gets_AT],1)
-    T_gets_AT = np.expand_dims(T[gets_AT],1)
-    S_gets_AT = np.expand_dims(S[gets_AT],1)
-    pressure_gets_AT = np.expand_dims(pressure[gets_AT],1)
-    Si_gets_AT = np.expand_dims(Si[gets_AT],1)
-    P_gets_AT = np.expand_dims(P[gets_AT],1)
-    pH_preind_gets_AT = np.expand_dims(pH_preind[gets_AT],1)
-
-    # combine predictors into one array
-    X = np.hstack([AT_gets_AT, DIC_gets_AT, T_gets_AT, S_gets_AT, Si_gets_AT, P_gets_AT, pressure_gets_AT, pH_preind_gets_AT]) 
-
-    # set up neural network model architecture (same as when training)
-    class AT_added_model(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.net = nn.Sequential(
-                nn.Linear(8,64), # layer 1 shape
-                nn.ReLU(),
-                nn.Linear(64, 32), # layer 2 shape
-                nn.ReLU(),
-                nn.Linear(32, 1) # layer 3 shape
-            )
-
-        def forward(self, x):
-            return self.net(x)
-
-    model = AT_added_model()
-    criterion = nn.MSELoss() # mean squared error to evaluate model fit
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-
-    # upload model for testing
-    model = AT_added_model()
-    model.load_state_dict(torch.load(model_path + 'AT_added_model.pth'))
-    model.eval() 
-
-    # load scalers
-    scaler_X = joblib.load(model_path + 'AT_added_model_scaler_X.save')
-    scaler_y = joblib.load(model_path + 'AT_added_model_scaler_y.save')
-
-    # scale data
-    X_scaled = scaler_X.fit_transform(X)
-    X_scaled = torch.tensor(X_scaled, dtype=torch.float32)
-
-    # predict AT to add
-    with torch.no_grad():
-        y_pred_scaled = model(X_scaled).numpy() 
-    y_pred_real = scaler_y.inverse_transform(y_pred_scaled) # invert scaling to get (µmol kg-1)
-
-    # if a negative value is predicted, zero it out
-    y_pred_real[y_pred_real < 0] = 0
-
-    # all ocean boxes to record amount of AT to add 
-    AT_to_offset = np.zeros_like(AT, dtype=float)  
-
-    # assign results back to full grid
-    AT_to_offset[gets_AT] = np.squeeze(y_pred_real)
-    
-    return AT_to_offset
-def calculate_canth(scenario, year, T_3D, S_3D, ocnmask, model_depth, model_lon, model_lat):
+def calculate_canth(scenario, year, T_3D, S_3D, ocnmask, model_lat, model_lon, model_depth):
     """
     calculates anthropogenic carbon stored in the ocean relative to a preindustrial
     (280 ppm) baseline using pyTRACE.
@@ -1221,10 +908,10 @@ def calculate_canth(scenario, year, T_3D, S_3D, ocnmask, model_depth, model_lon,
     T_3D : array of temperatures [ºC] of shape len(model_depth), len(model_lon), len(model_lon)
     S_3D : array of salinities of shape len(model_depth), len(model_lon), len(model_lon)
     ocnmask : mask of shape len(model_depth), len(model_lon), len(model_lon) where 1 marks an ocean cell and 0 marks land
-    model_depth : array of model depth levels
     model_lat : array pf model latitudes
     model_lon : array of model longitudes
-
+    model_depth : array of model depth levels
+    
     Returns
     ----------
     Canth_3D : anthropogenic carbon [µmol kg-1] at each combination of depth/lat/lon provided.
@@ -1238,14 +925,14 @@ def calculate_canth(scenario, year, T_3D, S_3D, ocnmask, model_depth, model_lon,
     # set up emissions scenario
     # note: none = no perturbation to atmospheric co2, NOT trace historical scenario. error is raised
     # if projections forward are attempted with none. GLODAP 2002 data is used as baseline and no
-    # change to Revelle factors due to emissions are included. Other scenarios follow Meinshausen et al. (2020)
+    # change to Revelle factors due to emissions are included. Other scenarioees follow Meinshausen et al. (2020)
     scenario_dict = {'none' : 2, 'ssp119': 2, 'ssp126' : 3, 'ssp245' : 4, 'ssp370' : 5,
                      'ssp360_NTCF' : 6, 'ssp434' : 7, 'ssp460' : 8, 'ssp534_OS' : 9}
 
-    # transpose to match requirements for PyTRACE
-    T_3D_T = T_3D.transpose([1, 2, 0])
-    S_3D_T = S_3D.transpose([1, 2, 0])
-    ocnmask_T = ocnmask.transpose([1, 2, 0])
+    # transpose to match requirements for PyTRACE (lon, lat, depth)
+    T_3D_T = T_3D.transpose([1, 0, 2])
+    S_3D_T = S_3D.transpose([1, 0, 2])
+    ocnmask_T = ocnmask.transpose([1, 0, 2])
 
     predictor_measurements = np.vstack([S_3D_T.flatten(order='F'), T_3D_T.flatten(order='F')]).T
     predictor_measurements = predictor_measurements[ocnmask_T.flatten(order='F').astype(bool)]
@@ -1287,7 +974,7 @@ def calculate_canth(scenario, year, T_3D, S_3D, ocnmask, model_depth, model_lon,
                          scale_factors=scale_factors,
                          verbose_tf=False)
     
-    Canth_3D = make_3D(trace_output.canth.values, ocnmask_T).transpose([2, 0, 1])
+    Canth_3D = make_3D(trace_output.canth.values, ocnmask_T).transpose([1, 0, 2])
 
     return Canth_3D
 
@@ -1348,7 +1035,7 @@ def get_CO2_scenario(scenario, times):
 
     return atmospheric_CO2
 
-def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
+def plot_surface2d(lats, lons, variable, vmin, vmax, cmap, title):
     
     # mask out zero values 
     variable_masked = np.ma.masked_where(variable == 0, variable)
@@ -1362,7 +1049,7 @@ def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
     #fig = plt.figure(figsize=(8,4))
     ax = fig.gca()
     levels = np.linspace(vmin-0.1, vmax, 100)
-    cntr = plt.contourf(lons, lats, variable_masked.T, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
+    cntr = plt.contourf(lons, lats, variable_masked, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
     c = plt.colorbar(cntr, ax=ax)
     c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
     #c.set_label('mol DIC m$^{-2}$ yr$^{-1}$', fontsize=12)
@@ -1379,16 +1066,16 @@ def plot_surface2d(lons, lats, variable, vmin, vmax, cmap, title):
     plt.xlim([0, 360]), plt.ylim([-90,90])
 
 
-def plot_surface3d(lons, lats, variable, depth_level, vmin, vmax, cmap, title, logscale=None, lon_lims=None):
+def plot_surface3d(lats, lons, variable, depth_level, vmin, vmax, cmap, title, logscale=None, lon_lims=None):
     fig = plt.figure(figsize=(10,7), dpi=200)
     ax = fig.gca()
     
     if logscale:
         #levels = np.logspace(vmin, vmax, 100)
-        cntr = plt.contourf(lons, lats, variable[depth_level, :, :].T, norm=LogNorm(), cmap=cmap, vmin=vmin, vmax=vmax) # log scale
+        cntr = plt.contourf(lons, lats, variable[:, :, depth_level], norm=LogNorm(), cmap=cmap, vmin=vmin, vmax=vmax) # log scale
     else:
         levels = np.linspace(vmin-1e-7, vmax, 100)
-        cntr = plt.contourf(lons, lats, variable[depth_level, :, :].T, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
+        cntr = plt.contourf(lons, lats, variable[:, :, depth_level], levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
     
     c = plt.colorbar(cntr, ax=ax)
     c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
@@ -1408,7 +1095,7 @@ def plot_longitude3d(lats, depths, variable, longitude, vmin, vmax, cmap, title)
     fig = plt.figure(figsize=(10,7))
     ax = fig.gca()
     levels = np.linspace(vmin-1e-7, vmax, 100)
-    cntr = plt.contourf(lats, depths, variable[:, longitude, :], levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
+    cntr = plt.contourf(lats, depths, variable[:, longitude, :].T, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
     c = plt.colorbar(cntr, ax=ax)
     c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
     ax.invert_yaxis()
@@ -1439,7 +1126,7 @@ def build_lme_masks(shp_path, ocnmask, lats, lons):
         mask_flat = points_gdf.within(row.geometry)
         mask = mask_flat.to_numpy().reshape(lat_grid.shape).T
         
-        mask = np.logical_and(mask, ocnmask[0, : , :].astype(bool))
+        mask = np.logical_and(mask, ocnmask[:, :, 0].astype(bool))
         
         # manually mask out point (177,76) from LME 22 (because it overlaps with LME 60)
         if lme_id == 22:
@@ -1542,7 +1229,6 @@ def build_lme_masks(shp_path, ocnmask, lats, lons):
             lme_id_grid[mask] = lme_id
             lme_masks[lme_id] = mask
             lme_id_to_name[lme_id] = name
-    
 
     return lme_masks, lme_id_to_name
     
@@ -1645,12 +1331,12 @@ def plot_lmes(lme_masks, ocnmask, lats, lons):
     #plt.xlim([-190, 190])
     plt.show()
 
-def make_surf_animation(variable, colorbar_label, model_lon, model_lat, t, nt, vmin, vmax, cmap, filename):
+def make_surf_animation(variable, colorbar_label, model_lat, model_lon, t, nt, vmin, vmax, cmap, filename):
     fig, ax = plt.subplots(figsize=(10,7))
     
     # first frame of animation
     cntr = ax.contourf(model_lon, model_lat,
-                       variable.isel(time=0).values[0,:,:].T,
+                       variable.isel(time=0).values[:,:,0],
                        levels=np.linspace(vmin, vmax, 100),
                        cmap=cmap, vmin=vmin, vmax=vmax)
     cbar = plt.colorbar(cntr, ax=ax,label=colorbar_label)
@@ -1662,7 +1348,7 @@ def make_surf_animation(variable, colorbar_label, model_lon, model_lat, t, nt, v
     def update_frame(idx):
         ax.clear()
         ax.contourf(model_lon, model_lat,
-                    variable.isel(time=idx).values[0,:,:].T,
+                    variable.isel(time=idx).values[:,:,0],
                     levels=np.linspace(vmin, vmax, 100),
                     cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_xlabel('Longitude (ºE)')
@@ -1682,7 +1368,7 @@ def make_surf_animation_pH(pH, colorbar_label, model_lon, model_lat, t, nt, ocnm
     pH_3D = make_3D(pH[0], ocnmask)
     
     cntr = ax.contourf(model_lon, model_lat,
-                       pH_3D[0,:,:].T,
+                       pH_3D[:,:,0],
                        levels=np.linspace(vmin, vmax, 100),
                        cmap=cmap, vmin=vmin, vmax=vmax)
     cbar = plt.colorbar(cntr, ax=ax,label=colorbar_label)
@@ -1695,7 +1381,7 @@ def make_surf_animation_pH(pH, colorbar_label, model_lon, model_lat, t, nt, ocnm
         ax.clear()
         pH_3D = make_3D(pH[idx], ocnmask)
         ax.contourf(model_lon, model_lat,
-                    pH_3D[0,:,:].T,
+                    pH_3D[:,:,0],
                     levels=np.linspace(vmin, vmax, 100),
                     cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_xlabel('Longitude (ºE)')
@@ -1708,13 +1394,12 @@ def make_surf_animation_pH(pH, colorbar_label, model_lon, model_lat, t, nt, ocnm
     writer = animation.writers['ffmpeg'](fps=10)
     ani.save(filename, writer=writer, dpi=200)
     
-    
 def make_section_animation(variable, colorbar_label, model_depth, model_lat, t, nt, vmin, vmax, cmap, filename):
     fig, ax = plt.subplots(figsize=(10,7))
     
     # first frame of animation
     cntr = ax.contourf(model_lat, model_depth,
-                       variable.isel(time=0).values[:,90,:],
+                       variable.isel(time=0).values[:,90,:].T,
                        levels=np.linspace(vmin, vmax, 100),
                        cmap=cmap, vmin=vmin, vmax=vmax)
     cbar = plt.colorbar(cntr, ax=ax,label=colorbar_label)
@@ -1728,7 +1413,7 @@ def make_section_animation(variable, colorbar_label, model_depth, model_lat, t, 
     def update_frame(idx):
         ax.clear()
         ax.contourf(model_lat, model_depth,
-                    variable.isel(time=idx).values[:,90,:],
+                    variable.isel(time=idx).values[:,90,:].T,
                     levels=np.linspace(vmin, vmax, 100),
                     cmap=cmap, vmin=vmin, vmax=vmax)
         ax.invert_yaxis()
@@ -1748,7 +1433,7 @@ def make_section_animation_pH(pH, colorbar_label, model_depth, model_lat, t, nt,
     # first frame of animation
     pH_3D = make_3D(pH[0], ocnmask)
     cntr = ax.contourf(model_lat, model_depth,
-                       pH_3D[:,90,:],
+                       pH_3D[:,90,:].T,
                        levels=np.linspace(vmin, vmax, 100),
                        cmap=cmap, vmin=vmin, vmax=vmax)
     cbar = plt.colorbar(cntr, ax=ax,label=colorbar_label)
@@ -1763,7 +1448,7 @@ def make_section_animation_pH(pH, colorbar_label, model_depth, model_lat, t, nt,
         pH_3D = make_3D(pH[idx], ocnmask)
         ax.clear()
         ax.contourf(model_lat, model_depth,
-                    pH_3D[:,90,:],
+                    pH_3D[:,90,:].T,
                     levels=np.linspace(vmin, vmax, 100),
                     cmap=cmap, vmin=vmin, vmax=vmax)
         ax.invert_yaxis()
