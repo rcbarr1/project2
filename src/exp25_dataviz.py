@@ -83,7 +83,6 @@ for exp_idx in tqdm(range(len(experiment_names))):
         DIC_location = np.argwhere(ds.DIC_added.isel(time=1).transpose('lat', 'lon', 'depth').values < 0)
         lats, lons, _ = DIC_location[0]
         max_alphas[lats, lons] = max_alpha
-
         ds.close()
 
     except Exception as e:

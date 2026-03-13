@@ -77,6 +77,7 @@ import PyCO2SYS as pyco2
 from scipy import sparse
 from tqdm import tqdm
 from scipy.sparse.linalg import spilu, LinearOperator, lgmres
+from petsc4py import PETSc
 from time import time
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -84,90 +85,89 @@ import matplotlib.patches as mpatches
 import matplotlib.animation as animation
 
 data_path = './data/'
-# output_path = './outputs/'
-output_path = '/Volumes/LaCie/outputs/'
+output_path = './outputs/'
 
-#%% load transport matrix (OCIM2-48L, from Holzer et al., 2021)
+# load transport matrix (OCIM2-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
 TR = p2.loadmat(data_path + 'OCIM2_48L_base/OCIM2_48L_base_transport.mat')
 TR = TR['TR']
 
 # open up rest of data associated with transport matrix
 model_data = xr.open_dataset(data_path + 'OCIM2_48L_base/OCIM2_48L_base_data.nc')
-ocnmask = model_data['ocnmask'].to_numpy()
+ocnmask = model_data['ocnmask'].transpose('latitude', 'longitude', 'depth').to_numpy()
 
-model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
-model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
-model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
-model_vols = model_data['vol'].to_numpy() # m^3
+model_lat = model_data['tlat'].isel(depth=0, longitude=0).to_numpy()    # ºN
+model_lon = model_data['tlon'].isel(depth=0, latitude=0).to_numpy()     # ºE
+model_depth = model_data['tz'].isel(longitude=0, latitude=0).to_numpy() # m below sea surface
+model_vols = model_data['vol'].transpose('latitude', 'longitude', 'depth').to_numpy() # m^3
 
 # seawater density for volume to mass [kg m-3]
 rho = 1025 
 
 # depth of first model layer (need bottom of grid cell, not middle) [m]
-z1 = model_data['wz'].to_numpy()[1, 0, 0]
-
+grid_cell_depth = model_data['wz'].transpose('latitude', 'longitude', 'depth').to_numpy() # depth of model layers (need bottom of grid cell, not middle) [m]
+z1 = grid_cell_depth[0, 0, 1] # depth of first model layer [m]
 # to help with conversions
 sec_per_year = 60 * 60 * 24 * 365.25 # seconds in a year
 
 #%% define regional masks (these are ROUGH approximations of burt paper)
 # global
-ocnmask_GLOBAL = ocnmask[0, :, :].copy()
-ocnmask_GLOBAL[:, 0:15] = 0
-ocnmask_GLOBAL[:, 76:90] = 0
+ocnmask_GLOBAL = ocnmask[:, :, 0].copy()
+ocnmask_GLOBAL[0:15, :] = 0
+ocnmask_GLOBAL[76:90, :] = 0
 
 # subpolar north atlantic
-ocnmask_SPNA = ocnmask[0, :, :].copy()
-ocnmask_SPNA[0:150, :] = 0
-ocnmask_SPNA[174:180, :] = 0
-ocnmask_SPNA[:, 0:69] = 0
-ocnmask_SPNA[:, 80:91] = 0
+ocnmask_SPNA = ocnmask[:, :, 0].copy()
+ocnmask_SPNA[:, 0:150] = 0
+ocnmask_SPNA[:, 174:180] = 0
+ocnmask_SPNA[0:69, :] = 0
+ocnmask_SPNA[80:91, :] = 0
 
 # subpolar north pacific
-ocnmask_SPNP = ocnmask[0, :, :].copy()
-ocnmask_SPNP[0:69, :] = 0
-ocnmask_SPNP[118:180, :] = 0
-ocnmask_SPNP[:, 0:68] = 0
-ocnmask_SPNP[:, 78:91] = 0
+ocnmask_SPNP = ocnmask[:, :, 0].copy()
+ocnmask_SPNP[:, 0:69] = 0
+ocnmask_SPNP[:, 118:180] = 0
+ocnmask_SPNP[0:68, :] = 0
+ocnmask_SPNP[78:91, :] = 0
 
 # subtropical north atlantic
-ocnmask_STNA = ocnmask[0, :, :].copy()
-ocnmask_STNA[0:139, :] = 0
-ocnmask_STNA[177:180, :] = 0
-ocnmask_STNA[:, 0:57] = 0
-ocnmask_STNA[:, 69:91] = 0
+ocnmask_STNA = ocnmask[:, :, 0].copy()
+ocnmask_STNA[:, 0:139] = 0
+ocnmask_STNA[:, 177:180] = 0
+ocnmask_STNA[0:57, :] = 0
+ocnmask_STNA[69:91, :] = 0
 
 # subtropical north pacific
-ocnmask_STNP = ocnmask[0, :, :].copy()
-ocnmask_STNP[0:60, :] = 0
-ocnmask_STNP[125:180, :] = 0
-ocnmask_STNP[:, 0:53] = 0
-ocnmask_STNP[:, 68:91] = 0
+ocnmask_STNP = ocnmask[:, :, 0].copy()
+ocnmask_STNP[:, 0:60] = 0
+ocnmask_STNP[:, 125:180] = 0
+ocnmask_STNP[0:53, :] = 0
+ocnmask_STNP[68:91, :] = 0
 
 # indian ocean
-ocnmask_IND = ocnmask[0, :, :].copy()
-ocnmask_IND[0:20, :] = 0
-ocnmask_IND[50:180, :] = 0
-ocnmask_IND[:, 0:39] = 0
-ocnmask_IND[:, 61:91] = 0
+ocnmask_IND = ocnmask[:, :, 0].copy()
+ocnmask_IND[:, 0:20] = 0
+ocnmask_IND[:, 50:180] = 0
+ocnmask_IND[0:39, :] = 0
+ocnmask_IND[61:91, :] = 0
 
 # subtropical south atlantic
-ocnmask_STSA = ocnmask[0, :, :].copy()
-ocnmask_STSA[6:145, :] = 0
-ocnmask_STSA[:, 0:18] = 0
-ocnmask_STSA[:, 37:91] = 0
+ocnmask_STSA = ocnmask[:, :, 0].copy()
+ocnmask_STSA[:, 6:145] = 0
+ocnmask_STSA[0:18, :] = 0
+ocnmask_STSA[37:91, :] = 0
 
 # subtropical south pacific
-ocnmask_STSP = ocnmask[0, :, :].copy()
-ocnmask_STSP[0:77, :] = 0
-ocnmask_STSP[138:180, :] = 0
-ocnmask_STSP[:, 0:25] = 0
-ocnmask_STSP[:, 40:91] = 0
+ocnmask_STSP = ocnmask[:, :, 0].copy()
+ocnmask_STSP[:, 0:77] = 0
+ocnmask_STSP[:, 138:180] = 0
+ocnmask_STSP[0:25, :] = 0
+ocnmask_STSP[40:91, :] = 0
 
 # southern ocean
-ocnmask_SO = ocnmask[0, :, :].copy()
-ocnmask_SO[:, 0:13] = 0
-ocnmask_SO[:, 15:91] = 0
+ocnmask_SO = ocnmask[:, :, 0].copy()
+ocnmask_SO[0:13, :] = 0
+ocnmask_SO[15:91, :] = 0
 
 # adjust model lat to go from 20 - 380 (to match Burt figure)
 model_lon_shifted = model_lon.copy()
@@ -175,7 +175,7 @@ model_lon_shifted[model_lon_shifted < 20] += 360
 
 # adjust ocnmasks to follow new lon conventions
 lon_order = np.argsort(model_lon_shifted)
-ocnmask_shifted = ocnmask[0,:,:].copy()
+ocnmask_shifted = ocnmask[:,:,0].copy()
 ocnmask_GLOBAL_shifted = ocnmask_GLOBAL.copy()
 ocnmask_SPNA_shifted = ocnmask_SPNA.copy()
 ocnmask_SPNP_shifted = ocnmask_SPNP.copy()
@@ -186,16 +186,16 @@ ocnmask_STSA_shifted = ocnmask_STSA.copy()
 ocnmask_STSP_shifted = ocnmask_STSP.copy()
 ocnmask_SO_shifted = ocnmask_SO.copy()
 
-ocnmask_shifted = ocnmask_shifted[lon_order, :]
-ocnmask_GLOBAL_shifted = ocnmask_GLOBAL_shifted[lon_order, :]
-ocnmask_SPNA_shifted = ocnmask_SPNA_shifted[lon_order, :]
-ocnmask_SPNP_shifted = ocnmask_SPNP_shifted[lon_order, :]
-ocnmask_STNA_shifted = ocnmask_STNA_shifted[lon_order, :]
-ocnmask_STNP_shifted = ocnmask_STNP_shifted[lon_order, :]
-ocnmask_IND_shifted = ocnmask_IND_shifted[lon_order, :]
-ocnmask_STSA_shifted = ocnmask_STSA_shifted[lon_order, :]
-ocnmask_STSP_shifted = ocnmask_STSP_shifted[lon_order, :]
-ocnmask_SO_shifted = ocnmask_SO_shifted[lon_order, :]
+ocnmask_shifted = ocnmask_shifted[:, lon_order]
+ocnmask_GLOBAL_shifted = ocnmask_GLOBAL_shifted[:, lon_order]
+ocnmask_SPNA_shifted = ocnmask_SPNA_shifted[:, lon_order]
+ocnmask_SPNP_shifted = ocnmask_SPNP_shifted[:, lon_order]
+ocnmask_STNA_shifted = ocnmask_STNA_shifted[:, lon_order]
+ocnmask_STNP_shifted = ocnmask_STNP_shifted[:, lon_order]
+ocnmask_IND_shifted = ocnmask_IND_shifted[:, lon_order]
+ocnmask_STSA_shifted = ocnmask_STSA_shifted[:, lon_order]
+ocnmask_STSP_shifted = ocnmask_STSP_shifted[:, lon_order]
+ocnmask_SO_shifted = ocnmask_SO_shifted[:, lon_order]
 
 # plot mask locations
 fig, ax = plt.subplots(figsize=(12, 6))
@@ -205,7 +205,7 @@ alpha = 0.6
 # plot land/ocean background
 rgba_land = np.zeros((model_lat.size, model_lon_shifted.size, 4))
 rgba_land[..., :3] = 0.5  # gray color
-rgba_land[..., 3] = 1 - ocnmask_shifted.T  # opaque where land_mask == 0 (i.e., land)
+rgba_land[..., 3] = 1 - ocnmask_shifted  # opaque where land_mask == 0 (i.e., land)
 ax.imshow(rgba_land, origin='lower', extent=extent)
 
 # set up colors for each region
@@ -220,51 +220,51 @@ rgba_list = [mcolors.to_rgba(c, alpha=1) for c in color_hex_list]
 model_lon_plot = np.mod(model_lon_shifted, 360)
 sort_idx = np.argsort(model_lon_plot)
 model_lon_plot = model_lon_plot[sort_idx]
-ocnmask_plot = ocnmask_GLOBAL_shifted[sort_idx, :]
+ocnmask_plot = ocnmask_GLOBAL_shifted[:, sort_idx]
 
-ax.contourf(model_lon_plot, model_lat, ocnmask_plot.T,
+ax.contourf(model_lon_plot, model_lat, ocnmask_plot,
             levels=[0.5, 1.5],
             colors='none',
             hatches=['xx'])
 
 rgba_ocnmask_IND = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
 rgba_ocnmask_IND[..., :] =  rgba_list[0]
-rgba_ocnmask_IND[..., 3] = ocnmask_IND_shifted.T  # alpha channel
+rgba_ocnmask_IND[..., 3] = ocnmask_IND_shifted  # alpha channel
 ax.imshow(rgba_ocnmask_IND, origin='lower', extent=extent)
 
 rgba_ocnmask_SO = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
 rgba_ocnmask_SO[..., :] =  rgba_list[1]
-rgba_ocnmask_SO[..., 3] = ocnmask_SO_shifted.T  # alpha channel
+rgba_ocnmask_SO[..., 3] = ocnmask_SO_shifted  # alpha channel
 ax.imshow(rgba_ocnmask_SO, origin='lower', extent=extent)
 
 rgba_ocnmask_SPNP = np.zeros((model_lat.size, model_lon_shifted.size, 4))
 rgba_ocnmask_SPNP[..., :] =  rgba_list[2]
-rgba_ocnmask_SPNP[..., 3] = ocnmask_SPNP_shifted.T # alpha channel
+rgba_ocnmask_SPNP[..., 3] = ocnmask_SPNP_shifted # alpha channel
 ax.imshow(rgba_ocnmask_SPNP, origin='lower', extent=extent)
 
 rgba_ocnmask_STNP = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
 rgba_ocnmask_STNP[..., :] =  rgba_list[3]
-rgba_ocnmask_STNP[..., 3] = ocnmask_STNP_shifted.T # alpha channel
+rgba_ocnmask_STNP[..., 3] = ocnmask_STNP_shifted # alpha channel
 ax.imshow(rgba_ocnmask_STNP, origin='lower', extent=extent)
 
 rgba_ocnmask_STSP = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
 rgba_ocnmask_STSP[..., :] =  rgba_list[4]
-rgba_ocnmask_STSP[..., 3] = ocnmask_STSP_shifted.T  # alpha channel
+rgba_ocnmask_STSP[..., 3] = ocnmask_STSP_shifted  # alpha channel
 ax.imshow(rgba_ocnmask_STSP, origin='lower', extent=extent)
 
 rgba_ocnmask_SPNA = np.zeros((model_lat.size, model_lon_shifted.size, 4))
 rgba_ocnmask_SPNA[..., :] =  rgba_list[5]
-rgba_ocnmask_SPNA[..., 3] *= ocnmask_SPNA_shifted.T # alpha channel
+rgba_ocnmask_SPNA[..., 3] *= ocnmask_SPNA_shifted # alpha channel
 ax.imshow(rgba_ocnmask_SPNA, origin='lower', extent=extent)
 
 rgba_ocnmask_STNA = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
 rgba_ocnmask_STNA[..., :] =  rgba_list[6]
-rgba_ocnmask_STNA[..., 3] = ocnmask_STNA_shifted.T # alpha channel
+rgba_ocnmask_STNA[..., 3] = ocnmask_STNA_shifted # alpha channel
 ax.imshow(rgba_ocnmask_STNA, origin='lower', extent=extent)
 
 rgba_ocnmask_STSA = np.zeros((model_lat.size, model_lon_shifted.size, 4))  # blue mask
 rgba_ocnmask_STSA[..., :] =  rgba_list[7]
-rgba_ocnmask_STSA[..., 3] = ocnmask_STSA_shifted.T  # alpha channel
+rgba_ocnmask_STSA[..., 3] = ocnmask_STSA_shifted  # alpha channel
 ax.imshow(rgba_ocnmask_STSA, origin='lower', extent=extent)
 
 # create legend
@@ -300,10 +300,10 @@ ax.get_yaxis().set_visible(False)
 #p2.regrid_woa(data_path, 'P', model_depth, model_lat, model_lon, ocnmask)
 
 # upload regridded WOA18 data
-S_3D = np.load(data_path + 'WOA18/S.npy')   # salinity [unitless]
-T_3D = np.load(data_path + 'WOA18/T.npy')   # temperature [ºC]
-Si_3D = np.load(data_path + 'WOA18/Si.npy') # silicate [µmol kg-1]
-P_3D = np.load(data_path + 'WOA18/P.npy')   # phosphate [µmol kg-1]
+S_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/salinity.npy')   # salinity [unitless]
+T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy')   # temperature [ºC]
+Si_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/silicate.npy') # silicate [µmol kg-1]
+P_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/PO4.npy')   # phosphate [µmol kg-1]
 
 # flatten data
 S = p2.flatten(S_3D, ocnmask)
@@ -358,8 +358,8 @@ DIC = p2.flatten(DIC_3D, ocnmask)
 AT = p2.flatten(AT_3D, ocnmask)
 
 # create "pressure" array by broadcasting depth array
-pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[1], ocnmask.shape[2]))
-pressure = pressure_3D[ocnmask == 1].flatten(order='F')
+pressure_3D = np.tile(model_depth[:, np.newaxis, np.newaxis], (1, ocnmask.shape[0], ocnmask.shape[1])).transpose([1, 2, 0])
+pressure = p2.flatten(pressure_3D, ocnmask) 
 
 # use CO2SYS with GLODAP and WOA data to solve for carbonate system at each grid cell
 # do this for only ocean grid cells
@@ -391,11 +391,11 @@ V = p2.flatten(model_vols, ocnmask) # volume of first layer of model [m^3]
 
 # add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
 k_3D = np.full(ocnmask.shape, np.nan)
-k_3D[0, :, :] = k_2D
+k_3D[:, :, 0] = k_2D
 k = p2.flatten(k_3D, ocnmask)
 
 f_ice_3D = np.full(ocnmask.shape, np.nan)
-f_ice_3D[0, :, :] = f_ice_2D
+f_ice_3D[:, :, 0] = f_ice_2D
 f_ice = p2.flatten(f_ice_3D, ocnmask)
 
 gammax = k * V * (1 - f_ice) / Ma / z1
@@ -407,15 +407,15 @@ dt = 1 # 1 year
 t = np.arange(0, 76, dt) # 75 years after year 0
 
 #%% run multiple experiments
-experiment_names = ['exp15_2025-09-02-SPNA.nc',
-                    'exp15_2025-09-02-SPNP.nc',
-                    'exp15_2025-09-02-STNA.nc',
-                    'exp15_2025-09-02-STNP.nc',
-                    'exp15_2025-09-02-IND.nc',
-                    'exp15_2025-09-02-STSA.nc',
-                    'exp15_2025-09-02-STSP.nc',
-                    'exp15_2025-09-02-SO.nc',
-                    'exp15_2025-09-02-GLOBAL.nc']
+experiment_names = ['exp15_2026-02-12-SPNA.nc',
+                    'exp15_2026-02-12-SPNP.nc',
+                    'exp15_2026-02-12-STNA.nc',
+                    'exp15_2026-02-12-STNP.nc',
+                    'exp15_2026-02-12-IND.nc',
+                    'exp15_2026-02-12-STSA.nc',
+                    'exp15_2026-02-12-STSP.nc',
+                    'exp15_2026-02-12-SO.nc',
+                    'exp15_2026-02-12-GLOBAL.nc']
                     
 experiment_attrs = ['Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subpolar north atlantic - new method of assigning perturbation concentrations to each grid cell',
                     'Attempting to repeat Burt et al 2021 experiment - increase of 0.25 Pmol AT yr-1 across subpolar north pacific - new method of assigning perturbation concentrations to each grid cell',
@@ -448,7 +448,7 @@ for exp_idx in range(0, len(experiment_names)):
     # surface ocean perturbation of 0.25 Pmol AT yr-1 in AT, no change in DIC
 
     # calculate mass of area perturbation is to be distributed across
-    pert_mass = np.sum(model_vols[0, :, :] * experiment_mask) * rho # kg
+    pert_mass = np.sum(model_vols[:, :, 0] * experiment_mask) * rho # kg
     
     # calculate concentration of tracer to distribute (µmol AT kg-1 yr-1)
     pert_conc = 0.25e15 * 1e6 / pert_mass
@@ -456,7 +456,7 @@ for exp_idx in range(0, len(experiment_names)):
     # ∆q_CDR,AT (change in alkalinity due to CDR addition) - final units: [µmol AT kg-1 yr-1]
     del_q_CDR_AT_3D = np.full(ocnmask.shape, np.nan)
     del_q_CDR_AT_3D[ocnmask == 1] = 0
-    del_q_CDR_AT_3D[0, :, :][experiment_mask == 1] = pert_conc # apply previously calculated perturbation to zone of interest [µmol AT kg-1 yr-1]
+    del_q_CDR_AT_3D[:, :, 0][experiment_mask == 1] = pert_conc # apply previously calculated perturbation to zone of interest [µmol AT kg-1 yr-1]
     del_q_CDR_AT = p2.flatten(del_q_CDR_AT_3D, ocnmask)
     
     # ∆q_CDR,DIC (change in DIC due to CDR addition) - final units: [µmol DIC kg-1 yr-1]
@@ -542,7 +542,7 @@ for exp_idx in range(0, len(experiment_names)):
     A11 = TR + sparse.diags(np.nan_to_num(gammaC * R_C / beta_C), format='csc')
     A12 = sparse.diags(np.nan_to_num(gammaC * R_A / beta_A))
     
-    A1_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A10,axis=1)), A11, A12))
+    A1_ = sparse.hstack((sparse.csr_matrix(np.expand_dims(A10,axis=1)), A11, A12))
     
     del A10, A11, A12
     
@@ -551,54 +551,88 @@ for exp_idx in range(0, len(experiment_names)):
     A21 = 0 * TR
     A22 = TR
     
-    A2_ = sparse.hstack((sparse.csc_matrix(np.expand_dims(A20,axis=1)), A21, A22))
+    A2_ = sparse.hstack((sparse.csr_matrix(np.expand_dims(A20,axis=1)), A21, A22))
     
     del A20, A21, A22
     
     # build into one mega-array!!
-    A = sparse.vstack((sparse.csc_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
+    A = sparse.vstack((sparse.csr_matrix(np.expand_dims(A0_,axis=0)), A1_, A2_))
     
     del A0_, A1_, A2_
         
     # perform time stepping using Euler backward
-    LHS = sparse.eye(A.shape[0], format="csc") - dt * A
+    LHS = sparse.eye(A.shape[0], format="csr") - dt * A
     
     # test condition number of matrix
-    est = sparse.linalg.onenormest(LHS)
-    print("Estimated 1-norm condition number LHS: ", est)
+    #est = sparse.linalg.onenormest(LHS)
+    #print("Estimated 1-norm condition number LHS: ", est)
     
-    start = time()
-    ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
-    stop = time()
-    print('ilu calculations: ' + str(stop - start) + ' s')
+    #start = time()
+    #ilu = spilu(LHS.tocsc(), drop_tol=1e-5, fill_factor=20)
+    #stop = time()
+    #print('ilu calculations: ' + str(stop - start) + ' s')
     
-    M = LinearOperator(LHS.shape, ilu.solve)
+    #M = LinearOperator(LHS.shape, ilu.solve)
     
-    start = time()
+    #start = time()
     
     for idx in tqdm(range(1, len(t))):
         
         # add starting guess after first time step
-        if idx > 1:
-            c0 = c[:,idx-1]
-        else:
-            c0=None
+        #if idx > 1:
+        #    c0 = c[:,idx-1]
+        #else:
+        #    c0=None
         
         RHS = c[:,idx-1] + np.squeeze(dt*q[:,idx-1])
-        #start = time()
-        c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
+
+        # convert matricies from scipy sparse to PETSc to parallelize
+        LHS_petsc = PETSc.Mat().createAIJ(size=LHS.shape,
+                                        csr=(LHS.indptr, LHS.indices, LHS.data))
+        RHS_petsc = PETSc.Vec().createWithArray(RHS)
+        # set up PETSc solver
+        ksp = PETSc.KSP().create()
+        ksp.setOperators(LHS_petsc)
+        ksp.setType('lgmres')
+        ksp.setGMRESRestart(30)  # restart after 30 iterations
+
+        # set up preconditioner
+        ksp.getPC().setType('bjacobi')  # block Jacobi with ILU on each block
+
+        # set convergence tolerances
+        ksp.setTolerances(rtol=1e-8, atol=1e-10, max_it=1000)
+
+        # set up output array (PETSc vector object)
+        c_petsc = LHS_petsc.createVecRight()
+        c_petsc.setArray(c[:,idx-1])
+        ksp.setInitialGuessNonzero(True) # tell solver to use initial guess
+
+        # solve system (perform time stepping)
+        ksp.solve(RHS_petsc, c_petsc)
+        c[:,idx] = c_petsc.array.copy()
+
+        # check for convergence 
+        if ksp.getConvergedReason() < 0:
+            raise RuntimeError(
+                f'solver failed to converge '
+                f'reason code: {ksp.getConvergedReason()}, '
+                f'iterations: {ksp.getIterationNumber()}, '
+                f'residual: {ksp.getResidualNorm():.2e} '
+            )
+
+        #c[:,idx], info = lgmres(LHS, RHS, M=M, x0=c0, rtol = 1e-5, atol=0)
         #stop = time()
         #print('t = ' + str(idx) + ', solve time: ' + str(stop - start) + ' s')
        
-        if info != 0:
-            if info > 0:
-                print(f'did not converge in {info} iterations.')
-            else:
-                print('illegal input or breakdown')
+        #if info != 0:
+        #    if info > 0:
+        #        print(f'did not converge in {info} iterations.')
+        #    else:
+        #        print('illegal input or breakdown')
     
     
-    stop = time()
-    print('time stepping total time: ' + str(stop - start) + ' s')
+    #stop = time()
+    #print('time stepping total time: ' + str(stop - start) + ' s')
     
     # rebuild 3D concentrations from 1D array used for solving matrix equation
     
@@ -619,8 +653,8 @@ for exp_idx in range(0, len(experiment_names)):
         c_DIC_reshaped = np.full(ocnmask.shape, np.nan)
         c_AT_reshaped = np.full(ocnmask.shape, np.nan)
     
-        c_DIC_reshaped[ocnmask == 1] = np.reshape(c_DIC[:, idx], (-1,), order='F')
-        c_AT_reshaped[ocnmask == 1] = np.reshape(c_AT[:, idx], (-1,), order='F')
+        c_DIC_reshaped = p2.make_3D(c_DIC[:, idx], ocnmask)
+        c_AT_reshaped = p2.make_3D(c_AT[:, idx], ocnmask)
         
         c_DIC_3D[idx, :, :, :] = c_DIC_reshaped
         c_AT_3D[idx, :, :, :] = c_AT_reshaped
@@ -632,11 +666,11 @@ for exp_idx in range(0, len(experiment_names)):
     p2.save_model_output(
         experiment_name, 
         t, 
-        model_depth, 
-        model_lon,
         model_lat, 
+        model_lon,
+        model_depth, 
         tracers=[c_xCO2, c_DIC_3D, c_AT_3D], 
-        tracer_dims=[('time',), ('time', 'depth', 'lon', 'lat'), ('time', 'depth', 'lon', 'lat')],
+        tracer_dims=[('time',), ('time', 'lat', 'lon', 'depth'), ('time', 'lat', 'lon', 'depth')],
         tracer_names=['delxCO2', 'delDIC', 'delAT'], 
         tracer_units=['ppm', 'umol kg-3', 'umol kg-3'],
         global_attrs=global_attrs
@@ -645,7 +679,7 @@ for exp_idx in range(0, len(experiment_names)):
 
 #%% open and plot model output
 
-data = xr.open_dataset(output_path + 'exp15_2025-08-30-IND.nc')
+data = xr.open_dataset(output_path + 'exp15_2026-02-12-SPNA.nc')
 #test = data['delDIC'].isel(lon=50).isel(lat=25).isel(depth=0).values
 #for x in test:
 #    print(x)
@@ -676,7 +710,7 @@ plt.rc('figure', titlesize=16)  # fontsize of the figure title
 
 # first frame of animation
 cntr = ax.contourf(model_lon, model_lat,
-                   data['delDIC'].isel(time=0).values[0,:,:].T,
+                   data['delDIC'].isel(time=0).values[:,:,0],
                    levels=np.linspace(-50, 650, 100),
                    cmap='viridis', vmin=-50, vmax=550)
 cbar = plt.colorbar(cntr, ax=ax,label='Change in Dissolved Inorganic Carbon (µmol kg$^{-1}$)')
@@ -688,7 +722,7 @@ title = ax.set_title(f"Indian Ocean Carbon Dioxide Removal at t={np.round(t[0].v
 def update_frame(idx):
     ax.clear()
     ax.contourf(model_lon, model_lat,
-                data['delDIC'].isel(time=idx).values[0,:,:].T,
+                data['delDIC'].isel(time=idx).values[:,:,0],
                 levels=np.linspace(-50, 650, 100),
                 cmap='viridis', vmin=-50, vmax=550)
     ax.set_xlabel('Longitude (ºE)')
@@ -703,15 +737,15 @@ ani.save('output_movie2.mp4', writer=writer, dpi=200)
 
 #%% calculate metrics to compare with burt results
 
-experiment_names = ['exp15_2025-08-30-GLOBAL.nc',
-                    'exp15_2025-08-30-SPNA.nc',
-                    'exp15_2025-08-30-STNA.nc',
-                    'exp15_2025-08-30-STSA.nc',
-                    'exp15_2025-08-30-SPNP.nc',
-                    'exp15_2025-08-30-STNP.nc',
-                    'exp15_2025-08-30-STSP.nc',
-                    'exp15_2025-08-30-IND.nc',
-                    'exp15_2025-08-30-SO.nc']
+experiment_names = ['exp15_2026-02-12-GLOBAL.nc',
+                    'exp15_2026-02-12-SPNA.nc',
+                    'exp15_2026-02-12-STNA.nc',
+                    'exp15_2026-02-12-STSA.nc',
+                    'exp15_2026-02-12-SPNP.nc',
+                    'exp15_2026-02-12-STNP.nc',
+                    'exp15_2026-02-12-STSP.nc',
+                    'exp15_2026-02-12-IND.nc',
+                    'exp15_2026-02-12-SO.nc']
 
 region_names = ['GLOBAL', 'SPNA', 'STNA', 'STSA', 'SPNP', 'STNP', 'STSP', 'IND', 'SO']
 
@@ -731,9 +765,9 @@ ax = fig.gca()
 
 for exp_idx in range(0, len(experiment_names)):
     data = xr.open_dataset(output_path + experiment_names[exp_idx])
-    model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆DIC from per kg to total
+    model_vols_xr = xr.DataArray(model_vols, dims=["lat", "lon", "depth"], coords={"lat": data.lat, "lon": data.lon, "depth": data.depth}) # broadcast model_vols to convert ∆DIC from per kg to total
     Pg_del_DIC = data['delDIC'] * model_vols_xr * rho * 1e-6 * 12.01 * 1e-15 #  µmol kg-1 DIC to Pg C
-    ax.plot(data.time.values, Pg_del_DIC.sum(dim=['depth', 'lon', 'lat'], skipna=True), label=region_names[exp_idx], c=color_hex_list[exp_idx], ls=linestyle[exp_idx])
+    ax.plot(data.time.values, Pg_del_DIC.sum(dim=['lat', 'lon', 'depth'], skipna=True), label=region_names[exp_idx], c=color_hex_list[exp_idx], ls=linestyle[exp_idx])
 
 ax.set_xlabel('Time (yr)')
 ax.set_ylabel('Total ∆DIC Inventory (Pg C)')
@@ -751,9 +785,9 @@ ax = fig.gca()
 
 for exp_idx in range(0, len(experiment_names)):
     data = xr.open_dataset(output_path + experiment_names[exp_idx])
-    model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": data.depth, "lon": data.lon, "lat": data.lat}) # broadcast model_vols to convert ∆DIC from per kg to total
+    model_vols_xr = xr.DataArray(model_vols, dims=["lat", "lon", "depth"], coords={"lat": data.lat, "lon": data.lon, "depth": data.depth}) # broadcast model_vols to convert ∆DIC from per kg to total
     Pg_del_AT = data['delAT'].isel(depth=0) * model_vols_xr.isel(depth=0) * rho * 1e-6 * 1e-15 #  µmol kg-1 AT to Pmol C
-    ax.plot(data.time.values, Pg_del_AT.sum(dim=['lon', 'lat'], skipna=True), label=region_names[exp_idx], c=color_hex_list[exp_idx], ls=linestyle[exp_idx])
+    ax.plot(data.time.values, Pg_del_AT.sum(dim=['lat', 'lon'], skipna=True), label=region_names[exp_idx], c=color_hex_list[exp_idx], ls=linestyle[exp_idx])
 
 ax.set_xlabel('Time (yr)')
 ax.set_ylabel('Total Surface ∆AT Inventory (Pmol)')
@@ -767,3 +801,5 @@ ax.legend(
 
 
 
+
+# %%

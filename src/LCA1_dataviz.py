@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Oct 10 10:43:49 2025
+Created on Thu Mar 12 2026
 
-DATA VIZ FOR EXP20: Attempting maximum alkalinity calculation with more
-efficient memory usage
+DATA VIZ FOR LCA1: Adding AT to four zones to get efficiency
 
 @author: Reese C. Barrett
 """
@@ -20,7 +19,7 @@ from tqdm import tqdm
 # load model architecture
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
-output_path = '/Volumes/LaCie/outputs/'
+# output_path = '/Volumes/LaCie/outputs/'
 
 # load transport matrix (OCIM2-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
@@ -54,157 +53,21 @@ for i in range(len(model_depth)):
 new_layer_idx = np.cumsum(new_layer_idx)
 
 #%% set experiments we are interested in plotting
-experiment_names = ['exp20_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1yr',
-                    'exp20_2025-10-09-ssp_none-MLD-all_lat_lon-dt_1month',]
 
-experiment_names = ['exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1year_co2sys1perc',
-                    'exp20_2025-10-15-ssp_none-MLD-all_lat_lon-dt_1month_co2sys1perc',]
+experiment_names = ['LCA1_2026-03-12_dt-1mon_00000']
 
-experiment_names = ['exp21_TEST']
+scenarios = ['REMIND']
 
-labels = ['dt = 1 yr', 'dt = 1 month']
-
-experiment_names = ['exp21_2025-10-29_20-08-08_t0_none_0.0',
-                    'exp21_2025-10-29_22-58-59_t1_none_0.0',
-                    'exp21_2025-10-30_03-40-45_t2_none_0.0',
-                    'exp21_2025-10-30_10-26-40_t3_none_0.0',
-                    'exp21_2025-10-30_16-11-42_t4_none_0.0',]
-
-
-experiment_names = ['exp21_2025-11-06_t0_none',
-                    'exp21_2025-11-06_t1_none',
-                    'exp21_2025-11-06_t2_none',
-                    'exp21_2025-11-06_t3_none',
-                    'exp21_2025-11-06_t4_none',]
-'''
-experiment_names = ['exp21_2025-10-29_19-55-01_t0_none_0.01',
-                    'exp21_2025-10-29_22-11-53_t1_none_0.01',
-                    'exp21_2025-10-30_02-53-39_t2_none_0.01',
-                    'exp21_2025-10-30_05-48-49_t3_none_0.01',
-                    'exp21_2025-10-30_16-09-02_t4_none_0.01',]
-
-experiment_names = ['exp21_2025-10-29_17-57-38_t0_none_0.05',
-                    'exp21_2025-10-29_22-03-02_t1_none_0.05',
-                    'exp21_2025-10-30_01-49-28_t2_none_0.05',
-                    'exp21_2025-10-30_04-36-42_t3_none_0.05',
-                    'exp21_2025-10-30_15-49-33_t4_none_0.05',]
-'''
-labels = ['dt = 1 yr', 'dt = 1 month', 'dt = 1 day', 'dt = 1 hour', 'dt = mixed']
-'''
-experiment_names = ['exp21_2025-11-05_t2_none',
-                    'exp21NN_2025-11-05_t2_none']
-labels=['dt = 1 day (pyco2sys)', 'dt = 1 day (NN)']
-'''
-'''
-experiment_names = ['exp22_2025-12-01_t0_none',
-                    'exp22_2025-12-01_t0_ssp126',
-                    'exp22_2025-12-01_t0_ssp245',
-                    'exp22_2025-12-01_t0_ssp534_OS',
-                    'exp22_2025-12-01_t1_none',
-                    'exp22_2025-12-01_t1_ssp126',
-                    'exp22_2025-12-01_t1_ssp245',
-                    'exp22_2025-12-01_t1_ssp534_OS']
-
-labels = ['dt=1yr, no ssp', 
-          'dt=1yr, ssp126', 
-          'dt=1yr, ssp245', 
-          'dt=1yr, ssp534_OS', 
-          'dt=1mon, no ssp', 
-          'dt=1mon, ssp126', 
-          'dt=1mon, ssp245', 
-          'dt=1mon, ssp534_OS']
-
-scenarios = ['none',
-             'ssp126',
-             'ssp245',
-             'ssp534_OS',
-             'none',
-             'ssp126',
-             'ssp245',
-             'ssp534_OS',]
-
-linestyles = ['-','-','-','-','--','--','--','--',]
-linecolors = ['#023880', '#96adcf', '#145a6a', '#2eceb7','#023880', '#96adcf', '#145a6a', '#2eceb7']
-ncol = 2
-start_year = 2015
-'''
-
-experiment_names = ['exp22_2026-02-06_t0_none',
-                    'exp22_2026-02-06_t0_ssp126',
-                    'exp22_2026-02-06_t0_ssp245',
-                    'exp22_2026-02-06_t0_ssp534_OS',
-                    'exp22_2026-02-06_t1_none',
-                    'exp22_2026-02-06_t1_ssp126',
-                    'exp22_2026-02-06_t1_ssp245',
-                    'exp22_2026-02-06_t1_ssp534_OS',]
-                    # 'exp22_2026-02-06_t2_none',
-                    # 'exp22_2026-02-06_t2_ssp126',
-                    # 'exp22_2026-02-06_t2_ssp245',
-                    # 'exp22_2026-02-06_t2_ssp534_OS',]
-
-experiment_names = ['exp23_2026-02-06_t0_none',
-                    'exp23_2026-02-06_t0_ssp126',
-                    'exp23_2026-02-06_t0_ssp245',
-                    'exp23_2026-02-06_t0_ssp534_OS',
-                    'exp23_2026-02-06_t1_none',
-                    'exp23_2026-02-06_t1_ssp126',
-                    'exp23_2026-02-06_t1_ssp245',
-                    'exp23_2026-02-06_t1_ssp534_OS',]
-                    # 'exp23_2026-02-06_t2_none',
-                    # 'exp23_2026-02-06_t2_ssp126',
-                    # 'exp23_2026-02-06_t2_ssp245',
-                    # 'exp23_2026-02-06_t2_ssp534_OS',]
-
-scenarios = ['none',
-             'ssp126',
-             'ssp245',
-             'ssp534_OS',
-             'none',
-             'ssp126',
-             'ssp245',
-             'ssp534_OS',
-             'none',
-             'ssp126',
-             'ssp245',
-             'ssp534_OS',]
-
-labels = ['dt=1yr, no_ssp',
-          'dt=1yr, ssp126',
-          'dt=1yr, ssp245',
-          'dt=1yr, ssp534_OS',
-          'dt=1mon, no_ssp',
-          'dt=1mon, ssp126',
-          'dt=1mon, ssp245',
-          'dt=1mon, ssp534_OS',
-          'dt=1day, no_ssp',
-          'dt=1day, ssp126',
-          'dt=1day, ssp245',
-          'dt=1day, ssp534_OS']
-          
-linestyles = ['-','-','-','-','--','--','--','--',':',':',':',':'] 
-linecolors = ['#023880', '#96adcf', '#145a6a', '#2eceb7',
-              '#023880', '#96adcf', '#145a6a', '#2eceb7', 
-              '#023880', '#96adcf', '#145a6a', '#2eceb7',]
-ncol = 2
-start_year = 2015
-
-#%% figures for OSM talk
-
-experiment_names = ['exp22_2026-02-11_t1_none_ML',
-                    'exp22_2026-02-11_t1_ssp126_ML',
-                    'exp22_2026-02-11_t1_ssp245_ML',
-                    'exp22_2026-02-11_t1_ssp534_OS_ML',]
-
-scenarios = ['none',
-             'ssp126',
-             'ssp245',
-             'ssp534_OS']
-
-linestyles = ['-','-','-','-']
-linecolors = ['#00429d', '#7a64a8', '#bf89b6', '#ffb0de']
-labels = ['No emissions', 'SSP1-2.6', 'SSP2-4.5', 'SSP5-3.4OS']
+labels = ['Nearshore Colombia',
+          'Offshore Colombia',
+          'Nearshore Norway',
+          'Offshore Norway',]
+ 
+linestyles = ['-','-','-','-'] 
+linecolors = ['#023880', '#96adcf', '#145a6a', '#2eceb7',]
 ncol = 1
-start_year = 2030
+start_year = 2026
+
 mpl.rcParams['font.family'] = 'Calibri'
 textcolor = '#595959'
 mpl.rcParams['text.color'] = textcolor
@@ -229,9 +92,9 @@ Si = p2.flatten(Si_3D, ocnmask)
 P = p2.flatten(P_3D, ocnmask)
 
 # get TRACE data (switch to interpolation for speed?)
-Canth_2002_3D = p2.calculate_canth('none', 2002, T_3D, S_3D, ocnmask, model_lat, model_lon, model_depth)
+Canth_2002_3D = p2.calculate_canth('REMIND', 2002, T_3D, S_3D, ocnmask, model_lat, model_lon, model_depth)
 if start_year != 2002:
-    Canth_3D = p2.calculate_canth('none', start_year, T_3D, S_3D, ocnmask, model_lat, model_lon, model_depth)
+    Canth_3D = p2.calculate_canth('REMIND', start_year, T_3D, S_3D, ocnmask, model_lat, model_lon, model_depth)
 else:
     Canth_3D = Canth_2002_3D
 
@@ -294,7 +157,7 @@ else:
             Canth_all_idx.append(p2.flatten(Canth_idx_3D, ocnmask))
         Canth_all_scenarios.append(Canth_all_idx)
 
-np.save(output_path + 'Canth_all_scenarios_calculated_2030-2080.npy', Canth_all_scenarios)
+# np.save(output_path + 'Canth_LCA_start2026.npy', Canth_all_scenarios)
 
 #%% cumulative AT added
 fig = plt.figure(figsize=(3.5,3.5), dpi=200)
@@ -616,100 +479,6 @@ ax.spines['top'].set_color(textcolor)
 ax.spines['left'].set_color(textcolor)
 ax.spines['right'].set_color(textcolor)
 
-#%% line plot of pressure by index
-vmin = -50
-vmax = 6000
-plt.plot(p2.flatten(pressure_3D,ocnmask), c='gray')
-plt.vlines(new_layer_idx, vmin, vmax, colors='gainsboro', ls=':')
-plt.title('pressure (dbar)')
-plt.xlim([-1000, np.sum(ocnmask)+1000])
-plt.ylim([vmin, vmax])
-plt.show()
-
-#%% line plot of salinity by index
-vmin = 14
-vmax = 41
-plt.plot(p2.flatten(S_3D,ocnmask), c='skyblue')
-plt.vlines(new_layer_idx, vmin, vmax, colors='gainsboro', ls=':')
-plt.title('salinity')
-plt.xlim([-1000, np.sum(ocnmask)+1000])
-plt.ylim([vmin, vmax])
-plt.show()
-
-#%% line plot of temperature by index
-vmin = -5
-vmax = 35
-plt.plot(p2.flatten(T_3D,ocnmask), c='salmon')
-plt.vlines(new_layer_idx, vmin, vmax, colors='gainsboro', ls=':')
-plt.title('temperature (ºC)')
-plt.xlim([-1000, np.sum(ocnmask)+1000])
-plt.ylim([vmin, vmax])
-plt.show()
-
-#%% line plot of silicate by index
-vmin = -10
-vmax = 300
-plt.plot(p2.flatten(Si_3D,ocnmask), c='plum')
-plt.vlines(new_layer_idx, vmin, vmax, colors='gainsboro', ls=':')
-plt.title('silicate (µmol kg-1)')
-plt.xlim([-1000, np.sum(ocnmask)+1000])
-plt.ylim([vmin, vmax])
-plt.show()
-
-#%% line plot of phosphate by index
-vmin = -0.5
-vmax = 3.6
-plt.plot(p2.flatten(P_3D,ocnmask), c='mediumaquamarine')
-plt.vlines(new_layer_idx, vmin, vmax, colors='gainsboro', ls=':')
-plt.title('phosphate (µmol kg-1)')
-plt.xlim([-1000, np.sum(ocnmask)+1000])
-plt.ylim([vmin, vmax])
-plt.show()
-
-#%% line plots of DIC by index
-vmin = -500
-vmax = 2500
-for t_idx in range(0,len(ds.time)):
-    plt.plot(p2.flatten(ds.isel(time=t_idx).delDIC.values,ocnmask) + p2.flatten(DIC_3D,ocnmask), c='steelblue')
-    plt.vlines(new_layer_idx, vmin, vmax, colors='gainsboro', ls=':')
-    plt.title('DIC (µmol kg-1) at t = ' + str(t_idx))
-    plt.xlim([-1000, np.sum(ocnmask)+1000])
-    plt.ylim([vmin, vmax])
-    plt.show()
-
-#%% line plots of AT by index
-vmin = -6000
-vmax = 4000
-for t_idx in range(0,len(ds.time)):
-    plt.plot(p2.flatten(ds.isel(time=t_idx).delAT.values,ocnmask) + p2.flatten(AT_3D,ocnmask), c='goldenrod')
-    plt.vlines(new_layer_idx, vmin, vmax, colors='gainsboro', ls=':')
-    plt.title('AT (µmol kg-1) at t = ' + str(t_idx))
-    plt.xlim([-1000, np.sum(ocnmask)+1000])
-    plt.ylim([vmin, vmax])
-    plt.show()
-    
-#%% line plots of pH by index
-vmin = 2
-vmax = 10
-for t_idx in range(0,len(ds.time)):
-    co2sys = pyco2.sys(
-        alkalinity=p2.flatten(ds.isel(time=t_idx).delAT.values,ocnmask) + p2.flatten(AT_3D,ocnmask),
-        dic=p2.flatten(ds.isel(time=t_idx).delDIC.values,ocnmask) + p2.flatten(DIC_3D,ocnmask),
-        salinity=S,
-        temperature=T,
-        pressure=pressure,
-        total_silicate=Si,
-        total_phosphate=P)
-    
-    pH_plot = co2sys['pH']
-    
-    plt.plot(pH_plot, c='lightpink')
-    plt.vlines(new_layer_idx, vmin, vmax, colors='gainsboro', ls=':')
-    plt.title('pH at t = ' + str(t_idx))
-    plt.xlim([-1000, np.sum(ocnmask)+1000])
-    plt.ylim([vmin, vmax])
-    plt.show()
-
 #%% plot surface pH
 co2sys = pyco2.sys(
     alkalinity=p2.flatten(ds.isel(time=1).delAT.values,ocnmask) + p2.flatten(AT_3D,ocnmask),
@@ -726,25 +495,19 @@ p2.plot_surface2d(model_lon, model_lat, pH_plot_3D[0,:,:], 2, 10, 'viridis', 'pH
 #plt.ylim([-500, 2500])
 plt.show()
 
-#%% line plots of AT added by index
-vmin = -50
-vmax = 250
-for t_idx in range(0,len(ds.time)):
-    plt.plot(p2.flatten(ds.isel(time=t_idx).AT_added.values,ocnmask), c='darkgoldenrod')
-    plt.vlines(new_layer_idx, vmin, vmax, colors='gainsboro', ls=':')
-    plt.title('AT added (µmol kg-1) at t = ' + str(t_idx))
-    plt.xlim([-1000, np.sum(ocnmask)+1000])
-    plt.ylim([vmin, vmax])
-    plt.show()
-
 #%% animations of tracers
+for exp_idx in range(len(experiment_names)):
+    ds = xr.open_mfdataset(
+        output_path + experiment_names[exp_idx] + '_*.nc',
+        combine='by_coords',
+        chunks={'time': 10},
+        parallel=True)
+
 # AT added
-ds = xr.open_dataset('/Volumes/LaCie/outputs/exp22_2026-02-06_t1_none_000.nc')
-p2.make_surf_animation(ds.AT_added, 'AT Added (µmol kg-1)', model_lat, model_lon, ds.time.values, len(ds.time.values), 0, 150, 'viridis', 'exp22_2026-02-06_t1_none_AT_added.mp4')
+p2.make_surf_animation(ds.AT_added, 'AT Added (µmol kg-1)', model_lat, model_lon, ds.time.values, len(ds.time.values), 0, 0.0002, 'viridis', 'LCA1_2026-03-12_dt-1mon_00000_AT_added.mp4')
 
 # delDIC
-ds = xr.open_dataset('/Volumes/LaCie/outputs/exp22_2026-02-06_t1_none_000.nc')
-p2.make_surf_animation(ds.delDIC, 'Change in DIC (µmol kg-1)', model_lat, model_lon, ds.time.values, len(ds.time.values), -250, 250, 'RdBu', 'exp22_2026-02-06_t1_none_delDIC.mp4')
+p2.make_surf_animation(ds.delDIC, 'Change in DIC (µmol kg-1)', model_lat, model_lon, ds.time.values, len(ds.time.values), -0.00001, 0.00001, 'RdBu', 'LCA1_2026-03-12_dt-1mon_00000_delDIC.mp4')
 
 #%% animation of deviation from preindustrial pH
 ds = xr.open_dataset('/Volumes/LaCie/outputs/exp22_2026-02-06_t1_none_000.nc')

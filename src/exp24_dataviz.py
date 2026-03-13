@@ -27,12 +27,12 @@ output_path = '/Volumes/LaCie/outputs/exp24/'
 
 # open data associated with transport matrix
 model_data = xr.open_dataset(data_path + 'OCIM2_48L_base/OCIM2_48L_base_data.nc')
-ocnmask = model_data['ocnmask'].to_numpy()
+ocnmask = model_data['ocnmask'].transpose('latitude', 'longitude', 'depth').to_numpy()
 
-model_depth = model_data['tz'].to_numpy()[:, 0, 0] # m below sea surface
-model_lon = model_data['tlon'].to_numpy()[0, :, 0] # ºE
-model_lat = model_data['tlat'].to_numpy()[0, 0, :] # ºN
-model_vols = model_data['vol'].to_numpy() # m^3
+model_lat = model_data['tlat'].isel(depth=0, longitude=0).to_numpy()    # ºN
+model_lon = model_data['tlon'].isel(depth=0, latitude=0).to_numpy()     # ºE
+model_depth = model_data['tz'].isel(longitude=0, latitude=0).to_numpy() # m below sea surface
+model_vols = model_data['vol'].transpose('latitude', 'longitude', 'depth').to_numpy() # m^3
 
 model_data.close()
 rho = 1025 # seawater density for volume to mass [kg m-3]
@@ -41,12 +41,12 @@ rho = 1025 # seawater density for volume to mass [kg m-3]
 t_per_file = 2000 # number of time steps 
 #%% pull in all experiments (AT release from an individual grid cell across all grid cells)
 experiment_names = []
-for i in range(0, 1298):
-    experiment_names.append('exp24_2026-01-30_6deg_' + str(i))
+for i in range(4206, 10442):
+    experiment_names.append('exp24_2026-02-12_t-mixed_' + f'{i:05d}')
 
 # set up array to save nu in
-nus_5years = np.full(ocnmask[0, :, :].shape, np.nan)
-nus_15years = np.full(ocnmask[0, :, :].shape, np.nan)
+nus_5years = np.full(ocnmask[:, :, 0].shape, np.nan)
+nus_15years = np.full(ocnmask[:, :, 0].shape, np.nan)
 failed_experiments = []
 
 # calculate nu for each experiment
@@ -59,25 +59,25 @@ for exp_idx in tqdm(range(len(experiment_names))):
             chunks={'time': 10},
             parallel=True)
         
-        model_vols_xr = xr.DataArray(model_vols, dims=["depth", "lon", "lat"], coords={"depth": ds.depth, "lon": ds.lon, "lat": ds.lat})
+        model_vols_xr = xr.DataArray(model_vols, dims=['lat', 'lon', 'depth'], coords={'lat': ds.lat, 'lon': ds.lon, 'depth': ds.depth})
 
         # convert delDIC from µmol kg-1 to mol
         delDIC = ds.delDIC * rho * model_vols_xr * 1e-6 # mol
-        delDIC = delDIC.sum(dim=['depth', 'lon', 'lat'], skipna=True)
+        delDIC = delDIC.sum(dim=['lat', 'lon', 'depth'], skipna=True)
 
         # convert delAT from µmol kg-1 to mol
         delAT = ds.delAT * rho * model_vols_xr * 1e-6 # mol
-        delAT = delAT.sum(dim=['depth', 'lon', 'lat'], skipna=True)
+        delAT = delAT.sum(dim=['lat', 'lon', 'depth'], skipna=True)
         
         nu = delDIC / delAT
-        nu_5years = nu.sel(time=2020).values
-        nu_15years = nu.sel(time=2030).values
+        nu_5years = nu.sel(time=2007).values
+        nu_15years = nu.sel(time=2017).values
 
         # find lat and lon of alkalinity release, store nu in array of nus at correct location
-        alk_location = np.argwhere(ds.AT_added.isel(time=1).values > 0)
-        _, lons, lats = alk_location.T
-        nus_5years[lons, lats] = nu_5years
-        nus_15years[lons, lats] = nu_15years
+        alk_location = np.argwhere(ds.AT_added.isel(time=1).transpose('lat', 'lon', 'depth').values > 0)
+        lats, lons, _ = alk_location[0]
+        nus_5years[lats, lons] = nu_5years
+        nus_15years[lats, lons] = nu_15years
         ds.close()
     except Exception as e:
         ds.close()
@@ -87,26 +87,59 @@ for exp_idx in tqdm(range(len(experiment_names))):
 
 #%% used to combine two separate runs shown above into one output array
 
-#nus_5years_old = np.load(output_path + 'nus5yrs_dt1yr.npy')
-#nus_15years_old = np.load(output_path + 'nus15yrs_dt1yr.npy')
+nus_5years_old = np.load(output_path + 'nus5yrs_dtmixed_PT1.npy')
+nus_15years_old = np.load(output_path + 'nus15yrs_dtmixed_PT1.npy')
 
-#nus_5years_full = np.nansum(np.dstack((nus_5years,nus_5years_old)),2)
-#nus_15years_full = np.nansum(np.dstack((nus_15years, nus_15years_old)),2)
+nus_5years_full = np.nansum(np.dstack((nus_5years,nus_5years_old)),2)
+nus_15years_full = np.nansum(np.dstack((nus_15years, nus_15years_old)),2)
 
-np.save(output_path + 'nus15yrs_dt1yr_6deg.npy', nus_15years)
-np.save(output_path + 'nus5yrs_dt1yr_6deg.npy', nus_5years)
+np.save(output_path + 'nus15yrs_dtmixed.npy', nus_15years_full)
+np.save(output_path + 'nus5yrs_dtmixed.npy', nus_5years_full)
      
-#%% plot efficiency
+#%% plot efficiency to match zhou map
+nus_5years_full = np.load(output_path + 'nus5yrs_dtmixed.npy')
+nus_15years_full = np.load(output_path + 'nus15yrs_dtmixed.npy')
+
 cmap = plt.get_cmap('viridis')
-p2.plot_surface2d(model_lon, model_lat, nus_5years, 0.3, 0.9, cmap, 'efficiency at t = 5 years')
-p2.plot_surface2d(model_lon, model_lat, nus_15years, 0.3, 0.9, cmap, 'efficiency at t = 15 years')
+vmin = 0
+vmax = 1
+fig, axs = plt.subplots(2, 1, dpi=200, figsize=(6.2, 8))
+
+# rotate lons to start at 20
+split_idx = np.where(model_lon >= 20)[0][0]
+model_lon_rot = np.concatenate((model_lon[split_idx:], model_lon[:split_idx] + 360))
+nus_5years_rot = np.concatenate((nus_5years_full[:, split_idx:], nus_5years_full[:, :split_idx]), axis=1)
+nus_15years_rot = np.concatenate((nus_15years_full[:, split_idx:], nus_15years_full[:, :split_idx]), axis=1)
+
+# mask out zero values 
+nu_5years_masked = np.ma.masked_where(nus_5years_rot == 0, nus_5years_rot)
+nu_15years_masked = np.ma.masked_where(nus_15years_rot == 0, nus_15years_rot)
+
+levels = np.linspace(vmin-0.001, vmax, 50)
+cntr0 = axs[0].contourf(model_lon_rot, model_lat, nu_5years_masked, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
+cntr1 = axs[1].contourf(model_lon_rot, model_lat, nu_15years_masked, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
+c = fig.colorbar(cntr1, ax=axs, orientation='horizontal', pad=0.09)
+c.set_ticks(np.round(np.linspace(vmin, vmax, 11),2))
+c.set_label('Mean (η)')
+
+# overlay black for land
+#zero_mask = (variable == 0).astype(float)
+#ax.contourf(lons, lats, zero_mask.T, levels=[0.5, 1.5], colors='black', alpha=1.0)
+
+axs[0].get_xaxis().set_visible(False)
+
+axs[0].set_ylabel('Latitude (ºN)')
+axs[1].set_ylabel('Latitude (ºN)')
+axs[1].set_xlabel('Longitude (ºE)')
+
+axs[0].set_ylim([-80,80])
+axs[1].set_ylim([-80,80])
 
 # %% watch what happens with single time step
 ds = xr.open_dataset('./outputs/exp24_TEST_000.nc')
 
-alk_location = np.argwhere(ds.AT_added.isel(time=1).values > 0)
-AT_lon = alk_location[0][1]
-AT_lat = alk_location[0][2]
+alk_location = np.argwhere(ds.AT_added.isel(time=1).transpose('lat', 'lon', 'depth').values > 0)
+AT_lat, AT_lon, _ = alk_location[0]
 
 for t_idx in tqdm(range(0, len(ds.time.values))):
 # for t_idx in tqdm(range(0, 2)):

@@ -33,6 +33,7 @@ import torch.nn as nn
 import joblib
 from pyTRACE import trace
 from scipy.ndimage import uniform_filter
+import warnings
 
 def loadmat(filename):
     '''
@@ -713,11 +714,11 @@ def interp_TRACE(data_path, time, scenario, model_lat, model_lon, model_depth, o
         raise ValueError(f"Invalid value: {scenario!r}. Must be one of: {', '.join(list(scenarios.keys()))}")
 
     if time > 2500:
-        print('Warning: TRACE data only is available to 2500. Interpolating past this point is not advised.')
+        warnings.warn('Warning: TRACE data only is available to 2500. Interpolating past this point is not advised.')
 
     if time >= 2020:
         if scenario == 'none':
-            raise ValueError("'none' scenario chosen, but time > 2020 selected.")
+            warnings.warn("'none' scenario chosen, but time > 2022 selected. Canth is based on a linear extrapolation from 2012-2022 in this case.")
         trace_data = xr.open_dataset(data_path + 'TRACE_gridded/CanthFromTRACECO2Pathway' + str(scenarios[scenario]) + '.nc', decode_times=False)    
     else:
         trace_data = xr.open_dataset(data_path + 'TRACE_gridded/CanthFromTRACECO2Pathway1.nc', decode_times=False)    
@@ -919,15 +920,15 @@ def calculate_canth(scenario, year, T_3D, S_3D, ocnmask, model_lat, model_lon, m
 
     # truncate year to nearest whole number
 
-    if year > 2015 and scenario == 'none':
-        raise ValueError('error: future year chosen (after 2015) but no emissions scenario selected')
-
+    if year > 2022 and scenario == 'none':
+        warnings.warn("'none' scenario chosen, but time > 2022 selected. canth is based on a linear extrapolation from 2012-2022 in this case.")
+    
     # set up emissions scenario
     # note: none = no perturbation to atmospheric co2, NOT trace historical scenario. error is raised
     # if projections forward are attempted with none. GLODAP 2002 data is used as baseline and no
     # change to Revelle factors due to emissions are included. Other scenarioees follow Meinshausen et al. (2020)
     scenario_dict = {'none' : 2, 'ssp119': 2, 'ssp126' : 3, 'ssp245' : 4, 'ssp370' : 5,
-                     'ssp360_NTCF' : 6, 'ssp434' : 7, 'ssp460' : 8, 'ssp534_OS' : 9}
+                     'ssp360_NTCF' : 6, 'ssp434' : 7, 'ssp460' : 8, 'ssp534_OS' : 9, 'REMIND' : 10}
 
     # transpose to match requirements for PyTRACE (lon, lat, depth)
     T_3D_T = T_3D.transpose([1, 0, 2])
@@ -1028,7 +1029,7 @@ def get_CO2_scenario(scenario, times):
 
     else:
         if times[0] >= 2020:
-            raise ValueError("'none' scenario chosen, but time > 2020 selected.")
+            warnings.warn("'none' scenario chosen, but time > 2022 selected. canth is based on a linear extrapolation from 2012-2022 in this case.")
         
         # return constant atmospheric CO2 based on start year & historical scenario
         atmospheric_CO2 = np.interp(times[0], CO2_data_years, CO2_data) * np.ones_like(times)
@@ -1052,7 +1053,7 @@ def plot_surface2d(lats, lons, variable, vmin, vmax, cmap, title):
     cntr = plt.contourf(lons, lats, variable_masked, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
     c = plt.colorbar(cntr, ax=ax)
     c.set_ticks(np.round(np.linspace(vmin, vmax, 10),2))
-    #c.set_label('mol DIC m$^{-2}$ yr$^{-1}$', fontsize=12)
+    #c.set_label('mol dic m$^{-2}$ yr$^{-1}$', fontsize=12)
 
     # overlay black for land
     #zero_mask = (variable == 0).astype(float)
@@ -1342,7 +1343,7 @@ def make_surf_animation(variable, colorbar_label, model_lat, model_lon, t, nt, v
     cbar = plt.colorbar(cntr, ax=ax,label=colorbar_label)
     ax.set_xlabel('Longitude (ºE)')
     ax.set_ylabel('Latitude (ºN)')
-    title = ax.set_title('t = ' + str(np.round(t[0],3)) + ' yr')
+    title = ax.set_title('t = ' + f'{t[0]:.3f}' + ' yr')
 
     # update function: this updates each frame with the new "axis", which is the subsequent contour plot
     def update_frame(idx):
@@ -1353,7 +1354,7 @@ def make_surf_animation(variable, colorbar_label, model_lat, model_lon, t, nt, v
                     cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_xlabel('Longitude (ºE)')
         ax.set_ylabel('Latitude (ºN)')
-        ax.set_title('t = ' + str(np.round(t[idx],3)) + ' yr')
+        ax.set_title('t = ' + f'{t[idx]:.3f}' + ' yr')
         return []
     
     # make and save animation
@@ -1361,7 +1362,7 @@ def make_surf_animation(variable, colorbar_label, model_lat, model_lon, t, nt, v
     writer = animation.writers['ffmpeg'](fps=10)
     ani.save(filename, writer=writer, dpi=200)
     
-def make_surf_animation_pH(pH, colorbar_label, model_lon, model_lat, t, nt, ocnmask, vmin, vmax, cmap, filename):
+def make_surf_animation_pH(pH, colorbar_label, model_lat, model_lon, t, nt, ocnmask, vmin, vmax, cmap, filename):
     fig, ax = plt.subplots(figsize=(10,7))
     
     # first frame of animation
@@ -1374,7 +1375,7 @@ def make_surf_animation_pH(pH, colorbar_label, model_lon, model_lat, t, nt, ocnm
     cbar = plt.colorbar(cntr, ax=ax,label=colorbar_label)
     ax.set_xlabel('Longitude (ºE)')
     ax.set_ylabel('Latitude (ºN)')
-    title = ax.set_title('t = ' + str(np.round(t[0],3)) + ' yr')
+    title = ax.set_title('t = ' + f'{t[0]:.3f}' + ' yr')
 
     # update function: this updates each frame with the new "axis", which is the subsequent contour plot
     def update_frame(idx):
@@ -1386,7 +1387,7 @@ def make_surf_animation_pH(pH, colorbar_label, model_lon, model_lat, t, nt, ocnm
                     cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_xlabel('Longitude (ºE)')
         ax.set_ylabel('Latitude (ºN)')
-        ax.set_title('t = ' + str(np.round(t[idx],3)) + ' yr')
+        ax.set_title('t = ' + f'{t[idx]:.3f}' + ' yr')
         return []
     
     # make and save animation
@@ -1406,7 +1407,7 @@ def make_section_animation(variable, colorbar_label, model_depth, model_lat, t, 
     ax.invert_yaxis()
     ax.set_xlabel('Latitude (ºN)')
     ax.set_ylabel('Depth (m)')
-    title = ax.set_title('t = ' + str(np.round(t[0],3)) + ' yr at 181ºE')
+    title = ax.set_title('t = ' + f'{t[0]:.3f}' + 'yr at 181ºE')
 
     
     # update function: this updates each frame with the new "axis", which is the subsequent contour plot
@@ -1419,7 +1420,7 @@ def make_section_animation(variable, colorbar_label, model_depth, model_lat, t, 
         ax.invert_yaxis()
         ax.set_xlabel('Latitude (ºN)')
         ax.set_ylabel('Depth (m)')
-        ax.set_title('t = ' + str(np.round(t[idx],3)) + ' yr at 181 ºE')
+        ax.set_title('t = ' + f'{t[idx]:.3f}' + ' yr at 181 ºE')
         return []
     
     # make and save animation
@@ -1440,7 +1441,7 @@ def make_section_animation_pH(pH, colorbar_label, model_depth, model_lat, t, nt,
     ax.invert_yaxis()
     ax.set_xlabel('Latitude (ºN)')
     ax.set_ylabel('Depth (m)')
-    title = ax.set_title('t = ' + str(np.round(t[0],3)) + ' yr at 181ºE')
+    title = ax.set_title('t = ' + f'{t[0]:.3f}' + ' yr at 181ºE')
 
     
     # update function: this updates each frame with the new "axis", which is the subsequent contour plot
@@ -1454,7 +1455,7 @@ def make_section_animation_pH(pH, colorbar_label, model_depth, model_lat, t, nt,
         ax.invert_yaxis()
         ax.set_xlabel('Latitude (ºN)')
         ax.set_ylabel('Depth (m)')
-        ax.set_title('t = ' + str(np.round(t[idx],3)) + ' yr at 181 ºE')
+        ax.set_title('t = ' + f'{t[idx]:.3f}' + ' yr at 181 ºE')
         return []
     
     # make and save animation

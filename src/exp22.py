@@ -149,9 +149,10 @@ def set_experiment_parameters(test=False):
 
     # to do addition in first (or first two, or first three, etc.) model layer(s)
     #q_AT_depths = ocnmask.copy()
-    #q_AT_depths[1::, :, :] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
-    #q_AT_depths[2::, :, :] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
-    #q_AT_depths[3::, :, :] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
+    #q_AT_depths[:, :, 1::] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
+    #q_AT_depths[:, :, 2::] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
+    #q_AT_depths[:, :, 3::] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
+    #q_AT_depths = [q_AT_depths]
 
     # to do all lat/lons
     q_AT_latlons = [ocnmask.copy()]
@@ -169,7 +170,7 @@ def set_experiment_parameters(test=False):
     #q_emissions = np.zeros(nt)
 
     # with starting year
-    start_year = 2015 # year to start simulation
+    start_year = 2030 # year to start simulation
     start_CDR = 2030 # year to start CDR deployment
 
     # with emissions scenario
