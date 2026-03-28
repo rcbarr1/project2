@@ -716,13 +716,19 @@ def interp_TRACE(data_path, time, scenario, model_lat, model_lon, model_depth, o
     if time > 2500:
         warnings.warn('Warning: TRACE data only is available to 2500. Interpolating past this point is not advised.')
 
-    if time >= 2020:
+    if 2020 <= time <= 2100:
+        if scenario == 'none':
+            warnings.warn("'none' scenario chosen, but time > 2022 selected. Canth is based on a linear extrapolation from 2012-2022 in this case.")
+        trace_data = xr.open_dataset(data_path + 'TRACE_gridded/OCIM_CanthFromTRACECO2Pathway' + str(scenarios[scenario]) + '.nc', decode_times=False)
+   
+    elif time > 2100: 
         if scenario == 'none':
             warnings.warn("'none' scenario chosen, but time > 2022 selected. Canth is based on a linear extrapolation from 2012-2022 in this case.")
         trace_data = xr.open_dataset(data_path + 'TRACE_gridded/CanthFromTRACECO2Pathway' + str(scenarios[scenario]) + '.nc', decode_times=False)    
+    
     else:
         trace_data = xr.open_dataset(data_path + 'TRACE_gridded/CanthFromTRACECO2Pathway1.nc', decode_times=False)    
-
+    
     # interpolate to time of interest
     trace_data = trace_data.interp(time=time)
 
@@ -927,7 +933,7 @@ def calculate_canth(scenario, year, T_3D, S_3D, ocnmask, model_lat, model_lon, m
     # note: none = no perturbation to atmospheric co2, NOT trace historical scenario. error is raised
     # if projections forward are attempted with none. GLODAP 2002 data is used as baseline and no
     # change to Revelle factors due to emissions are included. Other scenarioees follow Meinshausen et al. (2020)
-    scenario_dict = {'none' : 2, 'ssp119': 2, 'ssp126' : 3, 'ssp245' : 4, 'ssp370' : 5,
+    scenario_dict = {'none' : 1, 'ssp119': 2, 'ssp126' : 3, 'ssp245' : 4, 'ssp370' : 5,
                      'ssp360_NTCF' : 6, 'ssp434' : 7, 'ssp460' : 8, 'ssp534_OS' : 9, 'REMIND' : 10}
 
     # transpose to match requirements for PyTRACE (lon, lat, depth)

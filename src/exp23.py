@@ -109,10 +109,10 @@ def set_experiment_parameters(test=False):
     dt3 = 1 # 1 year
 
     # just year time steps
-    exp0_t = np.arange(0,50,dt3)
+    exp0_t = np.arange(0,20,dt3)
     
     # experiment with dt = 1/12 (1 month) time steps
-    exp1_t = np.arange(0,50,dt2)
+    exp1_t = np.arange(0,20,dt2)
 
     # experiment with dt = 1/360 (1 day) time steps
     exp2_t = np.arange(0,50,dt1) 
@@ -128,8 +128,8 @@ def set_experiment_parameters(test=False):
     exp4_t = np.concatenate((t0, t1, t2, t3))
 
     exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
-    exp_ts = [exp0_t, exp1_t, exp2_t]
-    exp_t_names = ['t0', 't1', 't2']
+    exp_ts = [exp0_t, exp1_t]
+    exp_t_names = ['t0', 't1']
 
     # DEPTHS OF ADDITION
 
@@ -149,11 +149,11 @@ def set_experiment_parameters(test=False):
     q_AT_depths = [mldmask]
 
     # to do addition in first (or first two, or first three, etc.) model layer(s)
-    q_AT_depths = ocnmask.copy()
-    #q_AT_depths[:, :, 1::] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
+    # q_AT_depths = ocnmask.copy()
+    # q_AT_depths[:, :, 1::] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
     #q_AT_depths[:, :, 2::] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
     #q_AT_depths[:, :, 3::] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
-    #q_AT_depths = [q_AT_depths]
+    # q_AT_depths = [q_AT_depths]
 
     # to do all lat/lons
     q_AT_latlons = [ocnmask.copy()]
@@ -171,11 +171,12 @@ def set_experiment_parameters(test=False):
     #q_emissions = np.zeros(nt)
 
     # with starting year
-    start_year = 2030 # year to start simulation
-    start_CDR = 2030 # year to start CDR deployment
+    start_year = 2020 # year to start simulation
+    start_CDR = 2020 # year to start CDR deployment
 
     # with emissions scenario
     scenarios = ['none', 'ssp126', 'ssp245', 'ssp534_OS'] 
+    scenarios = ['none'] 
 
     # set up experiments to run 
     experiments = []
@@ -538,6 +539,7 @@ def run_experiment(experiment):
             # from this offset, calculate rate at which AT must be applied
             # q(t) = AT_to_offset / dt [µmol AT kg-1 yr-1]
             del_q_CDR_AT = AT_to_offset / dt[idx]
+            del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) / dt[idx] # just do 1 µmol kg-1 yr-1 in every ML grid cell
     
             # add in source/sink vectors for ∆AT to q vector
             q[(m+1):(2*m+1)] = del_q_CDR_AT

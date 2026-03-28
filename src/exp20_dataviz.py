@@ -20,7 +20,7 @@ from tqdm import tqdm
 # load model architecture
 data_path = '/Users/Reese_1/Documents/Research Projects/project2/data/'
 output_path = '/Users/Reese_1/Documents/Research Projects/project2/outputs/'
-output_path = '/Volumes/LaCie/outputs/'
+# output_path = '/Volumes/LaCie/outputs/'
 
 # load transport matrix (OCIM2-48L, from Holzer et al., 2021)
 # transport matrix is referred to as "A" vector in John et al., 2020 (AWESOME OCIM)
@@ -187,9 +187,32 @@ linecolors = ['#023880', '#96adcf', '#145a6a', '#2eceb7',
               '#023880', '#96adcf', '#145a6a', '#2eceb7',]
 ncol = 2
 start_year = 2015
+textcolor = '#595959'
+
+#%% figures to compare old and new TRACE interpolation with calculated TRACE
+
+experiment_names = ['exp23_2026-03-27_NEWTRACE_ssp534_OS',
+                    'exp23_2026-03-27_OLDTRACE_ssp534_OS',
+                    'exp22_2026-03-27_CALC_ssp534_OS',]
+
+scenarios = ['ssp534_OS',
+             'ssp534_OS',
+             'ssp534_OS']
+
+linestyles = ['-','-','-','-']
+linecolors = ['#00429d', '#bf89b6', '#ffb0de']
+labels = ['High res gridded', 'Low res gridded', 'Calculated Canth']
+ncol = 1
+start_year = 2020
+mpl.rcParams['font.family'] = 'Calibri'
+textcolor = '#595959'
+mpl.rcParams['text.color'] = textcolor
+mpl.rcParams['axes.labelcolor'] = textcolor
+mpl.rcParams['xtick.color'] = textcolor
+mpl.rcParams['ytick.color'] = textcolor
+mpl.rcParams['font.weight'] = 'bold'
 
 #%% figures for OSM talk
-
 experiment_names = ['exp22_2026-02-11_t1_none_ML',
                     'exp22_2026-02-11_t1_ssp126_ML',
                     'exp22_2026-02-11_t1_ssp245_ML',
@@ -405,7 +428,7 @@ for exp_idx in range(len(experiment_names)):
     # only actually pull values into memory needed for plotting
     ax.plot(ds['time'].values, ds['delxCO2'].values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
     
-plt.legend(loc='upper right', ncol=ncol)
+# plt.legend(loc='upper right', ncol=ncol)
 plt.xlabel('Year', fontsize=11.5, weight='bold')
 plt.ylabel('Change in atmospheric CO$_{2}$ (ppm)', fontsize=11.5, weight='bold')
 ax.spines['bottom'].set_color(textcolor)

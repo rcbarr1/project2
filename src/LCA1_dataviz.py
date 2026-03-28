@@ -54,19 +54,54 @@ new_layer_idx = np.cumsum(new_layer_idx)
 
 #%% set experiments we are interested in plotting
 
-experiment_names = ['LCA1_2026-03-12_dt-1mon_00000']
+experiment_names = ['LCA1_2026-03-12_1ton_00000',
+                    'LCA1_2026-03-12_5ton_00000',
+                    'LCA1_2026-03-12_1ton_00001',
+                    'LCA1_2026-03-12_5ton_00001',
+                    'LCA1_2026-03-12_1ton_00002',
+                    'LCA1_2026-03-12_5ton_00002',
+                    'LCA1_2026-03-12_1ton_00003',
+                    'LCA1_2026-03-12_5ton_00003']
 
 scenarios = ['REMIND']
 
-labels = ['Nearshore Colombia',
-          'Offshore Colombia',
-          'Nearshore Norway',
-          'Offshore Norway',]
- 
-linestyles = ['-','-','-','-'] 
-linecolors = ['#023880', '#96adcf', '#145a6a', '#2eceb7',]
+labels = ['Nearshore Col. 1 ton',
+          'Nearshore Col. 5 ton',
+          'Offshore Col. 1 ton',
+          'Offshore Col. 5 ton',
+          'Nearshore Nor. 1 ton',
+          'Nearshore Nor. 5 ton',
+          'Offshore Nor. 1 ton',
+          'Offshore Nor. 5 ton',]
+
+experiment_names = ['LCA1_2026-03-12_1ton_00000',
+                    'LCA1_2026-03-16_1ton_2050_00000',
+                    'LCA1_2026-03-12_1ton_00001',
+                    'LCA1_2026-03-16_1ton_2050_00001',
+                    'LCA1_2026-03-12_1ton_00002',
+                    'LCA1_2026-03-16_1ton_2050_00002',
+                    'LCA1_2026-03-12_1ton_00003',
+                    'LCA1_2026-03-16_1ton_2050_00003']
+
+labels = ['Nearshore Col. 2026',
+          'Nearshore Col. 2050',
+          'Offshore Col. 2026',
+          'Offshore Col. 2050',
+          'Nearshore Nor. 2026',
+          'Nearshore Nor. 2050',
+          'Offshore Nor. 2026',
+          'Offshore Nor. 2050',]
+
+start_years = [2026, 2050, 2026, 2050, 2026, 2050, 2026, 2050]
+
+linestyles = [(0, (5,10)), (0, (1, 1)), (0, (5,10)), (0, (1, 1)),
+              (0, (5,10)), (0, (1, 1)), (0, (5,10)), (0, (1, 1))]
+
+linecolors = ['#00429d', '#00429d', '#7a64a8', '#7a64a8',
+              '#bf89b6', '#bf89b6', '#ffb0de', '#ffb0de']
+
 ncol = 1
-start_year = 2026
+start_year = 2050
 
 mpl.rcParams['font.family'] = 'Calibri'
 textcolor = '#595959'
@@ -157,14 +192,49 @@ else:
             Canth_all_idx.append(p2.flatten(Canth_idx_3D, ocnmask))
         Canth_all_scenarios.append(Canth_all_idx)
 
-# np.save(output_path + 'Canth_LCA_start2026.npy', Canth_all_scenarios)
+np.save(output_path + 'Canth_LCA_start2050.npy', Canth_all_scenarios)
+#%% load in Canth calculated
+Canth_start2026 = np.load(output_path + 'Canth_LCA_start2026.npy')
+Canth_start2050 = np.load(output_path + 'Canth_LCA_start2050.npy')
+
+#%% calculate eta over time for each location
+# eta = mol C / mol AT = delDIC / delAT
+
+fig = plt.figure(figsize=(5,5), dpi=200)
+ax = fig.gca()
+
+# use xarray to open metadata of files of interest
+for exp_idx in range(len(experiment_names)):
+    ds = xr.open_mfdataset(
+        output_path + experiment_names[exp_idx] + '_*.nc',
+        combine='by_coords',
+        chunks={'time': 10},
+        parallel=True)
+    
+    # broadcast model_vols to convert ∆AT from per kg to total
+    model_vols_xr = xr.DataArray(model_vols, dims=["lat", "lon", "depth"], coords={"lat": ds.lat, "lon": ds.lon, "depth": ds.depth})
+    
+    delAT_mol = ds['delAT'] * model_vols_xr * rho * 1e-6
+    delDIC_mol = ds['delDIC'] * model_vols_xr * rho * 1e-6
+
+    delAT_mol_total = delAT_mol.sum(dim=['lat', 'lon', 'depth'], skipna=True)
+    delDIC_mol_total = delDIC_mol.sum(dim=['lat', 'lon', 'depth'], skipna=True)
+
+    eta = delDIC_mol_total / delAT_mol_total
+
+    # only actually pull values into memory needed for plotting
+    ax.plot(ds['time'].values - start_years[exp_idx], eta.values, label=labels[exp_idx], c=linecolors[exp_idx], ls=linestyles[exp_idx])
+
+plt.legend(bbox_to_anchor=(0.97, -0.1), ncol=2)
+plt.xlabel('Year Since A$_{T}$ Pulse')
+plt.ylabel('η (∆ mol C per ∆ mol A$_{T}$)')
 
 #%% cumulative AT added
 fig = plt.figure(figsize=(3.5,3.5), dpi=200)
 ax = fig.gca()
 
 # use xarray to open metadata of files of interest
-for exp_idx in range(len(experiment_names)):
+for exp_idx in tqdm(range(len(experiment_names))):
     ds = xr.open_mfdataset(
         output_path + experiment_names[exp_idx] + '_*.nc',
         combine='by_coords',

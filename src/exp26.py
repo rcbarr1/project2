@@ -2,12 +2,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Mar 12 2026
+Created on Sat Mar 28 2026
 
-: modeling AT addition in four locations
-- 1 kg, 1 ton, and 5 tons
-- nearshore & offshore Colombia & Norway
-- starting in present and in 2050 with REMIND scenario from Maria
+EXP26: MONTE CARLO SIMULATION TO SENSITIVITY TEST AIR-SEA GAS EXCHANGE EFFICIENCY
+- "none" emissions scenario, pulse addition of AT to the surface, monthly time step
+- start with 1000 runs with 
 
 Governing equations (based on my own derivation + COBALT governing equations)
 1. d(xCO2)/dt = ∆q_sea-air,xCO2 --> [µatm CO2 (µatm air)-1 yr-1] or [µmol CO2 (µmol air)-1 yr-1]
@@ -44,8 +43,6 @@ Naming convention for saving model runs (see .txt file for explanation of experi
 #%%
 from src.utils import project2 as p2
 import xarray as xr
-import cartopy.crs as ccrs
-from matplotlib.colors import ListedColormap
 from datetime import datetime
 from netCDF4 import Dataset
 import numpy as np
@@ -84,45 +81,6 @@ z1 = grid_cell_depth[0, 0, 1] # depth of first model layer [m]
 rho = 1025 # seawater density for volume to mass [kg m-3]
 surf_idx = p2.get_depth_idx(ocnmask,0) # indicies of surface grid cells in 3D array flattened by p2.flatten()
 
-#%% create map of locations of AT addition
-
-# set locations
-# nearshore Colombia = (3.96 ºN, 281.0 ºE) = model_lat[47], model_lon[140]
-# offshore Colombia = (5.93 ºN, 269.0 ºE) = model_lat[48], model_lon[134]
-# nearshore Norway = (61.32 ºN, 3.0ºE) = model_lat[76], model_lon[1]
-# offshore Norway = (63.30 ºN, 349.0 ºE) = model_lat[77], model_lon[174]
-
-AT_lat_idxs = [47, 48, 76, 77]
-AT_lon_idxs = [140, 134, 1, 174]
-AT_lats = [model_lat[47], model_lat[48], model_lat[76], model_lat[77]]
-AT_lons = [model_lon[140], model_lon[134], model_lon[1], model_lon[174]]
-
-# set up plot
-fig = plt.figure(figsize=(14, 8), dpi=200)
-ax = plt.axes(projection=ccrs.PlateCarree(central_longitude=0))
-ax.set_global()
-
-#41ae76 (land)
-#ccece6 (ocean)
-cmap = ListedColormap(['#005824', '#ccece6'])
-
-# plot land with ocnmask
-mesh = ax.pcolormesh(
-    model_lon, model_lat, ocnmask[:, :, 0],
-    transform=ccrs.PlateCarree(),
-    cmap=cmap, shading='nearest'
-)
-
-ax.scatter(
-    AT_lons, AT_lats,
-    transform=ccrs.PlateCarree(),
-    marker='*',
-    s=250,
-    color='red',
-    edgecolor='red',
-    zorder=5
-)
-
 #%%
 # rules for saving files
 t_per_file = 2000 # number of time steps 
@@ -135,6 +93,9 @@ def set_experiment_parameters(test=False):
     # - year to start simulation
     # - emissions scenarios
     # - experiment names
+    # in this experiment, amount of addition is set as the maximum amount of AT
+    # that can be added to a grid cell before exceeding preindustrial pH, so it is
+    # not treated as a variable
 
     # TIME
     dt0 = 1/8640 # 1 hour
@@ -142,81 +103,108 @@ def set_experiment_parameters(test=False):
     dt2 = 1/12 # 1 month
     dt3 = 1 # 1 year
 
+    # just year time steps
+    exp0_t = np.arange(0,20,dt3)
+    
     # experiment with dt = 1/12 (1 month) time steps
-    exp1_t = np.arange(0,16,dt2)
+    exp1_t = np.arange(0,20,dt2)
 
-    #exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
+    # experiment with dt = 1/360 (1 day) time steps
+    exp2_t = np.arange(0,50,dt1) 
+
+    # another with dt = 1/8640 (1 hour) time steps
+    exp3_t = np.arange(0,50,dt0) 
+
+    # another with dt = 1/8640 (1 hour) for the first year, then dt = 1/360 (1 day) for the next 10 years, then dt = 1/12 (1 month) for the next 50 years months, then dt = 1 (1 year) to reach 200 years
+    t0 = np.arange(0, 1, dt0) # use a 1 hour time step for the first year (should take ~24 hours)
+    t1 = np.arange(1, 5, dt1) # use a 1 day time step for the next 10 years (should take ~9 hours)
+    t2 = np.arange(5, 10, dt2) # use a 1 month time step until the 100th year (should take ~5 hours)
+    t3 = np.arange(10, 50, dt3) # use a 1 year time step until the 200th year (should take ~4 hours)
+    exp4_t = np.concatenate((t0, t1, t2, t3))
+
+    exp_ts = [exp0_t, exp1_t, exp2_t, exp3_t, exp4_t]
     exp_ts = [exp1_t]
-    exp_t_names = ['dt-1mon']
+    exp_t_names = ['t1']
 
     # DEPTHS OF ADDITION
 
     # to do addition in first (or first two, or first three, etc.) model layer(s)
-    q_AT_locs = ocnmask.copy() * 0
-    for i in range(len(AT_lats)):
-        q_AT_locs[AT_lat_idxs[i], AT_lon_idxs[i], 0] = 1
+    q_AT_depths = ocnmask.copy()
+    q_AT_depths[:, :, 1::] = 0 # all ocean grid cells in surface layer (~10 m) are 1, rest 0
+    #q_AT_depths[:, :, 2::] = 0 # all ocean grid cells in top 2 surface layers (~30 m) are 1, rest 0
+    #q_AT_depths[:, :, 3::] = 0 # all ocean grid cells in top 3 surface layers (~50 m) are 1, rest 0
+    q_AT_depths = [q_AT_depths]
 
-    # to do all ocean lat/lons individually
-    ocn_idxs = np.argwhere(q_AT_locs == 1) # find the indices where mask == 1
-    grid_cell_idxs = np.arange(len(q_AT_locs[q_AT_locs == 1]))
-    
+    # to do all lat/lons
+    q_AT_latlons = [ocnmask.copy()]
+
+    # to constrain lat/lon of addition to LME(s)
+    # get masks for each large marine ecosystem (LME)
+    #lme_masks, lme_id_to_name = p2.build_lme_masks(data_path + 'LMES/LMEs66.shp', ocnmask, model_lat, model_lon)
+    #p2.plot_lmes(lme_masks, ocnmask, model_lat, model_lon) # note: only 62 of 66 can be represented on OCIM grid
+    #lme_idx = [22,52] # subset of LMEs
+    #lme_idx = list(lme_masks.keys()) # all LMES
+    #q_AT_latlons = sum(lme_masks[idx] for idx in lme_idx)
+
+    # EMISSIONS SCENARIOS
+    # no emissions scenario
+    #q_emissions = np.zeros(nt)
+
     # with starting year
-    start_year = 2050 # year to start simulation
-    start_CDR = 2050 # year to start CDR deployment
+    start_year = 2020 # year to start simulation
 
     # with emissions scenario
-    scenarios = ['REMIND'] 
+    scenarios = ['none', 'ssp126', 'ssp245', 'ssp534_OS'] 
+    scenarios = ['none'] 
 
-    # with magnitude of addition (1 metric ton OH- vs. 5 metric tons OH-)
-    AT_amounts = [1]
-    exp_names = ['1ton_2050']
-    
+    # set up monte carlo simulation
+    # need 1000 random decimals centered around zero with a standard deviation of 0.2
+    num_mc_sims = 1000
+    k_scale_factors = np.random.normal(loc=0, scale=0.2, size=num_mc_sims)
+    k_scale_factors += 1  # get it centered around 1 for multiplication with k
+    k_idxs = np.arange(0, num_mc_sims, 1)
+
     # set up experiments to run 
     experiments = []
 
     # test experiment
     if test:
         for exp_t in [np.arange(0,6,1)]: # 5 years, dt = 1 year
-            for ocn_idx, grid_cell_idxs in zip([ocn_idxs[0]], [grid_cell_idxs[0]]):
-                for scenario in ['none']:
-                    for AT_amount in [1]:
+            for q_AT_depth in q_AT_depths:
+                for q_AT_latlon in q_AT_latlons:
+                    for scenario in ['none']:
                         experiments.append({'exp_t': exp_t,
-                                            'q_AT_location': ocn_idx,
-                                            'scenario': scenario,
-                                            'AT_amount': AT_amount,
+                                            'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
+                                            'scenario': 'ssp126',
                                             'start_year': 2002,
-                                            'start_CDR' : 2002,
                                             'tag': 'TEST'})
     # real experiments
     else:
-        for exp_t in exp_ts:
-            for ocn_idx, grid_cell_idx in zip(ocn_idxs, grid_cell_idxs):
-                for scenario in scenarios:
-                    for AT_amount, exp_name in zip(AT_amounts, exp_names):
-                        experiments.append({'exp_t': exp_t,
-                                            'q_AT_location': ocn_idx,
-                                            'scenario': scenario,
-                                            'AT_amount': AT_amount,
-                                            'start_year' : start_year,
-                                            'start_CDR' : start_CDR,
-                                            'tag': datetime.now().strftime("%Y-%m-%d") + '_' + exp_name + '_' + f'{grid_cell_idx:05d}'})
+        for exp_t, exp_t_name in zip(exp_ts, exp_t_names):
+            for q_AT_depth in q_AT_depths:
+                for q_AT_latlon in q_AT_latlons:
+                    for scenario in scenarios:
+                        for k_scale_factor, k_idx in zip(k_scale_factors, k_idxs):
+                            experiments.append({'exp_t': exp_t,
+                                                'q_AT_locations_mask': q_AT_depth * q_AT_latlon, # combine depth and lat/lon masks into one
+                                                'scenario': scenario,
+                                                'start_year' : start_year,
+                                                'k_scale_factor' : k_scale_factor,
+                                                'tag': datetime.now().strftime("%Y-%m-%d") + '_' + exp_t_name + '_' + f'{k_idx:05d}'})
     return experiments
 
 def run_experiment(experiment):
-    experiment_name = 'LCA1_' + experiment['tag']
+    experiment_name = 'exp26_' + experiment['tag']
     print('\nnow running experiment ' + experiment_name + '\n')
 
     # pull experimental parameters out of dictionary
-    t = experiment['exp_t'] # time steps (starting from zero) [yr] 
+    t = experiment['exp_t'] # time steps (starting from zero) [yr]
     nt = len(t) # total number of time steps
     dt = np.diff(t, prepend=np.nan) # difference between each time step [yr]
-    q_AT_location = experiment['q_AT_location']
-    q_AT_locations_mask = np.zeros(ocnmask.shape)
-    q_AT_locations_mask[tuple(q_AT_location)] = 1
-    AT_amount = experiment['AT_amount']
+    q_AT_locations_mask = experiment['q_AT_locations_mask']
     start_year = experiment['start_year']
-    start_CDR = experiment['start_CDR']
     scenario = experiment['scenario']
+    k_scale_factor = experiment['k_scale_factor']
 
     # upload regridded GLODAP data
     T_3D = np.load(data_path + 'GLODAPv2.2016b.MappedProduct/temperature.npy') # temperature [ºC]
@@ -237,7 +225,7 @@ def run_experiment(experiment):
     pressure = p2.flatten(pressure_3D, ocnmask) 
 
     # calculate preindustrial DIC using TRACE
-    Canth_2002_3D = p2.calculate_canth(scenario, 2002, T_3D, S_3D, ocnmask, model_lat, model_lon, model_depth)
+    Canth_2002_3D = p2.interp_TRACE(data_path, 2002, 'none', model_lat, model_lon, model_depth, ocnmask)
 
     # calculate preindustrial pH from GLODAP DIC minus Canth to get preindustrial DIC and GLODAP TA, assuming steady state
     DIC_preind_3D = DIC_3D - Canth_2002_3D
@@ -245,9 +233,10 @@ def run_experiment(experiment):
     # pyCO2SYS v2
     co2sys_preind = pyco2.sys(dic=DIC_preind, alkalinity=AT, salinity=S, temperature=T,
                     pressure=pressure, total_silicate=Si, total_phosphate=P)
+    pH_preind = co2sys_preind['pH']
 
     # calculate anthropogenic carbon at starting year with TRACE
-    Canth_3D = p2.calculate_canth(scenario, start_year, T_3D, S_3D, ocnmask, model_lat, model_lon, model_depth)
+    Canth_3D = p2.interp_TRACE(data_path, start_year, scenario, model_lat, model_lon, model_depth, ocnmask)
     Canth = p2.flatten(Canth_3D, ocnmask)
 
     # set up air-sea gas exchange (Wanninkhof, 2014)
@@ -280,7 +269,7 @@ def run_experiment(experiment):
     # add layers of "np.NaN" for all subsurface layers in k, f_ice, then flatten
     k_3D = np.full(ocnmask.shape, np.nan)
     k_3D[:, :, 0] = k_2D
-    k = p2.flatten(k_3D, ocnmask)
+    k = p2.flatten(k_3D, ocnmask) * k_scale_factor
 
     f_ice_3D = np.full(ocnmask.shape, np.nan)
     f_ice_3D[:, :, 0] = f_ice_2D
@@ -290,6 +279,7 @@ def run_experiment(experiment):
     gammaC = -1 * k * (1 - f_ice) / z1
     
     # set up file saving rules (multiple files to avoid running out of working memory)
+    nfiles = nt // t_per_file + (nt % t_per_file > 0) # number of files for this simulation
     ds = None
     file_number = -1
     
@@ -417,7 +407,7 @@ def run_experiment(experiment):
         # do not recalculate if no scenario selected --> anthropogenic CO2 will remain at level
         # at specified start year
         if scenario != 'none':
-            Canth_3D = p2.calculate_canth(scenario, t[idx] + start_year, T_3D, S_3D, ocnmask, model_lat, model_lon, model_depth)
+            Canth_3D = p2.interp_TRACE(data_path, t[idx] + start_year, scenario, model_lat, model_lon, model_depth, ocnmask)
             Canth = p2.flatten(Canth_3D, ocnmask)
 
         # AT and DIC are equal to initial AT and DIC + whatever the change
@@ -517,16 +507,14 @@ def run_experiment(experiment):
         # calculate left hand side according to Euler backward method
         LHS = sparse.eye(A.shape[0], format="csr") - dt[idx] * A
     
-        # adding 1 metric ton (1e6 g) of AT at first time step
-        # assuming OH- is alkalinity (17.007 g/mol, so adding 1e6/17.007 mol AT
-        # in a month to whatever the mass of sw in the given grid cell is
-    
-        # must convert to µmol kg-1 yr-1
-        # mol AT/month * µmol AT/mol AT * months/year * 1/kg seawater [=] µmol AT kg-1 yr-1
-        if t[idx] < 0.0834:
-            sw_mass = np.nansum(model_vols * q_AT_locations_mask) * rho # kg sw at grid cell of interest
-            del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) * AT_amount * 1e6/17.007 * 1e6 * 12 / sw_mass
-            q[(m+1):(2*m+1)] = del_q_CDR_AT # add in source/sink vectors for ∆AT to q vector
+        if idx == 1:
+            # for now, assuming NaOH (no change in DIC)
+            
+            # pulse addition of AT to surface ocean
+            del_q_CDR_AT = p2.flatten(q_AT_locations_mask, ocnmask) / dt[idx] # just do 1 µmol kg-1 yr-1 in every ML grid cell
+            
+            # add in source/sink vectors for ∆AT to q vector
+            q[(m+1):(2*m+1)] = del_q_CDR_AT
         
         # calculate right hand side according to Euler backward method
         RHS = c[:,0] + np.squeeze(dt[idx] * q)
@@ -602,21 +590,11 @@ def run_experiment(experiment):
         tracers['AT_added'][idx_file, :, :, :] = q_delAT_3D.astype('float32')
 
         # delete pyco2sys objects to avoid running out of memory
-        try: del co2sys
-        except NameError: pass
-
-        try: del co2sys_preind
-        except NameError: pass
-
-        try: del co2sys_000001
-        except NameError: pass
-
-        try: del co2sys_current
-        except NameError: pass
-
-        try: del co2sys_desired
-        except NameError: pass
-
+        if 'co2sys' in globals(): del globals()['co2sys']
+        if 'co2sys_preind' in globals(): del globals()['co2sys_preind']
+        if 'co2sys_000001' in globals(): del globals()['co2sys_000001']
+        if 'co2sys_current' in globals(): del globals()['co2sys_current']
+        if 'co2sys_desired' in globals(): del globals()['co2sys_desired']
         gc.collect()
         jax.clear_caches()
 
@@ -629,72 +607,42 @@ def run_experiment(experiment):
     
     if ds is not None: ds.close()
 
-def parse_exp_ids(values):
-    """Expand experiment IDs and ranges like 1-5 into a sorted list."""
-    exp_ids = set()
-
-    for v in values:
-        if '-' in v:
-            start, end = map(int, v.split('-'))
-            exp_ids.update(range(start, end + 1))
-        else:
-            exp_ids.add(int(v))
-
-    return sorted(exp_ids)
-
 def main():
     # parse function call (from command line)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--exp-id', nargs='+',
-                        help='experiment ID(s), i.e. 0 3 5-10')
+    parser.add_argument('--exp-id', type=int,
+                       help='experiment ID (0 to N-1)')
     parser.add_argument('--list', action='store_true',
-                        help='list all experiments and exit')
+                       help='list all experiments and exit')
     parser.add_argument('--test', action='store_true',
-                        help='use test experiment instead of full experiment')
+                       help='use quick test experiments instead of full set')
     args = parser.parse_args()
-
+    
     # get all experiment configurations
     test = False
     if args.test:
         test = True
     experiments = set_experiment_parameters(test)
-
+    
     # handle --list option
     if args.list:
         print(f"total experiments: {len(experiments)}")
         for i, experiment in enumerate(experiments):
-            print(f"  {i}: exp25_{experiment['tag']}")
+            print(f"  {i}: exp26_{experiment['tag']}")
         return
-
-    # handle test mode (runs first experiment only)
-    if test:
-        experiment = experiments[0]
-        print(f"running test experiment: LCA1_{experiment['tag']}")
-        run_experiment(experiment)
-        return
-
-    # require exp-id when not using test
-    if args.exp_id is None:
-        print("ERROR: you must specify --exp-id")
-        print("use --list to see available experiments")
-        return
-
-    # parse experiment IDs and ranges
-    exp_ids = parse_exp_ids(args.exp_id)
-
-    # validate experiment IDs
-    for exp_id in exp_ids:
-        if exp_id < 0 or exp_id >= len(experiments):
-            print(f"ERROR: exp-id {exp_id} must be between 0 and {len(experiments)-1}")
-            print("use --list to see all experiments")
+    
+    # validate exp_id
+    if not test:
+        if args.exp_id < 0 or args.exp_id >= len(experiments):
+            print(f"ERROR: exp-id must be between 0 and {len(experiments)-1}")
+            print(f"use --list to see all experiments")
             return
-
-    # run experiments
-    for exp_id in exp_ids:
-        experiment = experiments[exp_id]
-        print(f"running experiment {exp_id}: LCA1_{experiment['tag']}")
-        run_experiment(experiment)
-
+    
+    # run the specified experiment
+    if not test: experiment = experiments[args.exp_id]
+    else: experiment = experiments[0]
+    run_experiment(experiment)
+    
 # run main function
 if __name__ == '__main__':
     main()
